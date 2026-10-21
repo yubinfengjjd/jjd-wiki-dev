@@ -1,0 +1,14 @@
+# 派生或可重建的内容不进版本库
+frontend/node_modules/
+frontend/dist/
+staged/research-wiki/app/
+test-gallery/
+test-gallery-p2/
+test-wiki-r1/
+preview-wiki/
+qa/shots/
+codex/pytest-*/
+codex/R1-before/
+**/__pycache__/
+**/*.pyc
+*.log
