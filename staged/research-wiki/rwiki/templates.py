@@ -11,7 +11,7 @@ from .interfaces import load_interface
 from .pages import read_page, section_bounds, set_block, visual_path, write_page
 from .process import run
 from .spec import check_data, load_spec, requirements_markdown
-from .store import save
+from .store import guarded, save
 from .verification import record_preview, start_replay, replay_available
 
 
@@ -214,8 +214,9 @@ def mark_ready(config: Config, entry_id: str) -> None:
     if page.parent.name == "methods":
         from .methods import confirm_method
 
-        confirm_method(config, entry_id)
-        save(config, f"ready {entry_id}")
+        with guarded(config, page, page.with_suffix("") / "acceptance.json"):
+            confirm_method(config, entry_id)
+            save(config, f"ready {entry_id}")
         return
     meta, body = read_page(page)
     target = page.with_suffix("")
@@ -243,9 +244,10 @@ def mark_ready(config: Config, entry_id: str) -> None:
         if embed not in body:
             heading_end = body.index("\n") + 1
             body = body[:heading_end] + f"\n{embed}\n" + body[heading_end:]
-    # Receipt first (status is outside the snapshot): a failure never leaves a ready page without one.
-    write_page(page, meta, body)
-    record_acceptance(config, page)
-    meta["status"] = "ready"
-    write_page(page, meta, body)
-    save(config, f"ready {entry_id}")
+    with guarded(config, page, target / "acceptance.json"):
+        # Receipt first (status is outside the snapshot): a failure never leaves a ready page without one.
+        write_page(page, meta, body)
+        record_acceptance(config, page)
+        meta["status"] = "ready"
+        write_page(page, meta, body)
+        save(config, f"ready {entry_id}")

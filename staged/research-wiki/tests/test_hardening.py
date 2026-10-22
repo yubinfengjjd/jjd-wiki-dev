@@ -121,6 +121,18 @@ def test_mark_ready_never_duplicates_the_preview_embed(fake_template):
     assert not acceptance_stale(page)
 
 
+def test_mark_ready_rolls_back_when_the_commit_fails(fake_template):
+    config, _, target = fake_template
+    verify_template(config, target.name)
+    page = target.with_suffix(".md")
+    before = page.read_bytes()
+    (config.wiki_root / ".git").rename(config.wiki_root / "removed-git")
+    with pytest.raises(Exception):
+        mark_ready(config, target.name)
+    assert page.read_bytes() == before
+    assert read_page(page)[0]["status"] == "draft" and not (target / "acceptance.json").exists()
+
+
 def test_ready_entry_without_receipt_is_stale(fake_template):
     config, _, target = fake_template
     verify_template(config, target.name)
