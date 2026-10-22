@@ -107,3 +107,6 @@ description: Use when the author wants a figure or an analysis for a research pr
 
 方法页必须显示结构匹配模板和需适配模板；每个模板标出读取接口；适配关系在正文写实际 `render-*` 等接口与准备步骤。结构匹配为空时不能只留“暂无”。`lint` 对未说明读取接口的 adaptable 关系报 WARN；结构匹配不是语义直连。
 
+### Obsidian 辅助窗口（2026-10-22）
+
+作者可将 `E:\research-wiki\知识库` 作为 Obsidian vault 阅读与编辑 user 区块；不把项目根/画廊联接进 vault，不改名、移动或删除正式条目。facts/frontmatter/正文分工按正式 AGENTS.md；签核、待办、确认、状态与删除仍走同一网页/CLI workflow。`.obsidian/` 不入 Git，verify 证据仍入 Git。神经图谱仅为只读视觉浏览，不从连线推断语义兼容、有效状态或科学验证，不加入新的编辑/运行/联网功能。
