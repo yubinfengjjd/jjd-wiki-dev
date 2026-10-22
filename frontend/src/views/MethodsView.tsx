@@ -1,7 +1,8 @@
-import { InterfaceMeta, MethodMeta, PageSummary, STATUS_LABEL, Status, TemplateMeta } from '../api';
+import { InterfaceMeta, MethodMeta, PageSummary, STATUS_LABEL, Status } from '../api';
 import type { AppData } from '../App';
 import { MethodCard, TypeMark } from '../components';
 import { pageLink } from '../nav';
+import { methodFigures } from '../figureModels';
 
 const PIPELINE: Status[] = ['draft', 'ready'];
 
@@ -17,7 +18,7 @@ export function MethodsView({ data }: { data: AppData }) {
         <div className="hero-text">
           <h1>方法库</h1>
           <p className="lede">
-            一步分析一篇笔记：写清什么时候用、要什么数据、怎么做、哪些代码可以复用。agent 读懂后在你的课题环境里改参数、运行，把结果整理成数据接口表，交给读取该接口的图模板出图。
+            每个方法家族写清目的、适用前提、原始实现与未验证分支。agent 先读当前课题的计划、数据和结果，再找有依据的方法与图样；选定后在课题环境适配和运行。页面可用、代码存在与运行验证分别记录。
           </p>
           <dl className="census">
             {PIPELINE.map((s) => (
@@ -44,7 +45,7 @@ export function MethodsView({ data }: { data: AppData }) {
               meta={m.meta}
               number={i + 1}
               outputs={data.flow.outputs(m.path).map((path) => ({ path, title: title(path) }))}
-              figures={data.flow.figuresOf(m.path).map((path) => ({ path, meta: byPath.get(path)!.meta as TemplateMeta }))}
+              figures={methodFigures(m.path, data.pages, data.graph, data.flow)}
             />
           ))}
         </div>

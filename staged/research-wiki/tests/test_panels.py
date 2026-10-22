@@ -158,6 +158,8 @@ def test_mark_layout_ready_checks_templates_and_full_coverage(layout_workspace):
         mark_ready(config, ENTRY_ID)
     del lm["panels"]["C"]
     write_page(page, lm, lb)
+    from conftest import seal_replay
+    seal_replay(target)
     mark_ready(config, ENTRY_ID)
     assert read_page(page)[0]["status"] == "ready"
 

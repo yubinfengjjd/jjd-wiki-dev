@@ -1,9 +1,10 @@
 import { useEffect, useMemo, useRef, useState } from 'react';
-import { GraphNode, isFigure, LayoutMeta, STATUS_LABEL, Status, TemplateMeta, TYPE_LABEL } from '../api';
+import { GraphNode, LayoutMeta, STATUS_LABEL, Status, TemplateMeta, TYPE_LABEL, workflowOf } from '../api';
 import type { AppData } from '../App';
 import { PlateCard } from '../components';
 import { Lattice } from '../hero/Lattice';
 import { openPage } from '../nav';
+import { FigureShelf, galleryEntries, galleryInventory, templateSourceNote } from '../figureModels';
 
 interface Filters {
   q: string;
@@ -14,24 +15,30 @@ interface Filters {
   favorite: boolean;
 }
 
-type Shelf = 'layout' | 'template';
+type Shelf = FigureShelf;
 type FigureMeta = LayoutMeta | TemplateMeta;
 
 const EMPTY: Filters = { q: '', tag: '', chart: '', language: '', status: '', favorite: false };
 const PIPELINE: Record<Shelf, Status[]> = {
-  layout: ['pending_signoff', 'pending_template', 'ready'],
+  single: ['pending_signoff', 'pending_template', 'ready'],
   template: ['draft', 'ready'],
 };
 const SHELVES: [Shelf, string][] = [
-  ['layout', '整图版式'],
-  ['template', '单图模板'],
+  ['single', '单 panel 图样'],
+  ['template', '可调用模板'],
+];
+const SOURCE_STAGES: [string, string][] = [
+  ['signoff', '待签核'], ['template_missing', '待补齐模板'], ['template_work', '模板制作中'],
+  ['template_confirm', '模板待你确认'], ['complete', '模板已就绪'],
 ];
 
-function matches(meta: FigureMeta, f: Filters): boolean {
+const progressOf = (meta: FigureMeta, shelf: Shelf) => shelf === 'single' ? workflowOf(meta)?.stage ?? (meta.status === 'ready' ? 'complete' : meta.status) : meta.status;
+
+function matches(meta: FigureMeta, f: Filters, shelf: Shelf): boolean {
   if (f.tag && !meta.tags.includes(f.tag)) return false;
   if (f.chart && !meta.chart_types.includes(f.chart)) return false;
   if (f.language && meta.language !== f.language) return false;
-  if (f.status && meta.status !== f.status) return false;
+  if (f.status && progressOf(meta, shelf) !== f.status) return false;
   if (f.favorite && !meta.favorite) return false;
   if (!f.q) return true;
   const haystack = [meta.title, ...meta.tags, ...meta.chart_types]
@@ -71,17 +78,13 @@ function LatticeFigure({ data }: { data: AppData }) {
 
 export function Gallery({ data }: { data: AppData }) {
   const [f, setF] = useState<Filters>(EMPTY);
-  const [shelf, setShelf] = useState<Shelf>('layout');
+  const [shelf, setShelf] = useState<Shelf>('single');
+  const inventory = galleryInventory(data.pages, data.env.hiddenSources);
 
-  const figures = useMemo(
-    () =>
-      data.pages.flatMap((p) =>
-        isFigure(p.meta) && p.meta.status !== 'archived' ? [{ path: p.path, meta: p.meta }] : [],
-      ),
-    [data.pages],
-  );
-  const templates = figures.filter((t) => t.meta.type === shelf);
-  const shown = templates.filter((t) => matches(t.meta, f));
+  const entries = useMemo(() => galleryEntries(data.pages), [data.pages]);
+  const templates = entries[shelf];
+  const stages: [string, string][] = shelf === 'single' ? SOURCE_STAGES : PIPELINE.template.map((s) => [s, STATUS_LABEL[s]]);
+  const shown = templates.filter((t) => matches(t.meta, f, shelf));
   const pickShelf = (next: Shelf) => {
     setShelf(next);
     // Status values differ per shelf, so a status filter would silently hide everything.
@@ -95,16 +98,16 @@ export function Gallery({ data }: { data: AppData }) {
         <div className="hero-text">
           <h1>图库</h1>
           <p className="lede">
-            复刻并签核过的科研数据图。整张图签核后拆成单图模板，agent 读模板的适用说明、按你的数据挑出合适的几张，换上你的数据重新出图；需要先做分析的，到方法库找能接上的方法。标签只帮助搜索，不限定用途。
+            这里只收录单 panel 图样与可调用模板。先识别去重样式，再确认代表单 panel、数据和复刻细节；完整原图仅保留作溯源。复用时，agent 根据你的实际分组数 n 编排尺寸、标签和间距；图上的原始组数不构成函数上限。
           </p>
           <dl className="census">
-            {PIPELINE[shelf].map((s) => (
+            {stages.map(([s, label]) => (
               <div key={s}>
                 <dt>
                   <span className={`dot status-${s}`} aria-hidden="true" />
-                  {STATUS_LABEL[s]}
+                  {label}
                 </dt>
-                <dd>{templates.filter((t) => t.meta.status === s).length}</dd>
+                <dd>{templates.filter((t) => progressOf(t.meta, shelf) === s).length}</dd>
               </div>
             ))}
           </dl>
@@ -116,10 +119,15 @@ export function Gallery({ data }: { data: AppData }) {
         {SHELVES.map(([key, label]) => (
           <button key={key} role="tab" aria-selected={shelf === key} className={shelf === key ? 'active' : ''} onClick={() => pickShelf(key)}>
             {label}
-            <span className="muted"> {figures.filter((t) => t.meta.type === key).length}</span>
+            <span className="muted"> {entries[key].length}</span>
           </button>
         ))}
       </div>
+
+      <p className="shelf-help muted small">
+        {shelf === 'template' ? '这里按可调用函数浏览；待确认的模板须完成回放和确认后使用。历史模板使用前需由 agent 检查任意 n 的适配情况。' : '这里按单 panel 图形样式浏览，也包含已函数化的图样。同一图样只展示一次；已有函数的图样也可在“可调用模板”中找到。'}
+      </p>
+      <p className="inventory-note small">当前可浏览 {inventory.styles} 种单 panel 图样、{inventory.templates} 个函数模板。两栏可以包含同一条记录，分别便于看样式和调用代码。{inventory.historical > 0 && `其中 ${inventory.historical} 个历史单 panel 模板也已作为图样展示；它们的整图来源继续归档保留。`}</p>
 
       <div className="filters" role="search">
         <input
@@ -149,8 +157,8 @@ export function Gallery({ data }: { data: AppData }) {
         </select>
         <select aria-label="状态" value={f.status} onChange={(e) => set('status', e.target.value)}>
           <option value="">全部状态</option>
-          {PIPELINE[shelf].map((s) => (
-            <option key={s} value={s}>{STATUS_LABEL[s]}</option>
+          {stages.map(([s, label]) => (
+            <option key={s} value={s}>{label}</option>
           ))}
         </select>
         <label className="check">
@@ -163,14 +171,14 @@ export function Gallery({ data }: { data: AppData }) {
         <p className="notice">
           {templates.length > 0
             ? '没有符合筛选条件的图，换个关键词或清空筛选再试。'
-            : shelf === 'layout'
-              ? '还没有收录任何图。用 sci-figure-replica 复刻一张图，它会自动出现在这里。'
-              : '还没有单图模板。整图签核后，在 agent 里说“处理待办”即可拆出。'}
+            : shelf !== 'template'
+              ? '本栏尚无单 panel 图样。确认样式与细节后，用 sci-figure-replica 复刻代表单 panel。'
+              : '还没有可调用模板。选定图样签核后，在 agent 里说“处理待办”即可制作。'}
         </p>
       ) : (
         <div className="grid">
           {shown.map((t, i) => (
-            <PlateCard key={t.path} path={t.path} meta={t.meta} number={i + 1} />
+            <PlateCard key={t.path} path={t.path} meta={t.meta} number={i + 1} sourceLinks={t.sourceLinks} asStyle={shelf === 'single'} note={t.meta.type === 'template' ? templateSourceNote(t.meta, data.pages, data.env.hiddenSources) : undefined} />
           ))}
         </div>
       )}

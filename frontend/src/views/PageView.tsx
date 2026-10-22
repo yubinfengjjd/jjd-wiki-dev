@@ -1,11 +1,16 @@
 import { useCallback, useEffect, useState } from 'react';
-import { api, imageOf, isItem, LayoutMeta, PageDetail, pageCache, PageSummary, TYPE_LABEL } from '../api';
+import { api, imageOf, isItem, LayoutMeta, PageDetail, pageCache, PageSummary, TYPE_LABEL, wikiFile } from '../api';
 import type { AppData } from '../App';
-import { TypeMark } from '../components';
+import { FigureImage, TypeMark } from '../components';
+import { figureLabel, isWholeSource, methodFigures, templateSourceNote } from '../figureModels';
 import { renderBody, userBlock } from '../markdown';
 import { pageLink } from '../nav';
 import { Chain } from './Chain';
-import { CodeFiles, ItemActions, LayoutImages, MethodSource, NoteEditor, SingleImage, TagsEditor } from './ItemPanel';
+import { ItemActions, LayoutImages, MethodSource, NoteEditor, TagsEditor } from './ItemPanel';
+import { CodeButton } from '../CodeViewer';
+import { RelationList } from '../RelationList';
+import { adaptableTemplateRelations } from '../relations';
+import { MethodOverview } from './MethodOverview';
 
 // The viewer shows the figure, so the page's own leading image embed (kept for Obsidian) is dropped here.
 const LEAD_EMBED = /^!\[\[[^\]]+\.png\]\]\n/m;
@@ -41,11 +46,24 @@ export function PageView({ path, data }: { path: string; data: AppData }) {
   if (!page) return error ? <p className="notice error">{error}</p> : null;
 
   const { meta } = page;
+  if (isWholeSource(meta)) return <p className="notice">整图来源已归档并隐藏。请从图库选择单 panel 图样或可调用模板；完整原图保留在画廊作溯源。</p>;
   const item = isItem(meta) ? meta : null;
-  const html = renderBody(page.body.replace(LEAD_EMBED, ''), data.env, { dropUser: item !== null });
+  const html = renderBody(page.body.replace(LEAD_EMBED, ''), data.env, { dropUser: item !== null, dropFacts: meta.type === 'method' });
   const byPath = new Map(data.pages.map((p) => [p.path, p]));
   const pagesOf = (paths: string[]) => paths.flatMap((p) => byPath.get(p) ?? []);
   const { flow } = data;
+  const structuralTemplates = meta.type === 'method' ? pagesOf(flow.figuresOf(path)) : [];
+  const adaptableTemplates = meta.type === 'method'
+    ? adaptableTemplateRelations(page.relations ?? [])
+    : [];
+  const adaptablePages = pagesOf(adaptableTemplates.map((relation) => relation.figure));
+  const chainDetail = (target: string) => {
+    if (!target.startsWith('templates/')) return '';
+    const titles = flow.inputs(target)
+      .filter((source) => source.startsWith('interfaces/'))
+      .map((source) => byPath.get(source)?.meta.title ?? source);
+    return titles.length ? `读取：${titles.join('、')}` : '';
+  };
 
   return (
     <article className={item ? 'page with-side' : 'page'}>
@@ -54,43 +72,73 @@ export function PageView({ path, data }: { path: string; data: AppData }) {
           <a href={meta.type === 'method' || meta.type === 'interface' ? '#/methods' : '#/gallery'}>
             {meta.type === 'method' || meta.type === 'interface' ? '方法库' : '图库'}
           </a>{' '}
-          / {TYPE_LABEL[meta.type]}
+          / {meta.type === 'template' ? '单 panel 图样 / 可调用模板' : meta.type === 'layout' ? figureLabel(meta) : TYPE_LABEL[meta.type]}
         </p>
-        <h1>{meta.title}</h1>
+        <div className="page-title-row"><h1>{meta.title}</h1>{item && <CodeButton meta={item} />}</div>
         {error && <p className="notice error" role="alert">{error}</p>}
 
         {meta.type === 'layout' && <LayoutImages page={page} meta={meta} />}
-        {meta.type === 'template' && <SingleImage src={imageOf(meta)!} alt="模板回放" />}
+        {meta.type === 'template' && <figure className="viewer"><div className="plate"><FigureImage key={imageOf(meta)} meta={meta} /></div></figure>}
         {meta.type === 'layout' && <PanelSet meta={meta} pages={pagesOf(meta.templates)} />}
 
-        {meta.type === 'method' && (
+        {meta.type === 'method' && <MethodOverview meta={meta} body={page.body} figures={methodFigures(path, data.pages.map((p) => p.path === path ? page : p), data.graph, flow)} pages={data.pages} hiddenSources={data.env.hiddenSources} />}
+        {meta.type === 'method' && <details className="method-details"><summary>查看接口结构匹配与完整关联证据</summary>
           <Chain
-            title="分析 → 出图"
-            hint="这个方法写出的表，以及能直接读这些表出图的模板。"
+            title="接口结构匹配"
+            hint="结构匹配只看模板是否消费方法声明的输出；仍需另行核对含义、每行单位、量纲与方法前提。"
             self={path}
             columns={[
               { label: '分析方法', pages: pagesOf([path]) },
               { label: '输出的数据接口', pages: pagesOf(flow.outputs(path)) },
-              { label: '可接的图', pages: pagesOf(flow.figuresOf(path)) },
+              { label: '结构匹配的模板', pages: structuralTemplates,
+                empty: adaptableTemplates.length ? '暂无；见下方“语义关联的模板（需适配）”' : '暂无' },
             ]}
+            detailOf={chainDetail}
           />
+          {adaptableTemplates.length > 0 && (
+            <Chain
+              title="语义关联的模板（需适配）"
+              hint="这些模板的输入接口不在方法声明输出中；需要先按关系中的适配动作准备表，不能当作结构直连。"
+              self={path}
+              columns={[
+                { label: '分析方法', pages: pagesOf([path]) },
+                { label: '输出的数据接口', pages: pagesOf(flow.outputs(path)) },
+                { label: '语义关联的模板（需适配）', pages: adaptablePages },
+              ]}
+              detailOf={chainDetail}
+            />
+          )}
+          <RelationList relations={page.relations ?? []} self={path} pages={data.pages} />
+        </details>}
+        {item && meta.type !== 'method' && <RelationList relations={page.relations ?? []} self={path} pages={data.pages} />}
+        {meta.type === 'template' && (
+          <section className="reuse-note">
+            <p>{templateSourceNote(meta, data.pages, data.env.hiddenSources)}</p>
+            <strong>换数据与任意 n 复用</strong>
+            <p>n 由实际数据决定，agent 根据课题编排尺寸、标签、配色和间距；原图组数不构成函数上限。</p>
+            <p className="small muted">{page.reuse?.sizing_declared
+              ? page.reuse.profile === 'unbound' ? '此模板的尺寸策略尚待绑定具体数据表与列，使用前需适配验证。' : '此模板已声明尺寸策略；仍需按实际数据验证图型与排版。'
+              : '此历史模板尚未声明新的尺寸策略；使用前需由 agent 按函数化契约适配并验证。'}</p>
+            <a href={wikiFile('AGENTS.md')} target="_blank" rel="noreferrer">查看当前知识库维护规则</a>
+          </section>
         )}
         {meta.type === 'template' && (
           <Chain
-            title="分析 → 出图"
-            hint="这张图读哪些表，以及能产出这些表的分析方法。"
+            title="接口结构匹配"
+            hint="已声明的接口说明表结构；这种匹配不代表方法与图的科学含义、单位及前提已核实。"
             self={path}
             columns={[
-              { label: '可接的分析方法', pages: pagesOf(flow.methodsFor(path)) },
+              { label: '结构匹配的分析方法', pages: pagesOf(flow.methodsFor(path)) },
               { label: '读取的数据接口', pages: pagesOf(flow.inputs(path)) },
               { label: '这张图', pages: pagesOf([path]) },
             ]}
+            detailOf={chainDetail}
           />
         )}
         {meta.type === 'interface' && (
           <Chain
             title="谁写它，谁读它"
-            hint={`文件名固定为 ${meta.slug}.csv，方法的输出目录可以直接交给读取它的模板。`}
+            hint={`文件名约定为 ${meta.slug}.csv；接口结构匹配仍需核对当前课题的含义、单位和前提。`}
             self={path}
             columns={[
               { label: '产出方法', pages: pagesOf(flow.inputs(path)) },
@@ -102,12 +150,11 @@ export function PageView({ path, data }: { path: string; data: AppData }) {
 
         <div className="prose" dangerouslySetInnerHTML={{ __html: html }} />
 
-        {meta.type === 'method' && <CodeFiles meta={meta} files={codeFilesOf(page.body)} />}
       </div>
 
       {item && (
         <aside className="page-side sheet">
-          <ItemActions meta={item} run={run} busy={busy} />
+          <ItemActions meta={item} workflow={page.workflow} run={run} busy={busy} onDeleted={async () => { await data.reload(); location.hash = '#/queue'; }} />
           {/* Keys remount the editors when the saved value changes; prefixed so two empty values never collide. */}
           <TagsEditor key={`tags:${item.tags.join('|')}`} meta={item} run={run} busy={busy} />
           <NoteEditor key={`note:${userBlock(page.body)}`} meta={item} note={userBlock(page.body)} run={run} busy={busy} />
@@ -127,12 +174,12 @@ export function PageView({ path, data }: { path: string; data: AppData }) {
               </dl>
             </div>
           )}
-          <Backlinks page={page} />
+          <Backlinks page={{ ...page, backlinks: page.backlinks.filter((b) => data.env.titles.has(b.path)) }} />
         </aside>
       )}
       {!item && (
         <aside className="page-side sheet">
-          <Backlinks page={page} />
+          <Backlinks page={{ ...page, backlinks: page.backlinks.filter((b) => data.env.titles.has(b.path)) }} />
         </aside>
       )}
     </article>
@@ -159,18 +206,6 @@ function Backlinks({ page }: { page: PageDetail }) {
   );
 }
 
-/**
- * Files listed under the method's code/ directory in its facts block, which is the one place the wiki keeps
- * that list. The facts writer links them as `/files/wiki/...`; hand-written pages may use a wikilink.
- */
-function codeFilesOf(body: string): string[] {
-  const found = [
-    ...body.matchAll(/\/files\/wiki\/methods\/[^/)]+\/code\/([^)\s]+)/g),
-    ...body.matchAll(/\[\[methods\/[^\]/]+\/code\/([^\]|]+)/g),
-  ].map((m) => decodeURIComponent(m[1].trim()));
-  return [...new Set(found)];
-}
-
 /** The single-figure templates a layout was split into, with the panel letters each one draws. */
 function PanelSet({ meta, pages }: { meta: LayoutMeta; pages: PageSummary[] }) {
   if (pages.length === 0) return null;
@@ -181,7 +216,7 @@ function PanelSet({ meta, pages }: { meta: LayoutMeta; pages: PageSummary[] }) {
         {pages.map((p) => (
           <a key={p.path} className="panel-set-item" {...pageLink(p.path)}>
             <span className="plate">
-              <img src={imageOf(p.meta)!} alt="" loading="lazy" />
+              <FigureImage key={imageOf(p.meta)} meta={p.meta} />
             </span>
             <span className="letters">{(meta.template_panels[p.path.replace(/^templates\/|\.md$/g, '')] ?? []).join(' · ')}</span>
             <span>{p.meta.title}</span>

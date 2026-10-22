@@ -1,6 +1,7 @@
 import csv
 import json
 import shutil
+from copy import deepcopy
 from pathlib import Path
 
 from .config import Config, read_json
@@ -11,16 +12,12 @@ from .pages import read_page, section_bounds, set_block, visual_path, write_page
 from .process import run
 from .spec import check_data, load_spec, requirements_markdown
 from .store import save
-from .verification import record_preview
+from .verification import record_preview, start_replay, replay_available
 
 
 def pending(config: Config) -> list[str]:
-    ids = []
-    for path in sorted((config.wiki_root / "layouts").glob("*.md")):
-        meta, _ = read_page(path)
-        if meta["status"] == "pending_template":
-            ids.append(meta["id"])
-    return ids
+    from .workflow import pending_sources
+    return pending_sources(config)
 
 
 def require_pending(meta: dict) -> None:
@@ -84,6 +81,10 @@ def scaffold_template(config: Config, entry_id: str, chart_type: str, panels: li
     spec = {"entry": entry, "language": language, "tables": tables, "style": {}}
     if language == "python":
         spec["panel"] = "code/panel.py"
+        if config.function_defaults:
+            spec["style"] = deepcopy(config.function_defaults)
+            shutil.copyfile(Path(__file__).with_name("sizing.py"), target / "code/sizing.py")
+            shutil.copyfile(Path(__file__).parents[1] / "assets/function_render.py", target / entry)
     (target / "spec.json").write_text(json.dumps(spec, ensure_ascii=False, indent=2) + "\n",
                                       encoding="utf-8", newline="\n")
     title = f"{chart_type} · {meta['title']}"
@@ -91,7 +92,7 @@ def scaffold_template(config: Config, entry_id: str, chart_type: str, panels: li
                      "layouts": [entry_id], "panels": panels, "language": language,
                      "tags": meta["tags"], "chart_types": [chart_type], "favorite": False}
     template_body = (f"# {title}\n\n<!-- facts:start -->\n<!-- facts:end -->\n\n"
-                     "## 适用\n\n## 不适用\n\n## 数据要求\n\n模板化后生成。\n\n"
+                     "## 适用\n\n## 不适用\n\n## 知识关联检查\n\n## 数据要求\n\n模板化后生成。\n\n"
                      "## 使用记录\n\n<!-- user:start -->\n<!-- user:end -->\n")
     ensure_hubs(config, template_meta)
     write_page(template_page, template_meta, template_body)
@@ -151,11 +152,19 @@ def layout_ready_errors(config: Config, meta: dict) -> list[str]:
         template, _ = read_page(path)
         if template["status"] != "ready":
             errors.append(f"模板尚未 ready: {tid}")
+        else:
+            # A ready template can still fail its own sections/replay gate;
+            # a layout must not inherit that failure as "ready".
+            from .acceptance import entry_errors
+            errors.extend(f"模板验收未通过: {tid}: {message}"
+                          for message in entry_errors(config, path))
         covered.extend(meta["template_panels"].get(tid, []))
     if set(covered) != set(meta["panels"]) or len(covered) != len(set(covered)):
         errors.append("模板面板必须无重复且完整覆盖版式 panels")
     if not (config.wiki_root / "layouts" / meta["id"] / "preview.png").is_file():
         errors.append(f"缺少 preview.png: {meta['id']}")
+    if not replay_available(config.wiki_root / 'layouts' / meta['id']):
+        errors.append('缺少当前版本的完整版式回放，请 verify-layout')
     return errors
 
 
@@ -172,7 +181,8 @@ def render(config: Config, entry_id: str, data_dir: Path, out_dir: Path,
         if unknown:
             raise WikiError(f"未知 style 键: {', '.join(sorted(unknown))}")
     executable = config.python_exe if spec["language"] == "python" else config.rscript_exe
-    command = [str(executable), spec["entry"], "--data", str(data_dir.resolve()),
+    command = [str(executable)] + (["-X", "utf8"] if spec["language"] == "python" else [])
+    command += [spec["entry"], "--data", str(data_dir.resolve()),
                "--out", str(out_dir.resolve())]
     if style is not None:
         command.extend(["--style", str(style.resolve())])
@@ -191,9 +201,11 @@ def verify_template(config: Config, entry_id: str) -> None:
     target = config.wiki_root / "templates" / entry_id
     out = target / "verify"
     example_style = target / "example/style.json"
+    inputs = start_replay(target)
     render(config, entry_id, target / "example", out,
            example_style if example_style.is_file() else None)
-    record_preview(target)
+    record_preview(target, inputs=inputs,
+                   executable=config.python_exe if load_spec(target)['language'] == 'python' else config.rscript_exe)
     save(config, f"verify {entry_id}")
 
 
@@ -207,21 +219,29 @@ def mark_ready(config: Config, entry_id: str) -> None:
         return
     meta, body = read_page(page)
     target = page.with_suffix("")
+    from .acceptance import entry_errors, record_acceptance
     if page.parent.name == "layouts":
         require_pending(meta)
         errors = layout_ready_errors(config, meta)
         if errors:
             raise WikiError("；".join(errors))
+        errors = entry_errors(config, page)
+        if errors:
+            raise WikiError('入库验收未通过：' + '；'.join(errors))
     else:
         if meta["status"] != "draft":
             raise WikiError(f"模板必须为 draft: {entry_id} ({meta['status']})")
         spec = load_spec(target)
-        if not (target / "preview.png").is_file():
-            raise WikiError(f"缺少 preview.png: {entry_id}")
+        if not replay_available(target):
+            raise WikiError(f"缺少当前版本的完整成功回放（含 preview.png），请 verify-template: {entry_id}")
+        errors = entry_errors(config, page)
+        if errors:
+            raise WikiError('入库验收未通过：' + '；'.join(errors))
         start, end = section_bounds(body, "数据要求")
         body = body[:start] + "\n" + requirements_markdown(spec) + "\n" + body[end:]
         heading_end = body.index("\n") + 1
         body = body[:heading_end] + f"\n![[templates/{entry_id}/preview.png]]\n" + body[heading_end:]
     meta["status"] = "ready"
     write_page(page, meta, body)
+    record_acceptance(config, page)
     save(config, f"ready {entry_id}")

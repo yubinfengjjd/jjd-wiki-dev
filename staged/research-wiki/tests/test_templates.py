@@ -2,7 +2,7 @@ import json
 import pytest
 from PIL import Image
 
-from conftest import ENTRY_ID as LAYOUT_ID, commit_count, run_cli, update_gallery, write_interface
+from conftest import ENTRY_ID as LAYOUT_ID, commit_count, run_cli, update_gallery, write_interface, complete_sections
 from rwiki.errors import WikiError
 from rwiki.ingest import ingest_figure
 from rwiki.pages import get_block, read_page, set_block, write_page
@@ -55,6 +55,7 @@ Image.new('RGB', (count, 4), style['color']).save(a.out / 'figure.png')
 ''', encoding="utf-8", newline="\n")
     gallery = config.gallery_root / "2026-08-17-shap-feature-mechanism/figures/fig01-shap-a-f"
     Image.new("RGB", (4, 8), "blue").save(gallery / "output/replica.png")
+    complete_sections(target.with_suffix('.md'))
     return config, config_path, target
 
 
@@ -69,7 +70,8 @@ def test_pending_lists_only_pending_template(approved):
     meta, body = read_page(page)
     meta["status"] = "ready"
     write_page(page, meta, body)
-    assert run_cli(path, "pending").stdout == ""
+    # A raw ready flag cannot hide missing template coverage from remaining work.
+    assert run_cli(path, "pending").stdout == LAYOUT_ID + "\n"
 
 
 def test_scaffold_rejects_wrong_state(ingested):
@@ -222,8 +224,11 @@ def test_verify_panel_preview_commit_and_ignore(fake_template):
     result = run_cli(config_path, "verify-template", ENTRY_ID)
     assert result.returncode == 0, result.stderr
     record = json.loads((target / "verify/verify.json").read_text(encoding="utf-8"))
-    assert set(record) == {"exit_code", "timestamp"}
+    # Replay evidence is bound to the exact inputs and outputs, not just exit status.
+    assert record["schema_version"] == 2
     assert record["exit_code"] == 0 and record["timestamp"]
+    assert set(record["inputs"]) and set(record["outputs"]) == {"png", "pdf", "svg"}
+    assert record["environment"]["executable"]
     assert not (target / "verify/compare.png").exists()
     assert (target / "preview.png").read_bytes() == (target / "verify/figure.png").read_bytes()
     assert commit_count(config.wiki_root) == 4

@@ -3,7 +3,7 @@ import json
 import pytest
 from fastapi.testclient import TestClient
 
-from conftest import ENTRY_ID, run_cli, update_gallery
+from conftest import ENTRY_ID, complete_sections, run_cli, update_gallery
 from rwiki.ingest import ingest_figure
 from rwiki.pages import get_block, read_page, write_page
 from rwiki.server import create_app
@@ -76,6 +76,11 @@ def test_method_confirmation_and_return_are_draft_ready_only(workspace):
     config, path = workspace
     assert run_cli(path, 'scaffold-method', 'note', '--title', '笔记', '--license', 'none',
                    '--written').returncode == 0
+    page = config.wiki_root / 'methods/note.md'
+    meta, body = read_page(page)
+    meta['cite'] = ['Fixture citation for a written note.']
+    write_page(page, meta, body)
+    complete_sections(page)
     assert run_cli(path, 'mark-ready', 'note').returncode == 0
     with TestClient(create_app(config)) as client:
         assert client.post('/api/methods/note/confirm').status_code == 409

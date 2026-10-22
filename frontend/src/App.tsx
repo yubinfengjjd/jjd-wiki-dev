@@ -1,7 +1,8 @@
 import { useCallback, useEffect, useMemo, useState } from 'react';
-import { api, GraphData, isItem, PageSummary } from './api';
+import { api, GraphData, PageSummary } from './api';
 import { useBackdropZone } from './backdrop/instance';
 import { Flow } from './flow';
+import { singlePanelKnowledge } from './figureModels';
 import { RenderEnv } from './markdown';
 import { useRoute } from './route';
 import { Gallery } from './views/Gallery';
@@ -9,7 +10,8 @@ import { GraphView } from './views/GraphView';
 import { LogView } from './views/LogView';
 import { MethodsView } from './views/MethodsView';
 import { PageView } from './views/PageView';
-import { QueueView, QUEUED } from './views/QueueView';
+import { QueueView } from './views/QueueView';
+import { pendingCount as countPending } from './workflow';
 
 export interface AppData {
   pages: PageSummary[];
@@ -33,21 +35,24 @@ export function App() {
   const [pages, setPages] = useState<PageSummary[] | null>(null);
   const [graph, setGraph] = useState<GraphData | null>(null);
   const [error, setError] = useState('');
+  const [hiddenSources, setHiddenSources] = useState<Set<string>>(new Set());
 
   const reload = useCallback(async () => {
     const [p, g] = await Promise.all([api.pages(), api.graph()]);
-    setPages(p);
-    setGraph(g);
+    const visible = singlePanelKnowledge(p, g);
+    setPages(visible.pages);
+    setGraph(visible.graph);
+    setHiddenSources(visible.hiddenSources);
   }, []);
 
   useEffect(() => {
     reload().catch((e: Error) => setError(e.message));
   }, [reload]);
 
-  const env = useMemo<RenderEnv>(() => ({ titles: new Map((pages ?? []).map((p) => [p.path, p.meta.title])) }), [pages]);
+  const env = useMemo<RenderEnv>(() => ({ titles: new Map((pages ?? []).map((p) => [p.path, p.meta.title])), hiddenSources }), [pages, hiddenSources]);
   const flow = useMemo(() => new Flow(graph ?? { nodes: [], links: [] }), [graph]);
 
-  const pendingCount = (pages ?? []).filter((p) => isItem(p.meta) && QUEUED.has(p.meta.status)).length;
+  const pendingCount = countPending(pages ?? []);
 
   let content;
   if (error) content = <p className="notice error">连不上本地服务（{error}）。在终端运行 wiki.py serve 后刷新页面。</p>;

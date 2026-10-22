@@ -52,7 +52,7 @@ def scaffold_method(config: Config, id: str, title: str, license: str,
             "license": license, "cite": [], "favorite": False}
     body = (f"# {title}\n\n<!-- facts:start -->\n<!-- facts:end -->\n\n"
             + "".join(f"## {heading}\n\n" for heading in
-                      ("用途", "适用", "不适用", "输入", "怎么做", "代码", "输出", "使用记录"))
+                      ("用途", "适用", "不适用", "输入", "怎么做", "代码", "输出", "知识关联检查", "使用记录"))
             + "<!-- user:start -->\n<!-- user:end -->\n")
     write_page(page, meta, body)
     from .store import save
@@ -65,5 +65,10 @@ def confirm_method(config: Config, id: str) -> None:
     meta, body = read_page(page)
     if meta["status"] != "draft":
         raise WikiError(f"方法必须为 draft: {id} ({meta['status']})")
+    from .acceptance import entry_errors, record_acceptance
+    errors = entry_errors(config, page)
+    if errors:
+        raise WikiError('入库验收未通过：' + '；'.join(errors))
     meta["status"] = "ready"
     write_page(page, meta, body)
+    record_acceptance(config, page)

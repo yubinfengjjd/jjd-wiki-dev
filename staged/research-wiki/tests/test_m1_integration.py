@@ -6,7 +6,7 @@ import sys
 
 import pytest
 
-from conftest import run_cli
+from conftest import run_cli, complete_sections, seal_replay
 from rwiki.config import load_config
 from rwiki.pages import get_block, read_page, set_block, write_page
 from rwiki.store import init, save
@@ -77,6 +77,10 @@ def tiny_wiki(tmp_path):
         "language": "python", "layouts": [], "panels": [], "chart_types": [],
         "tags": ["单细胞"], "favorite": False,
     }, page_body("rank plot", "rank visualization"))
+    for page in (root / 'methods').glob('*.md'):
+        complete_sections(page)
+    complete_sections(root / 'templates/rank-plot.md')
+    seal_replay(directory)
     return config, config_path
 
 

@@ -31,7 +31,42 @@ def update_gallery(config, **changes):
     path = config.gallery_root / "2026-08-17-shap-feature-mechanism/figures/fig01-shap-a-f/meta.json"
     meta = json.loads(path.read_text(encoding="utf-8"))
     meta.update(changes)
+    if changes.get('status') == 'approved':
+        meta['approved_version'] = meta['version']
     path.write_text(json.dumps(meta, ensure_ascii=False), encoding="utf-8", newline="\n")
+
+
+def complete_sections(path):
+    """Finish a software fixture, without pretending it is scientific evidence."""
+    from rwiki.pages import read_page, section_text, write_page
+    from rwiki.acceptance import HEADINGS
+    from rwiki.errors import WikiError
+    meta, body = read_page(path)
+    for heading in HEADINGS.get(meta['type'], ()):
+        try:
+            content = section_text(body, heading)
+        except WikiError:
+            content = ''
+        if not content:
+            note = '隔离软件夹具的说明；不代表科学有效或真实课题结果。'
+            if heading == '知识关联检查':
+                note = '检查范围：本隔离夹具已有方法与图样；按各测试声明关系，无其他科学关联。'
+            marker = f'## {heading}\n'
+            if marker in body:
+                body = body.replace(marker, marker + '\n' + note + '\n', 1)
+            else:
+                body = body.replace('<!-- user:start -->', f'## {heading}\n\n{note}\n\n<!-- user:start -->', 1)
+    write_page(path, meta, body)
+
+
+def seal_replay(target):
+    """Synthetic receipts isolate metadata tests; execution is tested separately."""
+    from rwiki.verification import record_preview
+    (target / 'verify').mkdir(exist_ok=True)
+    raw = (target / 'preview.png').read_bytes()
+    for ext in ('png', 'pdf', 'svg'):
+        (target / f'verify/figure.{ext}').write_bytes(raw)
+    record_preview(target)
 
 
 def write_interface(root, slug, columns, title="数值接口"):
@@ -164,6 +199,8 @@ plt.close(fig)
             f"# {chart}\n\n<!-- facts:start -->\n<!-- facts:end -->\n\n## 适用\n\n说明\n\n"
             "## 不适用\n\n## 数据要求\n\n## 使用记录\n\n<!-- user:start -->\n<!-- user:end -->\n")
         Image.new("RGB", (8, 8), color).save(target / "preview.png")
+        complete_sections(target.with_suffix('.md'))
+        seal_replay(target)
     target = root / "layouts" / ENTRY_ID
     (target / "example").mkdir()
     (target / "example/values.csv").write_text("value\n2\n", encoding="utf-8")
@@ -175,6 +212,7 @@ plt.close(fig)
         "labels": [{"text": "A", "x": 0.01, "y": 0.96, "size": 8,
                     "weight": "bold", "family": "Arial"}]}
     (target / "layout.json").write_text(json.dumps(layout), encoding="utf-8")
+    complete_sections(page)
     return config, config_path, target, layout
 
 

@@ -71,6 +71,8 @@ def test_confirm_accepts_draft_note_without_code_or_execution_assets(method_conf
     meta, body = read_page(page)
     meta["cite"] = ["Official documentation"]
     write_page(page, meta, body)
+    from conftest import complete_sections
+    complete_sections(page)
     confirm_method(method_config, "written")
     assert read_page(page)[0]["status"] == "ready"
     with pytest.raises(WikiError, match="draft"):

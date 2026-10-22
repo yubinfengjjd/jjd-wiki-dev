@@ -1,10 +1,11 @@
 import { useEffect, useMemo, useRef, useState } from 'react';
-import { GraphNode, imageOf, PageType, STATUS_LABEL, Status, TYPE_LABEL } from '../api';
+import { GraphLink, GraphNode, imageOf, PageType, STATUS_LABEL, Status, TYPE_LABEL } from '../api';
 import type { AppData } from '../App';
 import { StatusBadge, TypeMark } from '../components';
 import { ForceGraph } from '../graph/ForceGraph';
 import { openPage } from '../nav';
 import { HAS_STATUS } from '../palette';
+import { COMPATIBILITY_LABEL, verificationLabel } from '../relations';
 
 const TYPES: PageType[] = ['chart-type', 'layout', 'template', 'method', 'interface', 'project'];
 const STATUSES: [Status, string][] = [
@@ -80,8 +81,16 @@ export function GraphView({ data }: { data: AppData }) {
       <aside className="legend sheet">
         <h2>知识网络</h2>
         <p className="muted small">
-          {count(() => true)} 页，{data.graph.links.length} 条链接。拖节点会带动相连的节点，单击查看，双击打开。带箭头的紫线是“分析 → 数据接口 → 出图”。
+          {count(() => true)} 页，{data.graph.links.length} 条链接。拖节点会带动相连的节点，单击查看，双击打开。语义兼容与运行验证分别记录；选择节点可查看关系说明。
         </p>
+        <ul className="legend-list edge-legend" aria-label="关系类型">
+          <li><span className="edge-mark interface-edge" />接口结构匹配（紫色箭头）</li>
+          <li><span className="edge-mark semantic-direct" />语义关系 · 直接可接</li>
+          <li><span className="edge-mark semantic-adaptable" />语义关系 · 需要适配</li>
+          <li><span className="edge-mark semantic-candidate" />语义关系 · 待核实</li>
+          <li><span className="edge-mark reference-edge" />来源／参考链接</li>
+        </ul>
+        <p className="muted small">接口结构匹配只说明声明的表结构；语义关系不等于已在真实课题运行。</p>
         <div className="finder">
           <input type="search" placeholder="查找页面" aria-label="按标题查找" value={query} onChange={(e) => setQuery(e.target.value)} />
           {matches.length > 0 && (
@@ -156,12 +165,15 @@ export function GraphView({ data }: { data: AppData }) {
 const dotClass = (n: GraphNode) => (HAS_STATUS(n.type) ? `status-${n.status}` : `type-${n.type}`);
 
 function neighboursOf(id: string, data: AppData, nodes: Map<string, GraphNode>) {
-  const ids = new Set<string>();
+  const ids = new Map<string, GraphLink[]>();
   for (const l of data.graph.links) {
-    if (l.source === id) ids.add(l.target);
-    if (l.target === id) ids.add(l.source);
+    const other = l.source === id ? l.target : l.target === id ? l.source : null;
+    if (other) ids.set(other, [...(ids.get(other) ?? []), l]);
   }
-  return [...ids].flatMap((n) => nodes.get(n) ?? []).sort((a, b) => TYPES.indexOf(a.type) - TYPES.indexOf(b.type));
+  return [...ids].flatMap(([key, links]) => {
+    const node = nodes.get(key);
+    return node ? [{ node, links }] : [];
+  }).sort((a, b) => TYPES.indexOf(a.node.type) - TYPES.indexOf(b.node.type));
 }
 
 function HoverCard({ node, x, y, thumb }: { node: GraphNode; x: number; y: number; thumb: string | null }) {
@@ -182,7 +194,7 @@ function HoverCard({ node, x, y, thumb }: { node: GraphNode; x: number; y: numbe
 interface PanelProps {
   node: GraphNode | null;
   thumb: string | null;
-  neighbours: GraphNode[];
+  neighbours: { node: GraphNode; links: GraphLink[] }[];
   onPick: (id: string) => void;
   onClose: () => void;
 }
@@ -206,12 +218,15 @@ function NodePanel({ node, thumb, neighbours, onPick, onClose }: PanelProps) {
           <button className="primary" onClick={() => openPage(node.id)}>打开页面</button>
           <h3>相连的页面 {neighbours.length}</h3>
           <ul className="links">
-            {neighbours.map((n) => (
-              <li key={n.id}>
+            {neighbours.map(({ node: n, links }) => (
+              <li className="graph-neighbour" key={n.id}>
                 <button className="link-button" onClick={() => onPick(n.id)}>
                   <span className={`dot ${dotClass(n)}`} aria-hidden="true" />
                   {n.title}
                 </button>
+                {links.map((l, i) => <span className="small muted" key={i}>{l.kind === 'relation'
+                  ? `${COMPATIBILITY_LABEL[l.compatibility ?? 'candidate']} · ${verificationLabel(l.verification)}${l.verification?.scope ? `：${l.verification.scope}` : '；验证范围未记录'}`
+                  : l.kind === 'feeds' ? '接口结构匹配' : '来源／参考链接'}</span>)}
               </li>
             ))}
           </ul>

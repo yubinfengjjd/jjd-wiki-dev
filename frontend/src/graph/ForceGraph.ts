@@ -1,8 +1,8 @@
 import { forceCenter, forceCollide, forceLink, forceManyBody, forceSimulation, Simulation } from 'd3-force-3d';
 import * as THREE from 'three';
 import { OrbitControls } from 'three/examples/jsm/controls/OrbitControls.js';
-import type { GraphData, GraphNode, PageType } from '../api';
-import { HAS_STATUS, INK, IS_HUB, STATUS_COLOR, TYPE_COLOR, TYPE_SHAPE } from '../palette';
+import type { GraphData, GraphLink, GraphNode, PageType } from '../api';
+import { COMPATIBILITY_COLOR, HAS_STATUS, INK, IS_HUB, STATUS_COLOR, TYPE_COLOR, TYPE_SHAPE } from '../palette';
 import { linkFragment, linkVertex, nodeFragment, nodeVertex } from './shaders';
 
 interface Node extends GraphNode {
@@ -23,6 +23,8 @@ interface Link {
   source: Node;
   target: Node;
   feeds: boolean;
+  kind: GraphLink['kind'];
+  compatibility: GraphLink['compatibility'];
 }
 
 interface Events {
@@ -172,7 +174,7 @@ export class ForceGraph {
     this.links = data.links.flatMap((l) => {
       const source = this.byId.get(l.source);
       const target = this.byId.get(l.target);
-      return source && target ? [{ source, target, feeds: l.kind === 'feeds' }] : [];
+      return source && target ? [{ source, target, feeds: l.kind === 'feeds', kind: l.kind, compatibility: l.compatibility }] : [];
     });
     this.neighbours = new Map(this.nodes.map((n) => [n.id, new Set<string>()]));
     for (const { source, target } of this.links) {
@@ -398,13 +400,14 @@ export class ForceGraph {
     const strong = new THREE.Color(INK.ink);
     const flow = new THREE.Color(INK.plum);
     const c = new THREE.Color();
-    this.links.forEach(({ source: s, target: t, feeds }, i) => {
+    this.links.forEach(({ source: s, target: t, feeds, kind, compatibility }, i) => {
       lp.set([s.x, s.y, s.z, t.x, t.y, t.z], i * 6);
       const e = this.linkEmph[i];
       const lit = Math.max(0, (e - 1) / 0.3);
-      c.lerpColors(feeds ? flow : quiet, strong, lit).toArray(lc, i * 6);
+      const base = kind === 'relation' ? new THREE.Color(COMPATIBILITY_COLOR[compatibility ?? 'candidate']) : feeds ? flow : quiet;
+      c.lerpColors(base, strong, lit * 0.65).toArray(lc, i * 6);
       c.toArray(lc, i * 6 + 3);
-      const alpha = Math.min(e, 1) * ((feeds ? 0.62 : 0.42) + 0.4 * lit) * this.birth;
+      const alpha = Math.min(e, 1) * ((kind === 'relation' ? 0.78 : feeds ? 0.62 : 0.42) + 0.4 * lit) * this.birth;
       la[i * 2] = alpha;
       la[i * 2 + 1] = alpha;
     });

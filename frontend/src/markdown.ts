@@ -3,6 +3,7 @@ import { pageHref, wikiFile } from './api';
 
 export interface RenderEnv {
   titles: Map<string, string>;
+  hiddenSources?: Set<string>;
 }
 
 const md = new MarkdownIt({ html: false, linkify: true });
@@ -39,6 +40,7 @@ const ASSET = /\.(py|r|sh|txt|csv|json|ya?ml)$/i;
 
 md.renderer.rules.wiki_link = (tokens, idx, _opts, env: RenderEnv) => {
   const { target, label } = tokens[idx].meta;
+  if (env.hiddenSources?.has(target)) return '<span class="muted">原始来源已归档（保留溯源记录）</span>';
   if (ASSET.test(target)) {
     return `<a class="wikilink file" href="${wikiFile(target)}" target="_blank" rel="noreferrer">${md.utils.escapeHtml(label ?? target.split('/').pop()!)}</a>`;
   }
@@ -60,10 +62,17 @@ const MARKERS = /<!-- (facts|user):(start|end) -->\n?/g;
 export const userBlock = (body: string) => body.match(USER_BLOCK)?.[1].trim() ?? '';
 
 /** Render a page body; the H1 is shown by the view, the user block by the note editor. */
-export function renderBody(body: string, env: RenderEnv, { dropUser = false } = {}): string {
+export function renderBody(body: string, env: RenderEnv, { dropUser = false, dropFacts = false } = {}): string {
   let src = body.replace(/^# .*\n/, '');
   if (dropUser) src = src.replace(USER_BLOCK, '');
+  if (dropFacts) src = src.replace(/<!-- facts:start -->[\s\S]*?<!-- facts:end -->\r?\n?/, '');
   return md.render(src.replace(MARKERS, ''), env);
+}
+
+export function methodPurpose(body: string): string {
+  const agent = body.split('<!-- user:start -->')[0];
+  const start = /^## 用途[ \t]*\r?\n/m.exec(agent);
+  return start ? agent.slice(start.index + start[0].length).trim().split(/\r?\n## /)[0].split(/\r?\n\s*\r?\n/)[0] : '';
 }
 
 export const renderText = (text: string, env: RenderEnv) => md.render(text, env);

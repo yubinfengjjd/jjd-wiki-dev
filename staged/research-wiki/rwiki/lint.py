@@ -10,6 +10,7 @@ from .interfaces import load_interface
 from .spec import load_spec
 from .facts import page_facts
 from .templates import layout_ready_errors
+from .relations import relation_errors
 
 REQUIRED = {
     "layout": ("type", "id", "title", "status", "gallery_entry", "gallery_version",
@@ -82,13 +83,43 @@ def layout_diagnostics(config: Config, meta: dict) -> list[tuple[str, str]]:
     else:
         gallery = read_json(entry)
         status, approved = meta["status"], gallery["status"] == "approved"
-        if approved and status == "pending_signoff":
+        signed = meta.get('signedoff_version')
+        if approved and status == "pending_signoff" and (
+                signed == gallery['version'] or gallery.get('approved_version') == gallery['version']):
             diagnostics.append(("ERROR", "画廊 approved，页面仍为 pending_signoff"))
+        if status in ('pending_template', 'ready') and 'signedoff_version' in meta and signed != gallery['version']:
+            diagnostics.append(('ERROR', '来源当前版本尚未签核'))
         if status in ("pending_template", "ready") and not approved:
             diagnostics.append(("ERROR", f"页面为 {status}，画廊不是 approved"))
         if gallery["version"] > meta["gallery_version"]:
             diagnostics.append(("WARN", "画廊 version 大于 gallery_version，需重新收录"))
     return diagnostics
+
+
+def adaptable_interface_diagnostics(config: Config, path, meta: dict, body: str) -> list[tuple[str, str]]:
+    """An adaptable relation must name the template interfaces it adapts."""
+    findings = []
+    records = meta.get("figure_relations", [])
+    if not isinstance(records, list):
+        return findings
+    for record in records:
+        if not isinstance(record, dict) or record.get("compatibility") != "adaptable":
+            continue
+        figure = record.get("figure")
+        if not isinstance(figure, str) or not figure.startswith("templates/"):
+            continue
+        target = config.wiki_root / figure.removesuffix(".md")
+        try:
+            spec = load_spec(target)
+        except (WikiError, OSError, ValueError, KeyError, TypeError):
+            continue
+        missing = [table["interface"] for table in spec.get("tables", {}).values()
+                   if isinstance(table, dict) and table.get("interface")
+                   and table["interface"] not in body]
+        if missing:
+            findings.append(("WARN", f"适配关系 {figure} 的模板读取接口未在正文说明: "
+                                      + "、".join(missing)))
+    return findings
 
 
 def visual_diagnostics(config: Config, path, meta: dict, body: str,
@@ -142,6 +173,10 @@ def lint(config: Config) -> list[str]:
     for path in page_paths(root):
         meta, body, parse_error = parse_page(path.read_text(encoding="utf-8"))
         errors = [parse_error] if parse_error else metadata_errors(meta)
+        if not parse_error and meta.get("type") == "method":
+            errors.extend(relation_errors(config, meta))
+        elif "figure_relations" in meta:
+            errors.append("figure_relations 只能在 method 页声明；图端关系由方法页反向计算")
         for error in errors:
             report("ERROR", path, error)
         if not errors:
@@ -151,6 +186,9 @@ def lint(config: Config) -> list[str]:
     valid_metadata = dict(valid_pages)
     for path, meta, body, errors in parsed_pages:
         if not errors:
+            if meta["type"] == "method" and meta.get("status") == "ready":
+                for level, message in adaptable_interface_diagnostics(config, path, meta, body):
+                    report(level, path, message)
             if meta["type"] in ("layout", "template", "method", "interface"):
                 findings = asset_diagnostics(config, path, meta)
                 for level, message in findings:
@@ -167,6 +205,13 @@ def lint(config: Config) -> list[str]:
                 for method_id in meta.get("methods", []):
                     if not (root / "methods" / f"{method_id}.md").is_file():
                         report("ERROR", path, f"引用的方法页不存在: {method_id}")
+            if (meta['type'] in ('method', 'template', 'layout')
+                    and meta.get('status') not in ('archived', 'pending_signoff')):
+                from .acceptance import entry_errors, acceptance_stale
+                for message in entry_errors(config, path):
+                    report('ERROR' if meta['status'] == 'ready' else 'WARN', path, f'入库验收: {message}')
+                if meta['status'] == 'ready' and acceptance_stale(path):
+                    report('ERROR', path, '入库验收记录已过期，请核对后 check-entry --record')
         for name in ("user", "facts"):
             if meta.get("type") in ("layout", "template", "method", "interface") or f"<!-- {name}:" in body:
                 error = block_error(body, name)

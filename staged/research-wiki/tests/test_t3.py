@@ -4,7 +4,7 @@ from datetime import date
 import pytest
 from PIL import Image
 
-from conftest import ENTRY_ID, commit_count, run_cli, update_gallery, write_interface
+from conftest import ENTRY_ID, commit_count, run_cli, update_gallery, write_interface, complete_sections, seal_replay
 from rwiki.ingest import ingest_figure
 from rwiki.pages import get_block, read_page, set_block, write_page
 from rwiki.store import git, save
@@ -50,6 +50,8 @@ def candidates(workspace):
             "style": {"color": "red", "dpi": 100}}
         (target / "spec.json").write_text(json.dumps(spec), encoding="utf-8")
         Image.new("RGB", size, color).save(target / "preview.png")
+        complete_sections(target.with_suffix('.md'))
+        seal_replay(target)
     for entry_id, status in (("waiting", "draft"), ("retired", "archived")):
         meta = dict(meta, id=entry_id, title="0 不可推荐", status=status)
         if status == "archived":
@@ -107,7 +109,8 @@ def test_suggest_metadata_and_author_note_are_returned(candidates):
     config, path = candidates
     first = suggestions(path)[0]
     assert set(first) == {"id", "title", "score", "reasons", "page", "preview", "applicable",
-                          "not_applicable", "note", "tables", "style_keys", "kind"}
+                          "not_applicable", "note", "tables", "style_keys", "kind", "relations",
+                          "prerequisites", "code_status", "discovery_note"}
     assert first["page"] == "templates/alpha.md"
     assert first["preview"] == str((config.wiki_root / "templates/alpha/preview.png").resolve())
     assert first["applicable"] == "用于比较 模型贡献。"
@@ -129,6 +132,7 @@ def test_suggest_column_rounding_is_half_up(candidates):
         f"c{i}": {"type": "int", "description": "??"} for i in range(16)})
     spec["tables"] = {"data": {"interface": "rounding", "description": "???"}}
     spec_path.write_text(json.dumps(spec), encoding="utf-8")
+    seal_replay(spec_path.parent)
     first = suggestions(path, "--columns", "c0")[0]
     assert first["id"] == "alpha"
     assert first["score"] == 0.3  # 1/16 × 4 = 0.25, 四舍五入。
@@ -155,9 +159,19 @@ def test_suggest_and_use_layout_alongside_templates(candidates, tmp_path):
     config, path = candidates
     page = config.wiki_root / f"layouts/{ENTRY_ID}.md"
     meta, body = read_page(page)
-    meta.update(status="ready", templates=["alpha", "beta"], title="0 组合版式")
+    meta.update(status="ready", templates=["alpha", "beta"],
+                template_panels={"alpha": ["A"], "beta": ["D"]},
+                panels={"A": "bar", "D": "bar"}, title="0 组合版式")
     write_page(page, meta, body)
     Image.new("RGB", (20, 10), "yellow").save(config.wiki_root / f"layouts/{ENTRY_ID}/preview.png")
+    target = page.with_suffix('')
+    layout = {'canvas': {'width_in': 4, 'height_in': 3, 'dpi': 50}, 'labels': [], 'panels': [
+        {'letter': letter, 'template': tid, 'rect': [0.1, y, 0.8, 0.35],
+         'tables': {'summary': 'summary.csv', 'detail': 'detail.csv'}, 'style': {}}
+        for letter, tid, y in [('A', 'alpha', 0.1), ('D', 'beta', 0.55)]]}
+    (target / 'layout.json').write_text(json.dumps(layout), encoding='utf-8')
+    complete_sections(page)
+    seal_replay(target)
     result = suggestions(path, "--columns", "feature,shap", "--limit", "4")
     layout = next(item for item in result if item["id"] == ENTRY_ID)
     assert layout["kind"] == "layout" and layout["templates"] == ["alpha", "beta"]
@@ -243,7 +257,27 @@ def test_record_use_creates_project_links_and_commit(candidates):
     assert commit_count(config.wiki_root) == before + 1
     assert git(config.wiki_root, "log", "-1", "--format=%s").strip() == "use alpha in demo-qsar"
     check = run_cli(path, "lint")
-    assert check.returncode == 0 and check.stdout.strip() == "OK", check.stdout
+    # The fixture deliberately keeps a draft non-candidate and a pending-template
+    # source incomplete; these are WARN findings, not lint errors.
+    assert check.returncode == 0 and check.stdout.rstrip().endswith("OK"), check.stdout
+    assert "ERROR " not in check.stdout, check.stdout
+
+
+def test_record_use_does_not_invalidate_acceptance(candidates):
+    from rwiki.acceptance import acceptance_stale, ready_for_use, record_acceptance
+    from rwiki.workflow import workflow_snapshot
+
+    config, path = candidates
+    template = config.wiki_root / "templates/alpha.md"
+    record_acceptance(config, template)
+    assert ready_for_use(config, template)
+    result = run_cli(path, "record-use", "alpha", "--project", "usage-acceptance",
+                     "--title", "Usage acceptance", "--output", "D:/demo/fig.png")
+    assert result.returncode == 0, result.stderr
+    # A usage link is an append-only log entry, not a change to the note content.
+    assert not acceptance_stale(template)
+    assert ready_for_use(config, template)
+    assert workflow_snapshot(config)["templates/alpha.md"]["stage"] == "complete"
 
 
 def test_record_use_appends_templates_outputs_preserves_notes_and_deduplicates(candidates):

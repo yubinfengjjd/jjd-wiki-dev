@@ -117,9 +117,11 @@ def test_write_success_real_commit(web, action, payload):
     assert result.json() == client.get("/api/page", params={"path": f"layouts/{ENTRY_ID}.md"}).json()
     if action in ("signoff", "reject"):
         gallery_after = json.loads(gallery_path.read_text(encoding="utf-8"))
-        assert list(gallery_after) == list(gallery_before)
-        assert {k: v for k, v in gallery_after.items() if k not in ("status", "updated_at")} == {k: v for k, v in gallery_before.items() if k not in ("status", "updated_at")}
+        assert set(gallery_after) - {"approved_version"} == set(gallery_before) - {"approved_version"}
+        assert {k: v for k, v in gallery_after.items() if k not in ("status", "updated_at", "approved_version")} == {k: v for k, v in gallery_before.items() if k not in ("status", "updated_at", "approved_version")}
         assert gallery_after["status"] == ("approved" if action == "signoff" else "draft")
+        # The approved version is an explicit fact, not inferred from the page status.
+        assert gallery_after["approved_version"] == (gallery_after["version"] if action == "signoff" else None)
         assert gallery_after["updated_at"].endswith("+00:00")
         assert gallery_path.read_bytes().endswith(b"\n")
         assert gallery_path.read_text(encoding="utf-8") == json.dumps(gallery_after, ensure_ascii=False, indent=2) + "\n"
@@ -229,7 +231,8 @@ def test_cli_serve_loopback(web):
             break
         else:
             pytest.fail("serve did not become ready")
-        listeners = subprocess.check_output(["netstat", "-ano", "-p", "tcp"], text=True)
+        # netstat is localized; only its ASCII address/state columns are parsed.
+        listeners = subprocess.check_output(["netstat", "-ano", "-p", "tcp"], text=True, errors="replace")
         assert any(f"127.0.0.1:{port}" in line and "LISTENING" in line for line in listeners.splitlines())
         listener_pid = int(next(line.split()[-1] for line in listeners.splitlines()
                                 if f"127.0.0.1:{port}" in line and "LISTENING" in line))

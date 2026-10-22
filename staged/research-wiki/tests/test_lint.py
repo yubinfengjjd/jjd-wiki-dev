@@ -101,6 +101,7 @@ def test_empty_applicability_and_stale_index_warn(ingested):
     path = config.wiki_root / f"layouts/{ENTRY_ID}.md"
     meta, body = read_page(path)
     meta["status"] = "pending_template"
+    meta['signedoff_version'] = meta['gallery_version']
     write_page(path, meta, body)
     result = run_cli(config_path, "lint")
     assert result.returncode == 0

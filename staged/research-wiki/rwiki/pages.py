@@ -7,9 +7,11 @@ from .errors import WikiError
 
 
 def parse_page(text: str) -> tuple[dict, str, str | None]:
-    if not text.startswith("---\n") or "\n---\n" not in text[4:]:
+    newline = "\r\n" if text.startswith("---\r\n") else "\n"
+    opening, closing = "---" + newline, newline + "---" + newline
+    if not text.startswith(opening) or closing not in text[len(opening):]:
         return {}, text, "frontmatter 缺失或未闭合"
-    header, body = text[4:].split("\n---\n", 1)
+    header, body = text[len(opening):].split(closing, 1)
     try:
         meta = yaml.safe_load(header)
     except yaml.YAMLError as error:
@@ -22,7 +24,10 @@ def parse_page(text: str) -> tuple[dict, str, str | None]:
 def read_page(path: Path) -> tuple[dict, str]:
     if not path.is_file():
         raise WikiError(f"页面不存在: {path}")
-    meta, body, error = parse_page(path.read_text(encoding="utf-8"))
+    # Author blocks are protected bytes, including their line endings.
+    # Universal newline conversion would silently alter them during facts refresh.
+    with path.open(encoding="utf-8", newline="") as stream:
+        meta, body, error = parse_page(stream.read())
     if error:
         raise WikiError(f"{path}: {error}")
     return meta, body
@@ -72,7 +77,7 @@ def section_bounds(body: str, title: str) -> tuple[int, int]:
     # Ignore headings inside the author's block while retaining original offsets.
     start, end = block_bounds(body, "user")
     agent_body = body[:start] + re.sub(r"[^\n]", " ", body[start:end]) + body[end:]
-    section = re.search(rf"^## {re.escape(title)}[ \t]*\n(.*?)(?=^## |\Z)",
+    section = re.search(rf"^## {re.escape(title)}[ \t]*\r?\n(.*?)(?=^## |\Z)",
                         agent_body, re.M | re.S)
     if section is None:
         raise WikiError(f"缺少{title}节")

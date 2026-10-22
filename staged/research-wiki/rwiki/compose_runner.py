@@ -11,6 +11,13 @@ matplotlib.use("Agg")
 import matplotlib.pyplot as plt
 import pandas as pd
 
+# This runner is also loaded by file path from unrelated working directories.
+_sizing_spec = importlib.util.spec_from_file_location(
+    "_compose_sizing", Path(__file__).with_name("sizing.py"))
+_sizing = importlib.util.module_from_spec(_sizing_spec)
+_sizing_spec.loader.exec_module(_sizing)
+check_region = _sizing.check_region
+
 
 def load_panel(template: Path, panel: str):
     name = "panel_" + uuid4().hex
@@ -42,7 +49,12 @@ def main():
         target = args.wiki / "templates" / panel["template"]
         spec = json.loads((target / "spec.json").read_text(encoding="utf-8"))
         tables = {name: pd.read_csv(args.data / filename) for name, filename in panel["tables"].items()}
-        style = spec["style"] | panel["style"] | overrides.get(panel["letter"], {})
+        style = dict(spec["style"])
+        for values in [panel["style"], overrides.get(panel["letter"], {})]:
+            for key, value in values.items():
+                style[key] = (style.get(key, {}) | value) if key == "sizing" and isinstance(value, dict) else value
+        if "sizing" in style:
+            check_region(fig, panel["rect"], tables, style)
         load_panel(target, spec["panel"])(fig, panel["rect"], tables, style)
     for label in layout["labels"]:
         fig.text(label["x"], label["y"], label["text"], fontsize=label["size"],

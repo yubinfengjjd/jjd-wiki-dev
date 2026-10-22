@@ -1,6 +1,7 @@
 import { useState } from 'react';
-import { api, galleryFile, ItemMeta, KIND_OF, LayoutMeta, MethodMeta, PageDetail, wikiFile } from '../api';
+import { api, galleryFile, ItemMeta, KIND_OF, LayoutMeta, MethodMeta, PageDetail, wikiFile, Workflow } from '../api';
 import { StatusBadge } from '../components';
+import { DeleteArchived } from '../DeleteArchived';
 
 type Run = (action: () => Promise<PageDetail>) => Promise<void>;
 
@@ -8,6 +9,8 @@ interface ActionProps {
   meta: ItemMeta;
   run: Run;
   busy: boolean;
+  onDeleted?: () => Promise<void>;
+  workflow?: Workflow | null;
 }
 
 /** Layout viewer: the replay of the whole figure first once it exists, then the gallery's own images. */
@@ -16,7 +19,7 @@ export function LayoutImages({ page, meta }: { page: PageDetail; meta: LayoutMet
   const views: [string, string][] = [];
   if (meta.status === 'ready') views.push(['按版式回放', wikiFile(`layouts/${meta.id}/preview.png`)]);
   if (files.compare) views.push(['并排对比', galleryFile(meta.gallery_entry, files.compare)]);
-  if (files.output_png) views.push(['复刻图', galleryFile(meta.gallery_entry, files.output_png)]);
+  if (files.output_png || files.replica) views.push(['复刻图', galleryFile(meta.gallery_entry, files.output_png || files.replica)]);
   if (files.source_image) views.push(['原图', galleryFile(meta.gallery_entry, files.source_image)]);
   const [active, setActive] = useState(0);
 
@@ -68,7 +71,7 @@ function ReasonForm({ label, submit, cancel, busy }: { label: string; submit: (r
   );
 }
 
-export function ItemActions({ meta, run, busy }: ActionProps) {
+export function ItemActions({ meta, run, busy, onDeleted, workflow }: ActionProps) {
   const [reasoning, setReasoning] = useState(false);
   const kind = KIND_OF[meta.type];
   const withReason = (send: (reason: string) => Promise<PageDetail>) => (reason: string) => run(() => send(reason)).then(() => setReasoning(false));
@@ -76,7 +79,7 @@ export function ItemActions({ meta, run, busy }: ActionProps) {
   return (
     <div className="panel">
       <div className="panel-row">
-        <StatusBadge status={meta.status} />
+        <StatusBadge status={workflow?.stage === 'complete' ? 'ready' : meta.status} label={workflow?.label} />
         <button className="ghost" disabled={busy} onClick={() => run(() => api.favorite(kind, meta.id, !meta.favorite))} aria-pressed={meta.favorite}>
           {meta.favorite ? '★ 已收藏' : '☆ 收藏'}
         </button>
@@ -98,13 +101,13 @@ export function ItemActions({ meta, run, busy }: ActionProps) {
           )}
           {meta.type === 'layout' && meta.status === 'pending_template' && (
             <>
-              <p className="muted">已签核。在 agent 里说“处理待办”即可拆成单图模板。</p>
+              <p className="muted">{workflow?.reason ?? '已签核。在 agent 里说“处理待办”继续模板制作。'}</p>
               <div className="panel-row">
                 <button disabled={busy} onClick={() => setReasoning(true)}>撤回签核</button>
               </div>
             </>
           )}
-          {meta.type === 'template' && meta.status === 'draft' && <p className="muted">已拆出，等 agent 回放、你确认后可用。</p>}
+          {meta.type === 'template' && meta.status === 'draft' && <p className="muted">{workflow?.reason ?? '模板待完成回放与作者确认。'}</p>}
           {meta.type === 'method' && meta.status === 'draft' && (
             <>
               <p className="muted">方法笔记已写好。读完用途、适用与代码后再确认。</p>
@@ -129,6 +132,7 @@ export function ItemActions({ meta, run, busy }: ActionProps) {
           <button className="ghost danger" disabled={busy} onClick={() => run(() => api.archive(kind, meta.id))}>归档</button>
         )}
       </div>
+      {onDeleted && <DeleteArchived meta={meta} onDeleted={onDeleted} />}
     </div>
   );
 }
@@ -209,22 +213,5 @@ export function MethodSource({ meta }: { meta: MethodMeta }) {
         ))}
       </ol>
     </div>
-  );
-}
-/** The reusable code templates under a method's code/ directory: what the agent copies into a project and adapts. */
-export function CodeFiles({ meta, files }: { meta: MethodMeta; files: string[] }) {
-  return (
-    <section className="code-files">
-      <h2>代码模板</h2>
-      <p className="muted small">要改的参数集中在脚本开头；复制到课题目录改完再运行，知识库不运行它们。</p>
-      <ul className="links">
-        {files.map((name) => (
-          <li key={name}>
-            <code>{name}</code>
-            <a href={wikiFile(`methods/${meta.id}/code/${name}`)} target="_blank" rel="noreferrer">查看</a>
-          </li>
-        ))}
-      </ul>
-    </section>
   );
 }

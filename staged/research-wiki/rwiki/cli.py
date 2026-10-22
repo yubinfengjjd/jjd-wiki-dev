@@ -12,7 +12,7 @@ from .methods import scaffold_method
 from .lint import lint
 from .layouts import render_layout, verify_layout
 from .store import init, save
-from .suggest import suggest, suggest_pipeline
+from .suggest import suggest, suggest_methods, suggest_pipeline
 from .templates import attach_template, mark_ready, pending, render, scaffold_template, verify_template
 from .usage import record_use
 
@@ -49,7 +49,10 @@ def parser() -> argparse.ArgumentParser:
     selection.add_argument("--all", action="store_true")
     commands.add_parser("save").add_argument("message")
     commands.add_parser("lint")
-    commands.add_parser("pending")
+    commands.add_parser("pending").add_argument('--json', action='store_true')
+    checking = commands.add_parser('check-entry')
+    checking.add_argument('entry_id')
+    checking.add_argument('--record', action='store_true')
     commands.add_parser("serve").add_argument("--no-browser", action="store_true")
     for name in ("verify-template", "verify-layout", "mark-ready"):
         commands.add_parser(name).add_argument("entry_id")
@@ -86,6 +89,10 @@ def parser() -> argparse.ArgumentParser:
     suggesting.add_argument("--columns")
     suggesting.add_argument("--q", default="")
     suggesting.add_argument("--limit", type=int, default=3)
+    method_suggesting = commands.add_parser("suggest-methods")
+    method_suggesting.add_argument("--q", default="")
+    method_suggesting.add_argument("--columns")
+    method_suggesting.add_argument("--limit", type=int, default=3)
     pipeline = commands.add_parser("suggest-pipeline")
     pipeline.add_argument("--figure")
     pipeline.add_argument("--q", default="")
@@ -115,8 +122,31 @@ def main(argv: list[str] | None = None) -> int:
         elif args.command == "serve":
             serve(config, args.no_browser)
         elif args.command == "pending":
-            for entry_id in pending(config):
-                print(entry_id)
+            if args.json:
+                from .workflow import workflow_snapshot
+                print(json.dumps([{'path': path, **item} for path, item in workflow_snapshot(config).items()
+                                  if item['queue'] == 'agent'], ensure_ascii=False, indent=2))
+            else:
+                for entry_id in pending(config):
+                    print(entry_id)
+        elif args.command == 'check-entry':
+            from .acceptance import acceptance_stale, entry_errors, record_acceptance
+            from .pages import read_page, visual_path
+            page = visual_path(config.wiki_root, args.entry_id)
+            meta, _ = read_page(page)
+            content_errors = entry_errors(config, page)
+            stale = meta.get('status') == 'ready' and acceptance_stale(page)
+            errors = content_errors + (['验收记录与当前内容不同，请核对后 --record'] if stale else [])
+            report = {'page': page.relative_to(config.wiki_root).as_posix(), 'passed': not errors,
+                      'errors': errors, 'scope': '结构和当前回放检查，不代替科学审查或作者确认'}
+            if args.record and not content_errors:
+                report['record'] = record_acceptance(config, page)
+                report['passed'] = True
+                report['errors'] = []
+                save(config, f'acceptance check {args.entry_id}')
+            print(json.dumps(report, ensure_ascii=False, indent=2))
+            if errors and not (args.record and not content_errors):
+                return 1
         elif args.command == "scaffold-template":
             scaffold_template(config, args.entry_id, args.chart_type, args.panels.split(","))
         elif args.command == "add-interface":
@@ -141,6 +171,9 @@ def main(argv: list[str] | None = None) -> int:
                                      args.q, args.limit), ensure_ascii=False, indent=2))
         elif args.command == "suggest-pipeline":
             print(json.dumps(suggest_pipeline(config, args.figure, args.q),
+                             ensure_ascii=False, indent=2))
+        elif args.command == "suggest-methods":
+            print(json.dumps(suggest_methods(config, args.q, args.columns, args.limit),
                              ensure_ascii=False, indent=2))
         elif args.command == "contact-sheet":
             print(contact_sheet(config, args.entry_ids, args.out))

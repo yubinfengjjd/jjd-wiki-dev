@@ -1,33 +1,30 @@
-import { isItem, ItemMeta, PageSummary, Status, TemplateMeta } from '../api';
+import { isItem, ItemMeta, PageSummary, Status } from '../api';
+import { methodFigures } from '../figureModels';
 import type { AppData } from '../App';
 import { MethodCard, PlateCard } from '../components';
+import { DeleteArchived } from '../DeleteArchived';
+import { queueOf } from '../workflow';
 
-/** Statuses that put an item on the to-do list (archived items have their own shelf). */
-export const QUEUED = new Set<Status>(['pending_signoff', 'draft', 'pending_template']);
-
-const SECTIONS: { key: string; title: string; hint: string; dot: Status; pick: (m: ItemMeta) => boolean }[] = [
+const SECTIONS: { key: string; title: string; hint: string; dot: Status }[] = [
   {
     key: 'signoff',
     title: '待你签核',
-    hint: '打开整图，把原图和复刻图对照着看一遍，再签核或退回。',
+    hint: '打开选定图样，把原图和复刻图对照着看一遍，再签核或退回。单 panel 可独立签核。',
     dot: 'pending_signoff',
-    pick: (m) => m.status === 'pending_signoff',
   },
   {
     key: 'confirm',
     title: '待你确认',
-    hint: '方法笔记已写好。打开读一遍用途、适用和代码，没问题就确认，有问题写明理由退回。',
+    hint: '方法笔记或已完成回放的模板待你确认。模板请核对回放及数据来源，再在对话中确认，由 agent 标为可用。',
     dot: 'draft',
-    pick: (m) => m.type === 'method' && m.status === 'draft',
   },
   {
     key: 'agent',
     title: '等 agent 处理',
-    hint: '在 Codex 或 Claude Code 里说“处理待办”：签核过的整图会被拆成单图模板并回放，草稿模板等待回放确认。',
+    hint: '只列仍需制作、补齐关联或完成回放的工作。已有模板继续处理；来源与模板不重复计数，等待你确认的内容列在上一栏。',
     dot: 'pending_template',
-    pick: (m) => m.status === 'pending_template' || (m.type !== 'method' && m.status === 'draft'),
   },
-  { key: 'archived', title: '已归档', hint: '不再被推荐。打开详情可以恢复。', dot: 'archived', pick: (m) => m.status === 'archived' },
+  { key: 'archived', title: '已归档', hint: '不再被推荐。可打开详情恢复，或查看删除范围后永久删除 Wiki 条目；原始画廊保留。', dot: 'archived' },
 ];
 
 export function QueueView({ data }: { data: AppData }) {
@@ -42,7 +39,7 @@ export function QueueView({ data }: { data: AppData }) {
         meta={meta}
         number={i + 1}
         outputs={data.flow.outputs(path).map((p) => ({ path: p, title: byPath.get(p)?.meta.title ?? p }))}
-        figures={data.flow.figuresOf(path).map((p) => ({ path: p, meta: byPath.get(p)!.meta as TemplateMeta }))}
+        figures={methodFigures(path, data.pages, data.graph, data.flow)}
       />
     ) : (
       <PlateCard key={path} path={path} meta={meta} number={i + 1} />
@@ -51,8 +48,8 @@ export function QueueView({ data }: { data: AppData }) {
   return (
     <section>
       <h1 className="page-title">待办与归档</h1>
-      {SECTIONS.map(({ key, title, hint, dot, pick }) => {
-        const shown = items.filter((p) => pick(p.meta));
+      {SECTIONS.map(({ key, title, hint, dot }) => {
+        const shown = items.filter((p) => key === 'archived' ? p.meta.status === 'archived' : queueOf(p) === key);
         return (
           <div key={key} className="queue-section">
             <h2>
@@ -61,7 +58,7 @@ export function QueueView({ data }: { data: AppData }) {
               <span className="count">{shown.length}</span>
             </h2>
             <p className="muted">{hint}</p>
-            {shown.length === 0 ? <p className="empty">这一栏是空的。</p> : <div className="grid">{shown.map(card)}</div>}
+            {shown.length === 0 ? <p className="empty">这一栏是空的。</p> : <div className="grid">{shown.map((p, i) => key === 'archived' ? <div className="archived-entry" key={p.path}>{card(p, i)}<DeleteArchived meta={p.meta} onDeleted={data.reload} /></div> : card(p, i))}</div>}
           </div>
         );
       })}

@@ -70,10 +70,15 @@ def new_page(gallery_meta: dict, relative_entry: str, taxonomy: dict) -> tuple[d
     if gallery_meta['post']['title'] is not None:
         title += f" {gallery_meta['post']['title']}"
     entry_id = gallery_meta["id"]
+    # A legacy gallery without an explicit approved_version is not proof of
+    # approval for a new page; the author must sign the current source version.
+    approved = (gallery_meta['status'] == 'approved'
+                and gallery_meta.get('approved_version') == gallery_meta['version'])
     meta = {
         "type": "layout", "id": entry_id, "title": title,
-        "status": "pending_template" if gallery_meta["status"] == "approved" else "pending_signoff",
+        "status": "pending_template" if approved else "pending_signoff",
         "gallery_entry": relative_entry, "gallery_version": gallery_meta["version"],
+        "signedoff_version": gallery_meta['version'] if approved else None,
         "language": gallery_meta["language"],
         "tags": list(dict.fromkeys([
             *(taxonomy.get(key, {'label': key})['label'] for key in
@@ -87,7 +92,7 @@ def new_page(gallery_meta: dict, relative_entry: str, taxonomy: dict) -> tuple[d
     }
     body = (f"# {title}\n\n![[layouts/{entry_id}/thumb.png]]\n\n"
             "<!-- facts:start -->\n<!-- facts:end -->\n\n"
-            "## 适用\n\n## 不适用\n\n"
+            "## 适用\n\n## 不适用\n\n## 知识关联检查\n\n"
             "## 使用记录\n\n<!-- user:start -->\n<!-- user:end -->\n")
     return meta, body
 
@@ -102,11 +107,24 @@ def ingest_entry(config: Config, entry: Path, entry_id: str, taxonomy: dict) -> 
             or not isinstance(value, str) or not value.strip() for letter, value in panel_map.items()):
         raise WikiError(f"缺少或非法 figure.panel_map，请用 sci-figure-replica 补上: {entry_id}")
     path = config.wiki_root / "layouts" / f"{entry_id}.md"
+    if config.single_panel_only and len(panel_map) != 1:
+        # Existing historical records remain untouched, never reactivated by ingest --all.
+        if path.exists() and read_page(path)[0]["status"] == "archived":
+            return
+        raise WikiError("仅收录一个逻辑 panel；请先识别样式、确认代表裁图。整图只保留作溯源。")
     relative_entry = entry.relative_to(config.gallery_root).as_posix()
     if path.exists():
         meta, body = read_page(path)
+        # Reading a source version and author approval are independent facts.
+        # Legacy accepted pages retain their already recorded approval only.
+        # No fallback to gallery_version: a page without an explicit signed
+        # version is not proof that the author approved the version it read.
+        signed = meta.get('signedoff_version')
+        if gallery['status'] == 'approved' and gallery.get('approved_version') == gallery['version']:
+            signed = gallery['version']
+        meta['signedoff_version'] = signed
         if meta["status"] != "archived":
-            if gallery["version"] > meta["gallery_version"] or gallery["status"] != "approved":
+            if signed != gallery['version'] or gallery["status"] != "approved":
                 meta["status"] = "pending_signoff"
             elif meta["status"] == "pending_signoff":
                 meta["status"] = "pending_template"
@@ -134,5 +152,7 @@ def ingest_figure(config: Config, entry_id: str | None = None) -> None:
     else:
         for path in sorted(config.gallery_root.glob("*/figures/*/meta.json")):
             expected_id = f"{path.parents[2].name}__{path.parent.name}"
+            if config.single_panel_only and len(read_json(path)["figure"].get("panel_map", {})) > 1:
+                continue
             ingest_entry(config, path.parent, expected_id, taxonomy)
         save(config, "ingest --all")

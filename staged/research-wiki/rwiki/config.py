@@ -1,5 +1,5 @@
 import json
-from dataclasses import dataclass
+from dataclasses import dataclass, field
 from pathlib import Path
 
 from .errors import WikiError
@@ -13,6 +13,8 @@ class Config:
     python_exe: Path
     rscript_exe: Path
     port: int
+    function_defaults: dict = field(default_factory=dict)
+    single_panel_only: bool = False
 
 
 def read_json(path: Path) -> dict:
@@ -30,7 +32,20 @@ def load_config(path: Path) -> Config:
     missing = [key for key in (*required, "port") if key not in values]
     if missing:
         raise WikiError(f"配置缺少: {', '.join(missing)}")
-    return Config(*(Path(values[key]).resolve() for key in required), port=values["port"])
+    single_only = values.get("single_panel_only", False)
+    if not isinstance(single_only, bool):
+        raise WikiError("single_panel_only 必须是布尔值")
+    defaults = values.get("function_defaults", {})
+    if not isinstance(defaults, dict) or defaults.keys() - {"sizing"}:
+        raise WikiError("function_defaults 只允许 sizing 对象")
+    if defaults:
+        from .sizing import validate_policy
+        try:
+            defaults = {"sizing": validate_policy(defaults.get("sizing"))}
+        except ValueError as error:
+            raise WikiError(str(error)) from error
+    return Config(*(Path(values[key]).resolve() for key in required), port=values["port"],
+                  function_defaults=defaults, single_panel_only=single_only)
 
 
 def load_taxonomy(path: Path) -> dict:

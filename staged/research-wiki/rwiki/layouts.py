@@ -91,7 +91,7 @@ def compose(config: Config, target: Path, data: Path, out: Path, style: Path | N
     for panel in layout["panels"]:
         for name, filename in panel["tables"].items():
             check_table_data(name, specs[panel["letter"]]["tables"][name], data / filename)
-    command = [str(config.python_exe), str(Path(__file__).with_name("compose_runner.py")),
+    command = [str(config.python_exe), "-X", "utf8", str(Path(__file__).with_name("compose_runner.py")),
                "--wiki", str(config.wiki_root), "--layout", str((target / "layout.json").resolve()),
                "--data", str(data.resolve()), "--out", str(out.resolve())]
     if style is not None:
@@ -113,13 +113,15 @@ def render_layout(config: Config, entry_id: str, data: Path, out: Path, style: P
 
 
 def verify_layout(config: Config, entry_id: str) -> tuple[float, Path]:
+    from .verification import start_replay
     target = config.wiki_root / "layouts" / entry_id
     style = target / "example/style.json"
+    inputs = start_replay(target)
     compose(config, target, target / "example", target / "verify", style if style.is_file() else None)
     meta, _ = read_page(target.with_suffix(".md"))
     mean, comparison = compare_images(config.gallery_root / meta["gallery_entry"] / "output/replica.png",
                                       target / "verify/figure.png")
-    record_preview(target, mean)
+    record_preview(target, mean, inputs=inputs, executable=config.python_exe)
     print(f"平均绝对像素差 (0–255): {mean:.6f}\n{comparison}")
     save(config, f"verify {entry_id}")
     return mean, comparison

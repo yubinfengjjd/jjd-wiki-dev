@@ -1,9 +1,12 @@
 import { PointerEvent, ReactNode, useRef, useState } from 'react';
-import { imageOf, ItemMeta, LayoutMeta, MethodMeta, PageType, STATUS_LABEL, Status, TemplateMeta } from './api';
+import { imageOf, previewOf, workflowOf, displayStatus, ItemMeta, LayoutMeta, MethodMeta, PageMeta, PageType, STATUS_LABEL, Status, TemplateMeta } from './api';
 import { pageLink } from './nav';
+import { figureLabel, MethodFigure, methodPlateFigures, SourceLink } from './figureModels';
+import { CodeButton } from './CodeViewer';
+import { COMPATIBILITY_LABEL } from './relations';
 
-export function StatusBadge({ status }: { status: Status }) {
-  return <span className={`badge status-${status}`}>{STATUS_LABEL[status]}</span>;
+export function StatusBadge({ status, label }: { status: Status; label?: string }) {
+  return <span className={`badge status-${status}`}>{label ?? STATUS_LABEL[status]}</span>;
 }
 
 /** The legend mark for a page type: the same disc, square or diamond the graph draws. */
@@ -17,7 +20,7 @@ const HINT: Record<ItemMeta['type'], Partial<Record<Status, string>>> = {
   layout: {
     pending_signoff: '等你对照原图签核。',
     pending_template: '已签核，等 agent 拆成单图模板。',
-    ready: '可以按原版式整张套用。',
+    ready: '可以按已确认的来源范围套用。',
     archived: '已归档，不会被推荐。',
   },
   template: {
@@ -32,7 +35,7 @@ const HINT: Record<ItemMeta['type'], Partial<Record<Status, string>>> = {
   },
 };
 
-export const hintOf = (meta: ItemMeta) => HINT[meta.type][meta.status] ?? STATUS_LABEL[meta.status];
+export const hintOf = (meta: ItemMeta) => workflowOf(meta)?.reason ?? HINT[meta.type][meta.status] ?? STATUS_LABEL[meta.status];
 
 /** The card leans towards the pointer like a plate picked up from the table. */
 function tilt(e: PointerEvent<HTMLElement>) {
@@ -57,10 +60,12 @@ interface CardShell {
   label: string;
   plate: ReactNode;
   back: ReactNode;
+  note?: string;
+  sourceLinks?: SourceLink[];
 }
 
 /** Card stock with a figure plate on the front and a summary on the back. */
-function Card({ path, meta, number, label, plate, back }: CardShell) {
+function Card({ path, meta, number, label, plate, back, note, sourceLinks }: CardShell) {
   const [flipped, setFlipped] = useState(false);
   const plateRef = useRef<HTMLDivElement>(null);
   const link = pageLink(path, () => plateRef.current);
@@ -78,8 +83,9 @@ function Card({ path, meta, number, label, plate, back }: CardShell) {
               <span className="fig-no">{label} {number}</span>
               {meta.title}
             </h3>
+            {note && <p className="caption-note muted small">{note}</p>}
             <div className="caption-foot">
-              <StatusBadge status={meta.status} />
+              <StatusBadge status={workflowOf(meta)?.stage === 'complete' ? 'ready' : meta.status} label={displayStatus(meta)} />
               {'language' in meta && <span className="lang">{LANGUAGE[meta.language] ?? meta.language}</span>}
             </div>
           </div>
@@ -94,6 +100,8 @@ function Card({ path, meta, number, label, plate, back }: CardShell) {
           <a className="button primary" {...link} tabIndex={flipped ? 0 : -1}>打开</a>
         </div>
       </div>
+      {sourceLinks && sourceLinks.length > 1 && <nav className="card-sources small" aria-label="此图样的来源">{sourceLinks.map((s, i) => <a key={s.path} {...pageLink(s.path)} title={s.title}>来源 {i + 1}</a>)}</nav>}
+      <CodeButton meta={meta} className="card-code" />
       <button className="turn" onClick={() => setFlipped(!flipped)} aria-pressed={flipped} aria-label={flipped ? '翻回正面' : '翻到背面'}>
         <svg viewBox="0 0 20 20" aria-hidden="true">
           <path d="M4 7a6 6 0 0 1 11-1.5M16 13a6 6 0 0 1-11 1.5M15 2.5v3.5h-3.5M5 17.5V14h3.5" />
@@ -107,16 +115,32 @@ interface FigureProps {
   path: string;
   meta: LayoutMeta | TemplateMeta;
   number: number;
+  note?: string;
+  asStyle?: boolean;
+  sourceLinks?: SourceLink[];
 }
 
-export function PlateCard({ path, meta, number }: FigureProps) {
+export function FigureImage({ meta }: { meta: PageMeta }) {
+  const src = imageOf(meta);
+  const [failed, setFailed] = useState(false);
+  const preview = previewOf(meta);
+  if (!src || failed) return <span className="preview-empty">暂无预览图</span>;
+  return <>
+    <img key={src} src={src} alt={preview?.label ?? '图样预览'} loading="lazy" onError={() => setFailed(true)} />
+    {meta.type === 'template' && preview?.kind === 'source' && <span className="preview-label">{preview.label}</span>}
+  </>;
+}
+
+export function PlateCard({ path, meta, number, note, asStyle = false, sourceLinks }: FigureProps) {
   return (
     <Card
       path={path}
       meta={meta}
       number={number}
-      label={meta.type === 'layout' ? '图' : '单图'}
-      plate={<img src={imageOf(meta)!} alt="" loading="lazy" />}
+      label={asStyle ? '单 panel 图样' : figureLabel(meta)}
+      note={note}
+      sourceLinks={sourceLinks}
+      plate={<FigureImage key={imageOf(meta)} meta={meta} />}
       back={
         <>
           <dt>图型</dt>
@@ -124,7 +148,7 @@ export function PlateCard({ path, meta, number }: FigureProps) {
           {meta.type === 'layout' && (
             <>
               <dt>面板</dt>
-              <dd>{Object.keys(meta.panels).length} 个，拆成 {meta.templates.length} 个单图模板</dd>
+              <dd>{Object.keys(meta.panels).length} 个逻辑 panel；{meta.templates.length ? `已有 ${meta.templates.length} 个可调用模板` : '可调用模板尚待制作'}</dd>
             </>
           )}
           {meta.type === 'template' && (
@@ -150,7 +174,7 @@ interface MethodProps {
   meta: MethodMeta;
   number: number;
   outputs: { path: string; title: string }[];
-  figures: { path: string; meta: TemplateMeta }[];
+  figures: MethodFigure[];
 }
 
 /** A method's plate is its chain: the tables it writes, flowing into the figures they can draw. */
@@ -166,8 +190,12 @@ export function MethodCard({ path, meta, number, outputs, figures }: MethodProps
         <>
           <dt>输出</dt>
           <dd>{outputs.map((o) => o.title).join('、')}</dd>
-          <dt>可接的图</dt>
-          <dd>{figures.map((f) => f.meta.title).join('、') || '暂无'}</dd>
+          <dt>语义关联图样</dt>
+          <dd>{figures.filter((f) => f.relation === 'semantic').map((f) => `${f.meta.title}（${COMPATIBILITY_LABEL[f.semantic!.compatibility]}）`).join('、') || '暂无'}</dd>
+          <dt>接口结构匹配</dt>
+          <dd>{figures.filter((f) => f.relation === 'compatible').map((f) => f.meta.title).join('、') || '暂无'}</dd>
+          <dt>相关参考图样</dt>
+          <dd>{figures.filter((f) => f.relation === 'reference').map((f) => f.meta.title).join('、') || '暂无'}</dd>
           <dt>引用</dt>
           <dd>{meta.cite.length} 篇</dd>
           <dt>许可证</dt>
@@ -179,15 +207,18 @@ export function MethodCard({ path, meta, number, outputs, figures }: MethodProps
 }
 
 function ChainPlate({ outputs, figures }: Pick<MethodProps, 'outputs' | 'figures'>) {
+  const shown = methodPlateFigures(figures);
   return (
     <div className="chain" aria-hidden="true">
       <span className="chain-fan">
-        {figures.slice(0, 3).map((f, i) => (
-          <img key={f.path} src={imageOf(f.meta)!} alt="" loading="lazy" style={{ ['--i' as string]: i - (Math.min(figures.length, 3) - 1) / 2 }} />
+        {shown.map((f, i) => (
+          <img key={f.path} src={imageOf(f.meta)!} alt={f.meta.title} loading="lazy" style={{ ['--i' as string]: i - (shown.length - 1) / 2 }} />
         ))}
       </span>
+      {figures.length === 0 && <span className="chain-empty">尚无关联图样<br />文字方法笔记</span>}
+      {shown.length > 0 && <span className="chain-ref-label">{shown[0].relation === 'semantic' ? COMPATIBILITY_LABEL[shown[0].semantic!.compatibility] : shown[0].relation === 'compatible' ? '接口结构匹配' : '参考图样'} · {displayStatus(shown[0].meta)}</span>}
       <span className="chain-out">
-        <span className="chain-arrow" />
+        {outputs.length > 0 && <span className="chain-arrow" />}
         {outputs.map((o) => (
           <span key={o.path} className="chain-tag">
             <TypeMark type="interface" />

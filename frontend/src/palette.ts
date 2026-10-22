@@ -1,4 +1,4 @@
-import type { PageType, Status } from './api';
+import type { Compatibility, PageType, Status } from './api';
 
 /**
  * Journal-figure palette. Green marks what is alive (chart-type hubs, usable items),
@@ -25,6 +25,12 @@ export const STATUS_COLOR: Record<Status, string> = {
   draft: INK.ochre,
   ready: INK.hub,
   archived: INK.faint,
+};
+
+export const COMPATIBILITY_COLOR: Record<Compatibility, string> = {
+  direct: INK.hub,
+  adaptable: INK.ochre,
+  candidate: INK.slate,
 };
 
 export const TYPE_COLOR: Record<PageType, string> = {
