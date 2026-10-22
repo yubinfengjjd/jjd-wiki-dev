@@ -69,6 +69,7 @@ def confirm_method(config: Config, id: str) -> None:
     errors = entry_errors(config, page)
     if errors:
         raise WikiError('入库验收未通过：' + '；'.join(errors))
+    # Receipt first (status is outside the snapshot): a failure never leaves a ready page without one.
+    record_acceptance(config, page)
     meta["status"] = "ready"
     write_page(page, meta, body)
-    record_acceptance(config, page)

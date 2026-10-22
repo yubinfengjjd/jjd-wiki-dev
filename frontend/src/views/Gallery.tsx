@@ -1,5 +1,5 @@
 import { useEffect, useMemo, useRef, useState } from 'react';
-import { GraphNode, LayoutMeta, STATUS_LABEL, Status, TemplateMeta, TYPE_LABEL, workflowOf } from '../api';
+import { GraphNode, LayoutMeta, stageStatus, TemplateMeta, TYPE_LABEL, workflowOf } from '../api';
 import type { AppData } from '../App';
 import { PlateCard } from '../components';
 import { Lattice } from '../hero/Lattice';
@@ -19,26 +19,24 @@ type Shelf = FigureShelf;
 type FigureMeta = LayoutMeta | TemplateMeta;
 
 const EMPTY: Filters = { q: '', tag: '', chart: '', language: '', status: '', favorite: false };
-const PIPELINE: Record<Shelf, Status[]> = {
-  single: ['pending_signoff', 'pending_template', 'ready'],
-  template: ['draft', 'ready'],
-};
 const SHELVES: [Shelf, string][] = [
   ['single', '单 panel 图样'],
   ['template', '可调用模板'],
 ];
-const SOURCE_STAGES: [string, string][] = [
-  ['signoff', '待签核'], ['template_missing', '待补齐模板'], ['template_work', '模板制作中'],
-  ['template_confirm', '模板待你确认'], ['complete', '模板已就绪'],
-];
+// Census and status filter use the backend workflow stage, the same derivation as the queue.
+const STAGES: Record<Shelf, [string, string][]> = {
+  single: [['signoff', '待签核'], ['template_missing', '待补齐模板'], ['template_work', '模板制作中'],
+    ['template_confirm', '模板待你确认'], ['layout_work', '待核查版式'], ['complete', '模板已就绪']],
+  template: [['template_work', '待完成回放'], ['template_confirm', '待你确认'], ['complete', '可用']],
+};
 
-const progressOf = (meta: FigureMeta, shelf: Shelf) => shelf === 'single' ? workflowOf(meta)?.stage ?? (meta.status === 'ready' ? 'complete' : meta.status) : meta.status;
+const progressOf = (meta: FigureMeta) => workflowOf(meta)?.stage ?? (meta.status === 'ready' ? 'complete' : meta.status);
 
-function matches(meta: FigureMeta, f: Filters, shelf: Shelf): boolean {
+function matches(meta: FigureMeta, f: Filters): boolean {
   if (f.tag && !meta.tags.includes(f.tag)) return false;
   if (f.chart && !meta.chart_types.includes(f.chart)) return false;
   if (f.language && meta.language !== f.language) return false;
-  if (f.status && progressOf(meta, shelf) !== f.status) return false;
+  if (f.status && progressOf(meta) !== f.status) return false;
   if (f.favorite && !meta.favorite) return false;
   if (!f.q) return true;
   const haystack = [meta.title, ...meta.tags, ...meta.chart_types]
@@ -83,8 +81,8 @@ export function Gallery({ data }: { data: AppData }) {
 
   const entries = useMemo(() => galleryEntries(data.pages), [data.pages]);
   const templates = entries[shelf];
-  const stages: [string, string][] = shelf === 'single' ? SOURCE_STAGES : PIPELINE.template.map((s) => [s, STATUS_LABEL[s]]);
-  const shown = templates.filter((t) => matches(t.meta, f, shelf));
+  const stages = STAGES[shelf];
+  const shown = templates.filter((t) => matches(t.meta, f));
   const pickShelf = (next: Shelf) => {
     setShelf(next);
     // Status values differ per shelf, so a status filter would silently hide everything.
@@ -104,10 +102,10 @@ export function Gallery({ data }: { data: AppData }) {
             {stages.map(([s, label]) => (
               <div key={s}>
                 <dt>
-                  <span className={`dot status-${s}`} aria-hidden="true" />
+                  <span className={`dot status-${stageStatus(s) ?? s}`} aria-hidden="true" />
                   {label}
                 </dt>
-                <dd>{templates.filter((t) => progressOf(t.meta, shelf) === s).length}</dd>
+                <dd>{templates.filter((t) => progressOf(t.meta) === s).length}</dd>
               </div>
             ))}
           </dl>

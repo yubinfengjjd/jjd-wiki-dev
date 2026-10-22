@@ -215,6 +215,7 @@ export class Lattice {
     this.model.traverse((o) => (o as THREE.Mesh).geometry?.dispose());
     for (const m of [this.lineMat, this.guideMat, this.pointMat]) m.dispose();
     this.renderer.dispose();
+    this.renderer.forceContextLoss(); // the gallery remounts this on every visit
     this.host.replaceChildren();
   }
 

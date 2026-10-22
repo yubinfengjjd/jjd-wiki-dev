@@ -780,7 +780,6 @@ input[type='checkbox'] {
 .shelf-help { margin: 12px 0 20px; }
 .chain-ref-label { font-size: 11px; color: var(--muted); }
 .chain-empty { position: absolute; inset: 25% 12px auto; text-align: center; color: var(--muted); font-size: 13px; }
-.method-figures { margin: 26px 0; }
 .method-figure-grid { display: grid; grid-template-columns: repeat(auto-fit, minmax(180px, 1fr)); gap: 16px; }
 .method-figure-link { display: grid; gap: 8px; align-content: start; }
 .method-figure-link .plate { height: 150px; aspect-ratio: auto; }
@@ -1408,8 +1407,7 @@ button.chip.toggle.on {
   color: var(--ink);
 }
 
-.interface-row code,
-.csv code {
+.interface-row code {
   font-family: 'Cascadia Code', Consolas, monospace;
   font-size: 12px;
   color: var(--muted);
@@ -1453,21 +1451,18 @@ button.chip.toggle.on {
 /* The chain around one page, at the top of method, template and interface pages */
 
 .chain-strip,
-.panel-set,
-.examples {
+.panel-set {
   margin: 28px 0 8px;
 }
 
 .chain-strip h2,
-.panel-set h2,
-.examples h2 {
+.panel-set h2 {
   font-size: 20px;
   padding-bottom: 6px;
   border-bottom: 1px solid var(--rule);
 }
 
-.chain-strip > p,
-.examples > p {
+.chain-strip > p {
   margin: 8px 0 0;
 }
 
@@ -1600,37 +1595,6 @@ a.chain-item:hover {
   font-family: var(--serif);
   font-weight: 600;
   letter-spacing: 0.06em;
-}
-
-.csv {
-  margin: 18px 0 0;
-}
-
-.csv figcaption {
-  margin-bottom: 6px;
-}
-
-.csv-scroll {
-  overflow-x: auto;
-}
-
-.csv table {
-  border-collapse: collapse;
-  font-size: 13px;
-}
-
-.csv th,
-.csv td {
-  padding: 5px 16px 5px 0;
-  border-bottom: 1px solid var(--rule);
-  text-align: left;
-  white-space: nowrap;
-}
-
-.csv th {
-  font-family: 'Cascadia Code', Consolas, monospace;
-  font-weight: 600;
-  border-bottom-color: var(--ink);
 }
 
 .facts dd.warn {
@@ -1777,19 +1741,8 @@ a.chain-item:hover {
   }
 }
 
-.facts.report {
-  grid-template-columns: repeat(auto-fill, minmax(190px, 1fr));
-  gap: 6px 24px;
-  max-width: 42em;
-}
-
-.facts.report div {
-  display: flex;
-  justify-content: space-between;
-  gap: 12px;
-  padding: 3px 0;
-  border-bottom: 1px solid var(--rule);
-}
+.hidden-sources { margin-top: 18px; }
+.hidden-sources li { justify-content: space-between; }
 
 .preview-empty { display: flex; align-items: center; justify-content: center; width: 100%; min-height: 10rem; color: var(--muted, #687482); }
 .preview-label { position: absolute; left: .5rem; bottom: .5rem; padding: .25rem .45rem; background: rgba(255,255,255,.94); color: #536573; font: 12px/1.4 sans-serif; border-radius: 3px; }

@@ -1,5 +1,5 @@
 import { PointerEvent, ReactNode, useRef, useState } from 'react';
-import { imageOf, previewOf, workflowOf, displayStatus, ItemMeta, LayoutMeta, MethodMeta, PageMeta, PageType, STATUS_LABEL, Status, TemplateMeta } from './api';
+import { imageOf, previewOf, workflowOf, displayStatus, effectiveStatus, ItemMeta, LayoutMeta, MethodMeta, PageMeta, PageType, STATUS_LABEL, Status, TemplateMeta } from './api';
 import { pageLink } from './nav';
 import { figureLabel, MethodFigure, methodPlateFigures, SourceLink } from './figureModels';
 import { CodeButton } from './CodeViewer';
@@ -85,7 +85,7 @@ function Card({ path, meta, number, label, plate, back, note, sourceLinks }: Car
             </h3>
             {note && <p className="caption-note muted small">{note}</p>}
             <div className="caption-foot">
-              <StatusBadge status={workflowOf(meta)?.stage === 'complete' ? 'ready' : meta.status} label={displayStatus(meta)} />
+              <StatusBadge status={effectiveStatus(meta)} label={displayStatus(meta)} />
               {'language' in meta && <span className="lang">{LANGUAGE[meta.language] ?? meta.language}</span>}
             </div>
           </div>
@@ -127,7 +127,7 @@ export function FigureImage({ meta }: { meta: PageMeta }) {
   if (!src || failed) return <span className="preview-empty">暂无预览图</span>;
   return <>
     <img key={src} src={src} alt={preview?.label ?? '图样预览'} loading="lazy" onError={() => setFailed(true)} />
-    {meta.type === 'template' && preview?.kind === 'source' && <span className="preview-label">{preview.label}</span>}
+    {meta.type === 'template' && (preview?.kind === 'source' || preview?.kind === 'stale') && <span className="preview-label">{preview.label}</span>}
   </>;
 }
 
@@ -208,11 +208,12 @@ export function MethodCard({ path, meta, number, outputs, figures }: MethodProps
 
 function ChainPlate({ outputs, figures }: Pick<MethodProps, 'outputs' | 'figures'>) {
   const shown = methodPlateFigures(figures);
+  const pictured = shown.flatMap((f) => { const src = imageOf(f.meta); return src ? [{ f, src }] : []; });
   return (
     <div className="chain" aria-hidden="true">
       <span className="chain-fan">
-        {shown.map((f, i) => (
-          <img key={f.path} src={imageOf(f.meta)!} alt={f.meta.title} loading="lazy" style={{ ['--i' as string]: i - (shown.length - 1) / 2 }} />
+        {pictured.map(({ f, src }, i) => (
+          <img key={f.path} src={src} alt={f.meta.title} loading="lazy" style={{ ['--i' as string]: i - (pictured.length - 1) / 2 }} />
         ))}
       </span>
       {figures.length === 0 && <span className="chain-empty">尚无关联图样<br />文字方法笔记</span>}

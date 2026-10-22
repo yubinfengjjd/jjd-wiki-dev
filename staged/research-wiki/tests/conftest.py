@@ -50,7 +50,8 @@ def complete_sections(path):
         if not content:
             note = '隔离软件夹具的说明；不代表科学有效或真实课题结果。'
             if heading == '知识关联检查':
-                note = '检查范围：本隔离夹具已有方法与图样；按各测试声明关系，无其他科学关联。'
+                note = ('检查范围：本隔离夹具已有方法与图样；按各测试声明关系，无其他科学关联。'
+                        '无图原因：夹具未提供对应模板时不配图。')
             marker = f'## {heading}\n'
             if marker in body:
                 body = body.replace(marker, marker + '\n' + note + '\n', 1)
@@ -67,6 +68,12 @@ def seal_replay(target):
     for ext in ('png', 'pdf', 'svg'):
         (target / f'verify/figure.{ext}').write_bytes(raw)
     record_preview(target)
+
+
+def record_ready_receipt(config, page):
+    """A fixture page written as ready gets the receipt mark-ready would have recorded."""
+    from rwiki.acceptance import record_acceptance
+    record_acceptance(config, page)
 
 
 def write_interface(root, slug, columns, title="数值接口"):
@@ -201,6 +208,7 @@ plt.close(fig)
         Image.new("RGB", (8, 8), color).save(target / "preview.png")
         complete_sections(target.with_suffix('.md'))
         seal_replay(target)
+        record_ready_receipt(config, target.with_suffix('.md'))
     target = root / "layouts" / ENTRY_ID
     (target / "example").mkdir()
     (target / "example/values.csv").write_text("value\n2\n", encoding="utf-8")

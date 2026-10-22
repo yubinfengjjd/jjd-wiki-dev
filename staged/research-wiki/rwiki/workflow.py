@@ -1,15 +1,13 @@
 """Read-only remaining actions. Persistent signoff states are never rewritten here."""
 from pathlib import Path
 
-from .catalog import page_paths
-from .pages import read_page
-from .verification import replay_available
+from .catalog import readable_pages
 from .acceptance import entry_errors, acceptance_stale
 
 
 def workflow_snapshot(config) -> dict[str, dict]:
     root = config.wiki_root
-    records = {p.relative_to(root).as_posix(): read_page(p)[0] for p in page_paths(root)}
+    records = {p.relative_to(root).as_posix(): meta for p, meta in readable_pages(root)}
     result = {}
 
     def put(path, stage, queue, label, reason, templates=()):
@@ -44,12 +42,15 @@ def workflow_snapshot(config) -> dict[str, dict]:
     for path, meta in records.items():
         if meta.get('type') != 'layout' or meta.get('status') == 'archived':
             continue
-        if meta['status'] == 'pending_signoff':
+        if meta.get('status') == 'pending_signoff':
             put(path, 'signoff', 'signoff', '待签核', '来源图样或新版本仍待作者签核。')
             continue
-        if meta['status'] == 'ready':
+        if meta.get('status') == 'ready':
             from .templates import layout_ready_errors
-            errors = layout_ready_errors(config, meta)
+            try:
+                errors = layout_ready_errors(config, meta)
+            except (KeyError, TypeError, ValueError, OSError) as error:
+                errors = [f'版式元数据无效: {error}']
             if errors:
                 put(path, 'layout_work', 'agent', '待核查版式', '；'.join(errors),
                     [f'templates/{tid}.md' for tid in meta.get('templates', [])])
@@ -59,9 +60,9 @@ def workflow_snapshot(config) -> dict[str, dict]:
                     '验收记录与当前内容不同，请 check-entry --record',
                     [f'templates/{tid}.md' for tid in meta.get('templates', [])])
                 continue
-        panels = meta.get('panels', {})
-        tids = meta.get('templates', [])
-        mapping = meta.get('template_panels', {})
+        panels = meta.get('panels') if isinstance(meta.get('panels'), dict) else {}
+        tids = meta.get('templates') if isinstance(meta.get('templates'), list) else []
+        mapping = meta.get('template_panels') if isinstance(meta.get('template_panels'), dict) else {}
         covered, active = [], []
         invalid = set(mapping) != set(tids)
         for tid in tids:

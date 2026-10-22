@@ -8,7 +8,8 @@ const reduced = () => matchMedia('(prefers-reduced-motion: reduce)').matches;
  * element passed as `from` morphs into the page's figure plate (View Transitions).
  */
 export async function openPage(path: string, from?: HTMLElement) {
-  await api.page(path);
+  // A failed prefetch still navigates; the page view shows the error instead of a dead click.
+  await api.page(path).catch(() => undefined);
   const go = () => {
     location.hash = pageHref(path);
   };

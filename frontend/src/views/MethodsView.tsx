@@ -1,16 +1,21 @@
-import { InterfaceMeta, MethodMeta, PageSummary, STATUS_LABEL, Status } from '../api';
+import { InterfaceMeta, isItem, MethodMeta, PageSummary, stageStatus, workflowOf } from '../api';
 import type { AppData } from '../App';
 import { MethodCard, TypeMark } from '../components';
 import { pageLink } from '../nav';
 import { methodFigures } from '../figureModels';
 
-const PIPELINE: Status[] = ['draft', 'ready'];
+// Same workflow stages as the queue, not the stored status.
+const STAGES: [string, string][] = [['method_work', '待完善笔记'], ['method_confirm', '待你确认'], ['complete', '可用']];
 
 export function MethodsView({ data }: { data: AppData }) {
   const byPath = new Map(data.pages.map((p) => [p.path, p]));
   const methods = data.pages.filter((p): p is PageSummary<MethodMeta> => p.meta.type === 'method' && p.meta.status !== 'archived');
   const interfaces = data.pages.filter((p): p is PageSummary<InterfaceMeta> => p.meta.type === 'interface');
   const title = (path: string) => byPath.get(path)?.meta.title ?? path;
+  const live = (paths: string[]) => paths.filter((path) => {
+    const meta = byPath.get(path)?.meta;
+    return meta !== undefined && (!isItem(meta) || meta.status !== 'archived');
+  });
 
   return (
     <section className="methods">
@@ -21,13 +26,13 @@ export function MethodsView({ data }: { data: AppData }) {
             每个方法家族写清目的、适用前提、原始实现与未验证分支。agent 先读当前课题的计划、数据和结果，再找有依据的方法与图样；选定后在课题环境适配和运行。页面可用、代码存在与运行验证分别记录。
           </p>
           <dl className="census">
-            {PIPELINE.map((s) => (
+            {STAGES.map(([s, label]) => (
               <div key={s}>
                 <dt>
-                  <span className={`dot status-${s}`} aria-hidden="true" />
-                  {STATUS_LABEL[s]}
+                  <span className={`dot status-${stageStatus(s)}`} aria-hidden="true" />
+                  {label}
                 </dt>
-                <dd>{methods.filter((m) => m.meta.status === s).length}</dd>
+                <dd>{methods.filter((m) => (workflowOf(m.meta)?.stage ?? (m.meta.status === 'ready' ? 'complete' : 'method_work')) === s).length}</dd>
               </div>
             ))}
           </dl>
@@ -74,13 +79,13 @@ export function MethodsView({ data }: { data: AppData }) {
               </div>
               <p className="flowline">
                 <span>
-                  {data.flow.inputs(p.path).map((m) => (
+                  {live(data.flow.inputs(p.path)).map((m) => (
                     <a key={m} {...pageLink(m)}>{title(m)}</a>
                   ))}
                 </span>
                 <span className="arrow" aria-label="输出给" />
                 <span>
-                  {data.flow.outputs(p.path).map((t) => (
+                  {live(data.flow.outputs(p.path)).map((t) => (
                     <a key={t} {...pageLink(t)}>{title(t)}</a>
                   ))}
                 </span>

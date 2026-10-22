@@ -239,9 +239,13 @@ def mark_ready(config: Config, entry_id: str) -> None:
             raise WikiError('入库验收未通过：' + '；'.join(errors))
         start, end = section_bounds(body, "数据要求")
         body = body[:start] + "\n" + requirements_markdown(spec) + "\n" + body[end:]
-        heading_end = body.index("\n") + 1
-        body = body[:heading_end] + f"\n![[templates/{entry_id}/preview.png]]\n" + body[heading_end:]
-    meta["status"] = "ready"
+        embed = f"![[templates/{entry_id}/preview.png]]"
+        if embed not in body:
+            heading_end = body.index("\n") + 1
+            body = body[:heading_end] + f"\n{embed}\n" + body[heading_end:]
+    # Receipt first (status is outside the snapshot): a failure never leaves a ready page without one.
     write_page(page, meta, body)
     record_acceptance(config, page)
+    meta["status"] = "ready"
+    write_page(page, meta, body)
     save(config, f"ready {entry_id}")

@@ -5,7 +5,7 @@ from .config import Config, read_json
 from .errors import WikiError
 from .links import extract_links, resolve
 from .layouts import load_layout
-from .pages import block_error, get_block, parse_page
+from .pages import block_error, get_block, parse_page, section_text
 from .interfaces import load_interface
 from .spec import load_spec
 from .facts import page_facts
@@ -37,6 +37,11 @@ def metadata_errors(meta: dict) -> list[str]:
         errors.append(f"status 非法: {status}")
     if status == "archived" and "archived_from" not in meta:
         errors.append("缺少必需键 archived_from")
+    if page_type == "template" and "layouts" in meta and (
+            not isinstance(meta["layouts"], list) or not meta["layouts"]
+            or any(not isinstance(item, str) or not item.strip() for item in meta["layouts"])):
+        # Templates only come from a replicated source (scaffold-template / attach-template).
+        errors.append("模板必须记录至少一个来源版式 layouts；不能手工新建无来源模板")
     if page_type == "method":
         source = meta.get("source")
         fields = {"post": ("gallery_entry",), "project": ("path",), "repo": ("url", "commit"), "written": ()}
@@ -122,6 +127,31 @@ def adaptable_interface_diagnostics(config: Config, path, meta: dict, body: str)
     return findings
 
 
+NO_FIGURE_NOTE = "无图原因"
+
+
+def figureless_method_diagnostics(config: Config, meta: dict, body: str) -> list[tuple[str, str]]:
+    """A ready method with outputs but no template at all must say why in its review section."""
+    outputs = set(meta.get("outputs") or [])
+    if not outputs:
+        return []
+    from .facts import declarations, table_interfaces
+    structural = [tid for tid, (tm, spec) in declarations(config.wiki_root, "templates").items()
+                  if tm.get("status") != "archived" and table_interfaces(spec)
+                  and table_interfaces(spec) <= outputs]
+    related = [r for r in meta.get("figure_relations") or []
+               if isinstance(r, dict) and str(r.get("figure", "")).startswith("templates/")]
+    if structural or related:
+        return []
+    try:
+        review = section_text(body, "知识关联检查")
+    except WikiError:
+        review = ""
+    if NO_FIGURE_NOTE in review:
+        return []
+    return [("WARN", f"方法输出接口没有结构匹配模板，也没有语义模板关系；请在知识关联检查写“{NO_FIGURE_NOTE}：…”")]
+
+
 def visual_diagnostics(config: Config, path, meta: dict, body: str,
                        valid_metadata: dict) -> list[tuple[str, str]]:
     diagnostics = layout_diagnostics(config, meta) if meta["type"] == "layout" else []
@@ -187,7 +217,8 @@ def lint(config: Config) -> list[str]:
     for path, meta, body, errors in parsed_pages:
         if not errors:
             if meta["type"] == "method" and meta.get("status") == "ready":
-                for level, message in adaptable_interface_diagnostics(config, path, meta, body):
+                for level, message in (adaptable_interface_diagnostics(config, path, meta, body)
+                                       + figureless_method_diagnostics(config, meta, body)):
                     report(level, path, message)
             if meta["type"] in ("layout", "template", "method", "interface"):
                 findings = asset_diagnostics(config, path, meta)

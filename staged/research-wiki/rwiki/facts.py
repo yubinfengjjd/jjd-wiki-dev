@@ -3,18 +3,28 @@
 from urllib.parse import quote
 
 from .config import Config, read_json
+from .errors import WikiError
 from .interfaces import load_interface
 from .pages import read_page, set_block, write_page
 from .relations import COMPATIBILITY_LABELS, relations_for
 
 
 def declarations(root, kind: str) -> dict:
-    if kind == "methods":
-        return {path.stem: (meta, meta) for path in sorted((root / kind).glob("*.md"))
-                for meta in [read_page(path)[0]]}
-    return {path.stem: (read_page(path)[0], read_json(path.with_suffix("") / "spec.json"))
-            for path in sorted((root / kind).glob("*.md"))
-            if (path.with_suffix("") / "spec.json").is_file()}
+    """Readable method metas, or template metas with their spec; broken pages are lint's job."""
+    result = {}
+    for path in sorted((root / kind).glob("*.md")):
+        try:
+            meta = read_page(path)[0]
+            if kind == "methods":
+                if isinstance(meta.get("outputs"), list) and isinstance(meta.get("inputs"), list):
+                    result[path.stem] = (meta, meta)
+            elif (path.with_suffix("") / "spec.json").is_file():
+                spec = read_json(path.with_suffix("") / "spec.json")
+                if isinstance(spec, dict) and isinstance(spec.get("tables"), dict):
+                    result[path.stem] = (meta, spec)
+        except WikiError:
+            continue
+    return result
 
 
 def table_interfaces(spec: dict) -> set[str]:
@@ -124,9 +134,10 @@ def interface_facts(config: Config, meta: dict) -> str:
     slug = meta["slug"]
     methods = declarations(config.wiki_root, "methods")
     templates = declarations(config.wiki_root, "templates")
-    producers = [page_link("methods", mm) for mm, method in methods.values() if slug in method["outputs"]]
-    readers = [page_link("methods", mm) for mm, method in methods.values() if slug in input_interfaces(method)]
-    figures = [page_link("templates", tm) for tm, spec in templates.values() if slug in table_interfaces(spec)]
+    live = lambda pairs: [(m, d) for m, d in pairs if m.get("status") != "archived"]
+    producers = [page_link("methods", mm) for mm, method in live(methods.values()) if slug in method["outputs"]]
+    readers = [page_link("methods", mm) for mm, method in live(methods.values()) if slug in input_interfaces(method)]
+    figures = [page_link("templates", tm) for tm, spec in live(templates.values()) if slug in table_interfaces(spec)]
     lines = ["\n| 列 | 类型 | 含义 |", "|---|---|---|"]
     for name, column in meta["columns"].items():
         lines.append(f"| {name} | {column['type']} | {column['description']} |")
@@ -149,8 +160,16 @@ def page_facts(config: Config, meta: dict) -> str:
 
 
 def refresh_facts(config: Config) -> None:
+    # Render every page before writing any, so a failure leaves no half-refreshed set.
+    # A page that cannot be read or rendered is skipped here and reported by lint,
+    # instead of blocking every save in the Wiki.
+    updates = []
     for kind in ("layouts", "templates", "methods", "interfaces"):
         for path in sorted((config.wiki_root / kind).glob("*.md")):
-            meta, body = read_page(path)
-            body = set_block(body, "facts", page_facts(config, meta))
-            write_page(path, meta, body)
+            try:
+                meta, body = read_page(path)
+                updates.append((path, meta, set_block(body, "facts", page_facts(config, meta))))
+            except (WikiError, KeyError, TypeError, ValueError, OSError):
+                continue
+    for path, meta, body in updates:
+        write_page(path, meta, body)

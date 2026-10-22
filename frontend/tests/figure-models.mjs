@@ -20,7 +20,8 @@ import {adaptableTemplateRelations} from './src/relations';
 import {Chain} from './src/views/Chain';
 import {Gallery} from './src/views/Gallery';
 import {Flow} from './src/flow';
-import {api} from './src/api';
+import {api,effectiveStatus,safeUrl} from './src/api';
+import {withoutLeadEmbeds} from './src/markdown';
 const source=(id,tid='shared')=>({path:'layouts/'+id+'.md',meta:{type:'layout',id,title:id,status:'pending_template',
  language:'python',tags:[],favorite:false,panels:{A:'bar'},chart_types:['bar'],templates:[tid],template_panels:{[tid]:['A']}},
  workflow:{stage:'complete',queue:null,label:'模板已就绪',templates:[]}});
@@ -69,7 +70,20 @@ async function main(){
   detailOf={(p)=>p.startsWith('templates/')?'读取：Example interface':''}/>);
  assert.ok(chainHtml.includes('读取：Example interface'));
  assert.ok(chainHtml.includes('chain-detail'));
- console.log('figure models and Gallery SSR: 20 checks passed');
+ // 2026-10-22 review: one derived status for every badge/ring; a stale workflow is never shown as ready.
+ const tmeta=items[2].meta;
+ assert.equal(effectiveStatus(tmeta,{stage:'complete',queue:null,label:'',reason:'',templates:[]}),'ready');
+ assert.equal(effectiveStatus(tmeta,{stage:'template_work',queue:'agent',label:'',reason:'',templates:[]}),'pending_template');
+ assert.equal(effectiveStatus({...tmeta,status:'draft'},{stage:'template_confirm',queue:'confirm',label:'',reason:'',templates:[]}),'draft');
+ assert.equal(effectiveStatus(items[0].meta,{stage:'layout_work',queue:'agent',label:'',reason:'',templates:[]}),'pending_template');
+ assert.equal(effectiveStatus(tmeta,null),'ready');
+ assert.equal(safeUrl('javascript:alert(1)'),null);
+ assert.equal(safeUrl('data:text/html,x'),null);
+ assert.equal(safeUrl(' https://example.org/a '),'https://example.org/a');
+ const lead='# T\\n\\n![[templates/t/preview.png]]\\n\\n![[templates/t/preview.png]]\\n\\n正文\\n\\n![[layouts/x/figure.png]]\\n';
+ assert.equal(withoutLeadEmbeds(lead),'# T\\n\\n正文\\n\\n![[layouts/x/figure.png]]\\n');
+ assert.equal(withoutLeadEmbeds('# T\\n\\n正文\\n![[a.png]]\\n'),'# T\\n\\n正文\\n![[a.png]]\\n');
+ console.log('figure models and Gallery SSR: 30 checks passed');
 }
 main().catch(e=>{console.error(e);process.exit(1)});
 `,resolveDir:root,loader:'tsx'},outfile,bundle:true,platform:'node',format:'cjs',jsx:'automatic',target:'node22',logLevel:'silent'});

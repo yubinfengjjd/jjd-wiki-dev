@@ -4,7 +4,8 @@ from datetime import date
 import pytest
 from PIL import Image
 
-from conftest import ENTRY_ID, commit_count, run_cli, update_gallery, write_interface, complete_sections, seal_replay
+from conftest import (ENTRY_ID, commit_count, run_cli, update_gallery, write_interface, complete_sections,
+                      record_ready_receipt, seal_replay)
 from rwiki.ingest import ingest_figure
 from rwiki.pages import get_block, read_page, set_block, write_page
 from rwiki.store import git, save
@@ -52,6 +53,7 @@ def candidates(workspace):
         Image.new("RGB", size, color).save(target / "preview.png")
         complete_sections(target.with_suffix('.md'))
         seal_replay(target)
+        record_ready_receipt(config, target.with_suffix('.md'))
     for entry_id, status in (("waiting", "draft"), ("retired", "archived")):
         meta = dict(meta, id=entry_id, title="0 不可推荐", status=status)
         if status == "archived":
@@ -172,6 +174,7 @@ def test_suggest_and_use_layout_alongside_templates(candidates, tmp_path):
     (target / 'layout.json').write_text(json.dumps(layout), encoding='utf-8')
     complete_sections(page)
     seal_replay(target)
+    record_ready_receipt(config, page)
     result = suggestions(path, "--columns", "feature,shap", "--limit", "4")
     layout = next(item for item in result if item["id"] == ENTRY_ID)
     assert layout["kind"] == "layout" and layout["templates"] == ["alpha", "beta"]

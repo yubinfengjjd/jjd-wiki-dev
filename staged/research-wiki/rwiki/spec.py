@@ -7,13 +7,20 @@ from .errors import WikiError
 from .interfaces import load_interface
 
 
+def _inside(template_dir: Path, value) -> bool:
+    """A spec file reference must stay inside the template's own asset folder."""
+    return (isinstance(value, str) and not Path(value).anchor
+            and (template_dir / value).resolve().is_relative_to(template_dir.resolve())
+            and (template_dir / value).is_file())
+
+
 def load_spec(template_dir: Path) -> dict:
     spec = read_json(template_dir / "spec.json")
     if not isinstance(spec, dict):
         raise WikiError("spec 必须是对象")
     entry = spec.get("entry")
-    if not isinstance(entry, str) or not (template_dir / entry).is_file():
-        raise WikiError(f"spec.entry 文件不存在: {entry}")
+    if not _inside(template_dir, entry):
+        raise WikiError(f"spec.entry 文件不存在或越出模板目录: {entry}")
     language = spec.get("language")
     if language not in ("python", "r"):
         raise WikiError(f"spec.language 非法: {language}")
@@ -22,8 +29,8 @@ def load_spec(template_dir: Path) -> dict:
         raise WikiError(f"spec.language 与 entry 扩展名不一致: {language} / {entry}")
     if language == "python":
         panel = spec.get("panel")
-        if not isinstance(panel, str) or not (template_dir / panel).is_file():
-            raise WikiError(f"spec.panel 文件不存在: {panel}")
+        if not _inside(template_dir, panel):
+            raise WikiError(f"spec.panel 文件不存在或越出模板目录: {panel}")
         if not (template_dir / "code/__init__.py").is_file():
             raise WikiError("Python code 必须为包，缺少 code/__init__.py")
     elif "panel" in spec:

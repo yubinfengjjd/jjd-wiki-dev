@@ -1,4 +1,4 @@
-import { MethodMeta, PageSummary, displayStatus, imageOf, workflowOf, wikiFile } from '../api';
+import { MethodMeta, PageSummary, displayStatus, effectiveStatus, imageOf, wikiFile } from '../api';
 import { StatusBadge, FigureImage } from '../components';
 import { MethodFigure, methodDisplayFigures, templateSourceNote } from '../figureModels';
 import { pageLink } from '../nav';
@@ -34,7 +34,7 @@ export function MethodOverview({ meta, body, figures, pages, hiddenSources }: Pr
           <span className="plate"><FigureImage key={imageOf(f.meta)} meta={f.meta} /></span>
           <strong>{f.meta.title}</strong>
         </a>
-        <div className="method-visual-badges"><StatusBadge status={workflowOf(f.meta)?.stage === 'complete' ? 'ready' : f.meta.status} label={displayStatus(f.meta)} />
+        <div className="method-visual-badges"><StatusBadge status={effectiveStatus(f.meta)} label={displayStatus(f.meta)} />
           <span className={`compatibility compatibility-${f.semantic?.compatibility ?? 'candidate'}`}>{f.semantic ? COMPATIBILITY_LABEL[f.semantic.compatibility] : f.relation === 'reference' ? '参考图样' : '仅结构匹配'}</span></div>
         {f.semantic && <><p className="small">{f.semantic.reason}</p>{f.semantic.compatibility === 'adaptable' && <p className="small adaptation-note"><b>使用前需准备：</b>{f.semantic.adaptation}</p>}<p className="muted small">分析到绘图：{verificationLabel(f.semantic.verification)}</p></>}
         {f.meta.type === 'template' && <p className="muted small source-note">{templateSourceNote(f.meta, pages, hiddenSources)}</p>}

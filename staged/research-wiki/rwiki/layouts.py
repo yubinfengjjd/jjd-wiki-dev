@@ -38,7 +38,7 @@ def load_layout(layout_dir: Path) -> dict:
         seen.add(letter)
         if not isinstance(tid, str) or tid not in meta["templates"]:
             raise WikiError(f"{prefix}.template 不在版式 templates 中: {tid}")
-        if letter not in meta["template_panels"][tid]:
+        if letter not in (meta.get("template_panels") or {}).get(tid, []):
             raise WikiError(f"{prefix}.template 与 template_panels 归属不一致: {letter} / {tid}")
         spec = load_spec(layout_dir.parents[1] / "templates" / tid)
         if spec["language"] != "python":
@@ -46,8 +46,10 @@ def load_layout(layout_dir: Path) -> dict:
         tables = panel.get("tables")
         if not isinstance(tables, dict) or tables.keys() != spec["tables"].keys():
             raise WikiError(f"{prefix}.tables 必须包含模板的全部表名: {', '.join(spec['tables'])}")
-        if any(not isinstance(value, str) or not value for value in tables.values()):
-            raise WikiError(f"{prefix}.tables 文件名必须为非空字符串")
+        # Table files are read from the data folder the caller passes, never from elsewhere.
+        if any(not isinstance(value, str) or not value or value != Path(value).name
+               or value.startswith(".") for value in tables.values()):
+            raise WikiError(f"{prefix}.tables 文件名必须为数据目录内的普通文件名")
         style = panel.get("style")
         if not isinstance(style, dict):
             raise WikiError(f"{prefix}.style 必须为对象")
@@ -119,8 +121,10 @@ def verify_layout(config: Config, entry_id: str) -> tuple[float, Path]:
     inputs = start_replay(target)
     compose(config, target, target / "example", target / "verify", style if style.is_file() else None)
     meta, _ = read_page(target.with_suffix(".md"))
-    mean, comparison = compare_images(config.gallery_root / meta["gallery_entry"] / "output/replica.png",
-                                      target / "verify/figure.png")
+    replica = config.gallery_root / meta["gallery_entry"] / "output/replica.png"
+    if not replica.is_file():
+        raise WikiError(f"画廊缺少复刻图，无法对照回放: {replica}")
+    mean, comparison = compare_images(replica, target / "verify/figure.png")
     record_preview(target, mean, inputs=inputs, executable=config.python_exe)
     print(f"平均绝对像素差 (0–255): {mean:.6f}\n{comparison}")
     save(config, f"verify {entry_id}")

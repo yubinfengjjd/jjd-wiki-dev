@@ -6,7 +6,7 @@ import sys
 
 import pytest
 
-from conftest import run_cli, complete_sections, seal_replay
+from conftest import run_cli, complete_sections, record_ready_receipt, seal_replay
 from rwiki.config import load_config
 from rwiki.pages import get_block, read_page, set_block, write_page
 from rwiki.store import init, save
@@ -74,13 +74,27 @@ def tiny_wiki(tmp_path):
     })
     write_page(root / "templates/rank-plot.md", {
         "type": "template", "id": "rank-plot", "title": "rank plot", "status": "ready",
-        "language": "python", "layouts": [], "panels": [], "chart_types": [],
+        "language": "python", "layouts": ["src__rank"], "panels": ["A"], "chart_types": ["rank"],
         "tags": ["单细胞"], "favorite": False,
     }, page_body("rank plot", "rank visualization"))
-    for page in (root / 'methods').glob('*.md'):
+    # Templates only come from a replicated, signed source (D044).
+    write_json(config.gallery_root / "src/figures/rank/meta.json", {
+        "id": "src__rank", "version": 1, "status": "approved", "approved_version": 1,
+        "language": "python", "data_provenance": "synthetic", "code_provenance": "synthetic",
+        "post": {"title": None, "account": None, "publish_date": None, "url": None}})
+    write_page(root / "chart-types/rank.md", {"type": "chart-type", "slug": "rank", "title": "rank"}, "# rank\n")
+    write_page(root / "layouts/src__rank.md", {
+        "type": "layout", "id": "src__rank", "title": "rank source", "status": "pending_template",
+        "gallery_entry": "src/figures/rank", "gallery_version": 1, "signedoff_version": 1,
+        "language": "python", "tags": [], "chart_types": ["rank"], "favorite": False,
+        "panels": {"A": "rank"}, "templates": ["rank-plot"], "template_panels": {"rank-plot": ["A"]},
+    }, "# rank source\n\n<!-- facts:start -->\n<!-- facts:end -->\n\n## 适用\n\n## 不适用\n\n"
+       "## 知识关联检查\n\n## 使用记录\n\n<!-- user:start -->\n<!-- user:end -->\n")
+    for page in (*(root / 'methods').glob('*.md'), root / 'templates/rank-plot.md', root / 'layouts/src__rank.md'):
         complete_sections(page)
-    complete_sections(root / 'templates/rank-plot.md')
     seal_replay(directory)
+    for page in (*(root / 'methods').glob('*.md'), root / 'templates/rank-plot.md'):
+        record_ready_receipt(config, page)
     return config, config_path
 
 
@@ -341,6 +355,7 @@ def test_lint_accepts_written_note_with_cite_and_no_assets(tiny_wiki):
     config, _ = tiny_wiki
     root = config.wiki_root
     update_meta(root, "methods/rank-a.md", source={"kind": "written"}, cite=["Official documentation"])
+    record_ready_receipt(config, root / "methods/rank-a.md")  # changed provenance is re-checked
     save(config, "written with provenance")
     assert lint(config) == []
 

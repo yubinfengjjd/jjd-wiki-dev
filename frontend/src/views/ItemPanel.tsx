@@ -1,9 +1,10 @@
 import { useState } from 'react';
-import { api, galleryFile, ItemMeta, KIND_OF, LayoutMeta, MethodMeta, PageDetail, wikiFile, Workflow } from '../api';
+import { api, effectiveStatus, galleryFile, ItemMeta, KIND_OF, LayoutMeta, MethodMeta, PageDetail, safeUrl, wikiFile, Workflow } from '../api';
 import { StatusBadge } from '../components';
 import { DeleteArchived } from '../DeleteArchived';
 
-type Run = (action: () => Promise<PageDetail>) => Promise<void>;
+/** Resolves true only when the write succeeded. */
+type Run = (action: () => Promise<PageDetail>) => Promise<boolean>;
 
 interface ActionProps {
   meta: ItemMeta;
@@ -21,30 +22,22 @@ export function LayoutImages({ page, meta }: { page: PageDetail; meta: LayoutMet
   if (files.compare) views.push(['并排对比', galleryFile(meta.gallery_entry, files.compare)]);
   if (files.output_png || files.replica) views.push(['复刻图', galleryFile(meta.gallery_entry, files.output_png || files.replica)]);
   if (files.source_image) views.push(['原图', galleryFile(meta.gallery_entry, files.source_image)]);
-  const [active, setActive] = useState(0);
+  // Kept by label: the tab list changes when the page is archived or restored.
+  const [picked, setPicked] = useState('');
 
   if (views.length === 0) return null;
+  const [label, src] = views.find(([l]) => l === picked) ?? views[0];
   return (
     <figure className="viewer">
       <div className="tabs" role="tablist">
-        {views.map(([label], i) => (
-          <button key={label} role="tab" aria-selected={i === active} className={i === active ? 'active' : ''} onClick={() => setActive(i)}>
-            {label}
+        {views.map(([l]) => (
+          <button key={l} role="tab" aria-selected={l === label} className={l === label ? 'active' : ''} onClick={() => setPicked(l)}>
+            {l}
           </button>
         ))}
       </div>
-      <a className="plate" style={{ viewTransitionName: 'plate' }} href={views[active][1]} target="_blank" rel="noreferrer">
-        <img src={views[active][1]} alt={views[active][0]} />
-      </a>
-    </figure>
-  );
-}
-
-export function SingleImage({ src, alt }: { src: string; alt: string }) {
-  return (
-    <figure className="viewer">
       <a className="plate" style={{ viewTransitionName: 'plate' }} href={src} target="_blank" rel="noreferrer">
-        <img src={src} alt={alt} />
+        <img src={src} alt={label} />
       </a>
     </figure>
   );
@@ -74,12 +67,13 @@ function ReasonForm({ label, submit, cancel, busy }: { label: string; submit: (r
 export function ItemActions({ meta, run, busy, onDeleted, workflow }: ActionProps) {
   const [reasoning, setReasoning] = useState(false);
   const kind = KIND_OF[meta.type];
-  const withReason = (send: (reason: string) => Promise<PageDetail>) => (reason: string) => run(() => send(reason)).then(() => setReasoning(false));
+  const withReason = (send: (reason: string) => Promise<PageDetail>) => (reason: string) =>
+    run(() => send(reason)).then((ok) => { if (ok) setReasoning(false); });
 
   return (
     <div className="panel">
       <div className="panel-row">
-        <StatusBadge status={workflow?.stage === 'complete' ? 'ready' : meta.status} label={workflow?.label} />
+        <StatusBadge status={effectiveStatus(meta, workflow ?? null)} label={workflow?.label} />
         <button className="ghost" disabled={busy} onClick={() => run(() => api.favorite(kind, meta.id, !meta.favorite))} aria-pressed={meta.favorite}>
           {meta.favorite ? '★ 已收藏' : '☆ 收藏'}
         </button>
@@ -163,7 +157,7 @@ export function TagsEditor({ meta, run, busy }: ActionProps) {
 
   const save = () => {
     const tags = [...new Set(text.split(/[,，、\n]/).map((t) => t.trim()).filter(Boolean))];
-    run(() => api.tags(KIND_OF[meta.type], meta.id, tags)).then(() => setEditing(false));
+    run(() => api.tags(KIND_OF[meta.type], meta.id, tags)).then((ok) => { if (ok) setEditing(false); });
   };
 
   return (
@@ -200,7 +194,8 @@ export function MethodSource({ meta }: { meta: MethodMeta }) {
         <dd>
           {source.kind === 'post' && '公众号帖子附带代码'}
           {source.kind === 'project' && '作者课题脚本'}
-          {source.kind === 'repo' && <a href={source.url} target="_blank" rel="noreferrer">{source.url}</a>}
+          {source.kind === 'repo' && (safeUrl(source.url)
+            ? <a href={safeUrl(source.url)!} target="_blank" rel="noreferrer">{source.url}</a> : source.url)}
           {source.kind === 'written' && 'agent 依据文献与官方文档编写'}
         </dd>
         <dt>许可证</dt>

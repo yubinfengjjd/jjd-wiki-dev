@@ -65,10 +65,13 @@ export function GraphView({ data }: { data: AppData }) {
     setDims(next);
   };
 
+  // Search follows the same filters as the canvas, so it never jumps to an invisible node.
+  const visible = (n: GraphNode) => !hidden.has(n.type) && (showArchived || n.status !== 'archived');
   const matches = query.trim()
-    ? data.graph.nodes.filter((n) => n.title.toLowerCase().includes(query.trim().toLowerCase())).slice(0, 6)
+    ? data.graph.nodes.filter((n) => visible(n) && n.title.toLowerCase().includes(query.trim().toLowerCase())).slice(0, 6)
     : [];
-  const count = (pred: (n: GraphNode) => boolean) => data.graph.nodes.filter(pred).length;
+  const count = (pred: (n: GraphNode) => boolean) =>
+    data.graph.nodes.filter((n) => (showArchived || n.status !== 'archived') && pred(n)).length;
   const thumbFor = (id: string) => {
     const meta = metaOf.get(id);
     return meta ? imageOf(meta) : null;
@@ -149,7 +152,7 @@ export function GraphView({ data }: { data: AppData }) {
         <button onClick={() => engine.current!.fit()}>全部显示</button>
       </div>
 
-      {hover && hover.id !== selected && <HoverCard node={nodes.get(hover.id)!} x={hover.x} y={hover.y} thumb={thumbFor(hover.id)} />}
+      {hover && hover.id !== selected && nodes.has(hover.id) && <HoverCard node={nodes.get(hover.id)!} x={hover.x} y={hover.y} thumb={thumbFor(hover.id)} />}
 
       <NodePanel
         node={selected ? nodes.get(selected) ?? null : null}
@@ -186,7 +189,7 @@ function HoverCard({ node, x, y, thumb }: { node: GraphNode; x: number; y: numbe
         </div>
       )}
       <strong>{node.title}</strong>
-      <span className="muted small">{TYPE_LABEL[node.type]}{HAS_STATUS(node.type) && node.status ? `，${STATUS_LABEL[node.status]}` : ''}</span>
+      <span className="muted small">{TYPE_LABEL[node.type]}{HAS_STATUS(node.type) && node.status ? `，${node.label ?? STATUS_LABEL[node.status]}` : ''}</span>
     </div>
   );
 }
@@ -209,7 +212,7 @@ function NodePanel({ node, thumb, neighbours, onPick, onClose }: PanelProps) {
             <button className="ghost small" onClick={onClose}>关闭</button>
           </div>
           <h2>{node.title}</h2>
-          {HAS_STATUS(node.type) && node.status && <StatusBadge status={node.status} />}
+          {HAS_STATUS(node.type) && node.status && <StatusBadge status={node.status} label={node.label} />}
           {thumb && (
             <div className="plate">
               <img src={thumb} alt={node.title} />
@@ -225,7 +228,7 @@ function NodePanel({ node, thumb, neighbours, onPick, onClose }: PanelProps) {
                   {n.title}
                 </button>
                 {links.map((l, i) => <span className="small muted" key={i}>{l.kind === 'relation'
-                  ? `${COMPATIBILITY_LABEL[l.compatibility ?? 'candidate']} · ${verificationLabel(l.verification)}${l.verification?.scope ? `：${l.verification.scope}` : '；验证范围未记录'}`
+                  ? `${COMPATIBILITY_LABEL[l.compatibility ?? 'candidate']}${l.active === false ? ' · 已停用（仅追溯）' : ''} · ${verificationLabel(l.verification)}${l.verification?.scope ? `：${l.verification.scope}` : '；验证范围未记录'}`
                   : l.kind === 'feeds' ? '接口结构匹配' : '来源／参考链接'}</span>)}
               </li>
             ))}

@@ -128,7 +128,8 @@ export interface Workflow {
 
 export interface Preview {
   url: string | null;
-  kind: 'replay' | 'source' | 'none';
+  /** `stale`: a replay image left from an older code/spec/example, not evidence for the current version. */
+  kind: 'replay' | 'stale' | 'source' | 'none';
   label: string;
 }
 
@@ -137,7 +138,10 @@ export interface DeletePlan {
   path: string;
   revision: string;
   asset_files: number;
-  affected: { path: string; title: string }[];
+  affected: { path: string; title: string; figure_relations_removed?: number }[];
+  figure_relations_removed?: number;
+  /** Other layouts' layout.json files that will be rewritten or removed. */
+  layout_files_updated?: string[];
   gallery_preserved: boolean;
 }
 
@@ -168,7 +172,9 @@ export interface GraphNode {
   id: string;
   type: PageType;
   title: string;
+  /** Effective status (from the shared workflow) once the app has loaded pages. */
   status: Status | null;
+  label?: string;
 }
 
 /** Interface structure (`feeds`) and reviewed semantic relations remain independent. */
@@ -178,6 +184,8 @@ export interface GraphLink {
   kind: 'feeds' | 'link' | 'relation';
   compatibility?: Compatibility;
   verification?: Verification;
+  /** False when either end is archived: kept for history, never a current recommendation. */
+  active?: boolean;
 }
 
 export interface GraphData {
@@ -229,7 +237,8 @@ const act = (kind: Kind, id: string, action: string) => `/api/${kind}/${encodeUR
 export const pageCache = new Map<string, PageDetail>();
 const previewCache = new Map<string, Preview | null>();
 const workflowCache = new Map<string, Workflow | null>();
-const previewKey = (meta: PageMeta) => 'id' in meta ? `${meta.type}/${meta.id}` : '';
+const previewKey = (meta: PageMeta) =>
+  `${meta.type}/${'id' in meta ? meta.id : 'slug' in meta ? meta.slug : meta.title}`;
 
 export const api = {
   pages: async () => {
@@ -300,6 +309,25 @@ export function workflowOf(meta: PageMeta): Workflow | null {
 export function displayStatus(meta: ItemMeta): string {
   return workflowOf(meta)?.label ?? STATUS_LABEL[meta.status];
 }
+
+/** Workflow stage → the status colour it stands for; one mapping for badges, graph rings, census and filters. */
+const STAGE_STATUS: Record<string, Status> = {
+  archived: 'archived', complete: 'ready', signoff: 'pending_signoff',
+  template_confirm: 'draft', method_confirm: 'draft',
+  template_work: 'pending_template', method_work: 'pending_template',
+  layout_work: 'pending_template', template_missing: 'pending_template',
+};
+
+export const stageStatus = (stage: string): Status | undefined => STAGE_STATUS[stage];
+
+/** The derived state of an item; the stored status is history (e.g. a source stays pending_template). */
+export function effectiveStatus(meta: ItemMeta, workflow: Workflow | null = workflowOf(meta)): Status {
+  return (workflow && STAGE_STATUS[workflow.stage]) ?? meta.status;
+}
+
+/** Only web links open from metadata; anything else (javascript:, data:, ...) is shown as text. */
+export const safeUrl = (url: string | null | undefined): string | null =>
+  url && /^https?:\/\//i.test(url.trim()) ? url.trim() : null;
 
 export const isItem = (meta: PageMeta): meta is ItemMeta => meta.type === 'layout' || meta.type === 'template' || meta.type === 'method';
 export const isFigure = (meta: PageMeta): meta is LayoutMeta | TemplateMeta => meta.type === 'layout' || meta.type === 'template';

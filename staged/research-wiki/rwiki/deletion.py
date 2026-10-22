@@ -51,6 +51,11 @@ def prepare(config, page):
     for other in page_paths(root):
         if other == page: continue
         om, ob = read_page(other)
+        # A template's provenance is its source layout; never leave a live template without one.
+        if (meta['type'] == 'layout' and om.get('type') == 'template' and om.get('status') != 'archived'
+                and isinstance(om.get('layouts'), list) and om['layouts'] == [meta['id']]):
+            raise WikiError(f'此来源是模板“{om.get("title", other.stem)}”的唯一出处，不能删除；'
+                            '删除后模板将无来源。如需删除，请先归档并删除该模板。')
         if clean(block(ob, 'user')) != block(ob, 'user'):
             raise WikiError(f'作者备注引用此条目，请先手动处理：{other.relative_to(root)}')
         original_meta = json.dumps(om, ensure_ascii=False, sort_keys=True)

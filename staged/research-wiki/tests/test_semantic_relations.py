@@ -7,7 +7,7 @@ import sys
 
 import pytest
 
-from conftest import run_cli, complete_sections, seal_replay
+from conftest import run_cli, complete_sections, record_ready_receipt, seal_replay
 from rwiki.config import load_config
 from rwiki.deletion import delete_archived, prepare
 from rwiki.facts import page_facts, refresh_facts
@@ -71,17 +71,28 @@ def semantic_wiki(tmp_path):
             "language": "python", "tables": {"results": {"interface": interface, "description": "逐条量"}},
             "style": {}}), encoding="utf-8")
         write_page(root / f"templates/{fid}.md", {"type": "template", "id": fid, "title": fid,
-            "status": "ready", "language": "python", "layouts": [], "panels": ["A"],
-            "chart_types": [], "tags": ["same-label"], "favorite": False}, body(fid))
+            "status": "ready", "language": "python", "layouts": [f"src-{fid}"], "panels": ["A"],
+            "chart_types": ["value"], "tags": ["same-label"], "favorite": False}, body(fid))
         complete_sections(root / f'templates/{fid}.md')
         seal_replay(assets)
-    gallery = config.gallery_root / "other-source/figures/ref"
-    gallery.mkdir(parents=True)
-    (gallery / "meta.json").write_text(json.dumps({"status": "approved", "version": 1,
-        "post": {"title": "另一来源", "account": None, "publish_date": None, "url": None},
-        "data_provenance": "synthetic fixture", "code_provenance": "fixture"}), encoding="utf-8")
+    # Each callable template has its own replicated, signed single-panel source (D044).
+    for name, title, templates in (("ref", "另一来源", []), ("src-f-a", "f-a 来源", ["f-a"]),
+                                   ("src-f-b", "f-b 来源", ["f-b"])):
+        gallery = config.gallery_root / f"{name}-post/figures/{name}"
+        gallery.mkdir(parents=True)
+        (gallery / "meta.json").write_text(json.dumps({"status": "approved", "version": 1,
+            "post": {"title": title, "account": None, "publish_date": None, "url": None},
+            "data_provenance": "synthetic fixture", "code_provenance": "fixture"}), encoding="utf-8")
+        if name == "ref":
+            continue
+        write_page(root / f"layouts/{name}.md", {"type": "layout", "id": name, "title": title,
+            "status": "pending_template", "gallery_entry": f"{name}-post/figures/{name}", "gallery_version": 1,
+            "language": "python", "panels": {"A": "value"}, "templates": templates,
+            "template_panels": {templates[0]: ["A"]}, "chart_types": ["value"], "tags": [],
+            "favorite": False}, body(title))
+        complete_sections(root / f"layouts/{name}.md")
     write_page(root / "layouts/ref.md", {"type": "layout", "id": "ref", "title": "来源参考",
-        "status": "pending_template", "gallery_entry": "other-source/figures/ref", "gallery_version": 1,
+        "status": "pending_template", "gallery_entry": "ref-post/figures/ref", "gallery_version": 1,
         "language": "python", "panels": {"A": "dot"}, "templates": [], "template_panels": {},
         "chart_types": [], "tags": ["same-label"], "favorite": False}, body("来源参考"))
     for mid, outputs in (("m-a", ["source-values"]), ("m-b", ["plot-values"]),
@@ -95,6 +106,8 @@ def semantic_wiki(tmp_path):
     update(config, "methods/m-b.md", figure_relations=[relation("templates/f-b")])
     for page in (root / 'methods').glob('*.md'):
         complete_sections(page)
+    for page in (*(root / 'methods').glob('*.md'), *(root / 'templates').glob('*.md')):
+        record_ready_receipt(config, page)
     return config, config_path
 
 
@@ -311,6 +324,7 @@ def test_code_inventory_is_actual_and_legacy_code_list_excludes_cache(semantic_w
     (assets / "code/__pycache__").mkdir(parents=True)
     (assets / "code/run.py").write_text("# reusable fixture; no execution evidence\n", encoding="utf-8")
     (assets / "code/__pycache__/run.pyc").write_bytes(b"cache")
+    record_ready_receipt(config, assets.with_suffix(".md"))  # new code assets are re-checked before recommending
     candidate = next(item for item in suggest_methods(config, limit=10) if item["id"] == "no-figure")
     assert candidate["code_files"] == ["methods/no-figure/code/run.py"]
     assert candidate["code_status"]["has_original"] and candidate["code_status"]["has_reusable"]

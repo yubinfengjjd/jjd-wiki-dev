@@ -1,4 +1,4 @@
-import { displayStatus, workflowOf, type LayoutMeta, type PageSummary, type Relation, type TemplateMeta } from './api';
+import { displayStatus, effectiveStatus, type LayoutMeta, type PageSummary, type Relation, type TemplateMeta } from './api';
 import { StatusBadge } from './components';
 import { pageLink } from './nav';
 import { relationLabel, relationTargetLabel, verificationLabel } from './relations';
@@ -16,10 +16,7 @@ export function RelationList({ relations, self, pages }: {
         const target = pages?.find((page): page is PageSummary<LayoutMeta | TemplateMeta> =>
           page.path === r.figure
           && (page.meta.type === 'layout' || page.meta.type === 'template'));
-        const targetWorkflow = target ? workflowOf(target.meta) : null;
-        const figureStatus = target
-          ? (targetWorkflow?.stage === 'complete' ? 'ready' : target.meta.status)
-          : r.figure_status;
+        const figureStatus = target ? effectiveStatus(target.meta) : r.figure_status;
         const figureLabel = target ? displayStatus(target.meta) : undefined;
         const template = target?.meta.type === 'layout'
           ? (target.meta.templates ?? [])

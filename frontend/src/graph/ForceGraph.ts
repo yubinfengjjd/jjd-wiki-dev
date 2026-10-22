@@ -79,6 +79,7 @@ export class ForceGraph {
   private targetCache: { nodes: number[]; links: number[] } = { nodes: [], links: [] };
   private birth = 0;
   private dirty = true;
+  private linkMat: THREE.ShaderMaterial;
 
   private nodeGeo = new THREE.BufferGeometry();
   private linkGeo = new THREE.BufferGeometry();
@@ -126,8 +127,8 @@ export class ForceGraph {
       transparent: true,
       depthTest: false,
     });
-    const linkMat = new THREE.ShaderMaterial({ vertexShader: linkVertex, fragmentShader: linkFragment, transparent: true, depthTest: false });
-    this.scene.add(new THREE.LineSegments(this.linkGeo, linkMat), new THREE.Points(this.nodeGeo, this.nodeMat));
+    this.linkMat = new THREE.ShaderMaterial({ vertexShader: linkVertex, fragmentShader: linkFragment, transparent: true, depthTest: false });
+    this.scene.add(new THREE.LineSegments(this.linkGeo, this.linkMat), new THREE.Points(this.nodeGeo, this.nodeMat));
 
     this.sim = forceSimulation<Node>([], 2)
       .velocityDecay(0.32)
@@ -265,7 +266,10 @@ export class ForceGraph {
     this.nodeGeo.dispose();
     this.linkGeo.dispose();
     this.nodeMat.dispose();
+    this.linkMat.dispose();
     this.renderer.dispose();
+    // Release the GL context now; browsers cap live contexts and reopening the view creates a new one.
+    this.renderer.forceContextLoss();
     this.host.replaceChildren();
   }
 
@@ -357,6 +361,8 @@ export class ForceGraph {
     if (snap || this.reduced) {
       this.emph.set(this.targetCache.nodes);
       this.linkEmph.set(this.targetCache.links);
+      // Nothing eases afterwards, so the frame loop must be told to paint the new state.
+      this.dirty = true;
     }
   }
 

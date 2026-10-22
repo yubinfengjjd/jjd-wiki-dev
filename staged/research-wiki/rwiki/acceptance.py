@@ -108,9 +108,11 @@ def record_acceptance(config, path) -> dict:
 
 
 def acceptance_stale(path) -> bool:
+    """For a ready page: True when its receipt is missing, unreadable or no longer matches."""
     target = path.with_suffix('') / 'acceptance.json'
     if not target.is_file():
-        return False  # Historical pages are checked directly, never assigned a fabricated record.
+        # Every ready entry now carries a receipt; a missing one is lost evidence, not a pass.
+        return True
     try:
         return json.loads(target.read_text(encoding='utf-8')).get('snapshot') != snapshot(path)
     except (WikiError, OSError, ValueError, KeyError, TypeError):

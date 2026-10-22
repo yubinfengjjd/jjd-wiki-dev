@@ -2,24 +2,25 @@ import json
 import re
 from datetime import datetime, timezone
 from pathlib import Path
-from urllib.parse import quote
+from urllib.parse import quote, urlsplit
 
 from fastapi import FastAPI, HTTPException
 from fastapi.exceptions import RequestValidationError
 from fastapi.responses import FileResponse, JSONResponse
 from pydantic import BaseModel, Field, StrictBool, StrictStr
 
-from .catalog import page_paths
+from .catalog import readable_pages
 from .config import Config, read_json
 from .errors import WikiError
 from .facts import declarations, input_interfaces, table_interfaces
 from .links import extract_links, resolve
 from .pages import read_page, set_block, write_page
 from .methods import confirm_method
-from .store import save
+from .store import guarded, save
 from .deletion import prepare, delete_archived
 from .relations import relations_for, all_relations
 from .code_assets import code_files, read_code, code_file
+from .verification import replay_available
 from .workflow import workflow_snapshot
 
 
@@ -44,9 +45,23 @@ class DeleteBody(BaseModel):
     revision: StrictStr
 
 
+# Loopback names only; "testserver" is Starlette TestClient's default Host.
+LOCAL_HOSTS = {"127.0.0.1", "localhost", "[::1]", "testserver"}
+
+
+def _host_name(value: str) -> str:
+    value = value.strip().lower()
+    if value.startswith("["):
+        return value[:value.find("]") + 1]
+    return value.rsplit(":", 1)[0] if value.count(":") == 1 else value
+
+
 def safe_file(root: Path, value: str) -> Path:
     if Path(value).anchor:
         raise HTTPException(404, "文件路径必须相对根目录")
+    # Dot entries (.git, .obsidian, ...) are repository internals, never page assets.
+    if any(part.startswith(".") for part in Path(value).parts):
+        raise HTTPException(404, "文件不存在")
     path = (root / value).resolve()
     if not path.is_relative_to(root.resolve()) or not path.is_file():
         raise HTTPException(404, "文件不存在")
@@ -56,6 +71,20 @@ def safe_file(root: Path, value: str) -> Path:
 def create_app(config: Config) -> FastAPI:
     app = FastAPI()
     root = config.wiki_root.resolve()
+
+    # Any web page can send requests to localhost: reject foreign Host (DNS rebinding)
+    # and cross-site writes (a body-less POST needs no CORS preflight).
+    @app.middleware("http")
+    async def local_only(request, call_next):
+        if _host_name(request.headers.get("host", "")) not in LOCAL_HOSTS:
+            return JSONResponse(status_code=403, content={"detail": "只接受本机地址访问"})
+        if request.method not in ("GET", "HEAD", "OPTIONS"):
+            origin = request.headers.get("origin")
+            foreign = origin is not None and (
+                origin == "null" or _host_name(urlsplit(origin).netloc) not in LOCAL_HOSTS)
+            if foreign or request.headers.get("sec-fetch-site") == "cross-site":
+                return JSONResponse(status_code=403, content={"detail": "拒绝跨站写请求"})
+        return await call_next(request)
 
     # Same boundary as cli.main: a WikiError reaches the page as its message, not "Internal Server Error".
     @app.exception_handler(WikiError)
@@ -69,7 +98,8 @@ def create_app(config: Config) -> FastAPI:
         return JSONResponse(status_code=422, content={"detail": detail})
 
     def pages() -> list[Path]:
-        return [path.resolve() for path in page_paths(root)
+        # An unreadable page is reported by lint; it must not take the whole UI down.
+        return [path.resolve() for path, _ in readable_pages(root)
                 if path.resolve().is_relative_to(root)]
 
     def page_file(value: str) -> Path:
@@ -96,10 +126,19 @@ def create_app(config: Config) -> FastAPI:
             return None
         candidates = []
         if meta["type"] == "template":
-            candidates.append((root / "templates" / meta["id"] / "preview.png", "replay", "模板回放"))
-            for lid in meta["layouts"]:
+            target = root / "templates" / meta["id"]
+            # A preview left from an older code/spec/example is not evidence for the current version.
+            if replay_available(target):
+                candidates.append((target / "preview.png", "replay", "模板回放"))
+            else:
+                candidates.append((target / "preview.png", "stale", "旧回放 · 当前版本尚未重新回放"))
+            for lid in meta.get("layouts") or []:
                 origin = root / "layouts" / f"{lid}.md"
-                if origin.is_file() and len(read_page(origin)[0]["panels"]) == 1:
+                try:
+                    single = len(read_page(origin)[0].get("panels") or {}) == 1
+                except WikiError:
+                    single = False
+                if single:
                     candidates.append((root / "layouts" / lid / "thumb.png", "source", "来源参考图 · 模板尚无回放"))
         else:
             candidates.append((root / "layouts" / meta["id"] / "thumb.png", "source", "来源图样"))
@@ -144,9 +183,13 @@ def create_app(config: Config) -> FastAPI:
             raise HTTPException(404, "页面类型不符")
         return path, meta, body
 
-    def finish(path: Path, meta: dict, body: str, message: str) -> dict:
-        write_page(path, meta, body)
-        save(config, message)
+    def finish(path: Path, meta: dict, body: str, message: str, before=None, also=()) -> dict:
+        """Write, save and commit as one step; on any failure the touched files are restored."""
+        with guarded(config, path, *also):
+            if before is not None:
+                before()
+            write_page(path, meta, body)
+            save(config, message)
         return response(path)
 
     def update_gallery(meta: dict, status: str) -> None:
@@ -162,12 +205,14 @@ def create_app(config: Config) -> FastAPI:
     def list_pages():
         records = []
         workflow = workflow_snapshot(config)
+        relations = all_relations(config)
         for path in pages():
             meta, body = read_page(path)
-            records.append({"path": path.relative_to(root).as_posix(), "meta": meta,
+            page = path.relative_to(root).as_posix()
+            records.append({"path": page, "meta": meta,
                             "figure_refs": figure_refs(meta, body), "preview": preview(meta),
-                            "workflow": workflow.get(path.relative_to(root).as_posix()),
-                            "relations": relations_for(config, path.relative_to(root).as_posix())})
+                            "workflow": workflow.get(page),
+                            "relations": [r for r in relations if page in (r["method"], r["figure"])]})
         return records
 
     @app.get("/api/page")
@@ -255,12 +300,11 @@ def create_app(config: Config) -> FastAPI:
         current_gallery = read_json(gallery_file(meta))
         if current_gallery['version'] != meta['gallery_version']:
             raise HTTPException(409, '来源版本已变化，请重新收录并核对后签核')
-        update_gallery(meta, "approved")
-        gallery = read_json(gallery_file(meta))
-        meta['gallery_version'] = gallery['version']
-        meta['signedoff_version'] = gallery['version']
+        meta['gallery_version'] = current_gallery['version']
+        meta['signedoff_version'] = current_gallery['version']
         meta["status"] = "pending_template"
-        return finish(path, meta, body, f"signoff {entry_id}")
+        return finish(path, meta, body, f"signoff {entry_id}",
+                      before=lambda: update_gallery(meta, "approved"), also=[gallery_file(meta)])
 
     @app.post("/api/layouts/{entry_id}/reject")
     def reject(entry_id: str, request: RejectBody):
@@ -268,20 +312,21 @@ def create_app(config: Config) -> FastAPI:
         # Rejecting also withdraws a sign-off; a ready or archived template must not fall back to draft.
         if meta["status"] not in ("pending_signoff", "pending_template"):
             raise HTTPException(409, f"页面为 {meta['status']}，不能退回")
-        update_gallery(meta, "draft")
         meta["status"] = "pending_signoff"
-        return finish(path, meta, body, f"reject {entry_id}: {request.reason}")
+        return finish(path, meta, body, f"reject {entry_id}: {request.reason}",
+                      before=lambda: update_gallery(meta, "draft"), also=[gallery_file(meta)])
 
     @app.post("/api/methods/{entry_id}/confirm")
     def confirm(entry_id: str):
         path, meta, _ = visual("methods", entry_id)
         if meta["status"] != "draft":
             raise HTTPException(409, "页面不是 draft")
-        try:
-            confirm_method(config, entry_id)
-        except WikiError as error:
-            raise HTTPException(409, str(error)) from error
-        save(config, f"confirm {entry_id}")
+        with guarded(config, path, path.with_suffix("") / "acceptance.json"):
+            try:
+                confirm_method(config, entry_id)
+            except WikiError as error:
+                raise HTTPException(409, str(error)) from error
+            save(config, f"confirm {entry_id}")
         return response(path)
 
     @app.post("/api/methods/{entry_id}/return")

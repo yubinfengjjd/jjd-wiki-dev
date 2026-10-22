@@ -3,7 +3,7 @@ import json
 import pytest
 from fastapi.testclient import TestClient
 
-from conftest import ENTRY_ID, complete_sections, run_cli, update_gallery
+from conftest import ENTRY_ID, complete_sections, record_ready_receipt, run_cli, update_gallery
 from rwiki.ingest import ingest_figure
 from rwiki.pages import get_block, read_page, write_page
 from rwiki.server import create_app
@@ -46,6 +46,7 @@ def test_suggest_query_matches_applicability_only_not_user_text(layout_workspace
     body = body.replace('## 适用\n', '## 适用\n\n异质性比较。\n')
     body = body.replace('<!-- user:start -->', '<!-- user:start -->私人词')
     write_page(page, meta, body)
+    record_ready_receipt(config, page)  # an edited ready note is re-checked before it is recommended
     result = run_cli(path, 'suggest', '--q', '异质性比较 自由标签 私人词')
     assert result.returncode == 0, result.stderr
     items = json.loads(result.stdout)

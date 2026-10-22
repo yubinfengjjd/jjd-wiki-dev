@@ -1,5 +1,6 @@
 from pathlib import Path
 
+from .errors import WikiError
 from .pages import read_page
 
 LAYOUT_STATUSES = ("pending_signoff", "pending_template", "ready", "archived")
@@ -29,12 +30,25 @@ def render_index(wiki_root: Path, pages: list[tuple[Path, dict]]) -> str:
         for status in statuses:
             lines.extend([f"### {status}", ""])
             append_pages([(path, meta) for path, meta in pages
-                          if meta["type"] == kind and meta["status"] == status])
+                          if meta.get("type") == kind and meta.get("status") == status])
     for title, page_type in (("接口", "interface"), ("图型", "chart-type"), ("课题", "project")):
         lines.extend([f"## {title}", ""])
-        append_pages([(path, meta) for path, meta in pages if meta["type"] == page_type])
+        append_pages([(path, meta) for path, meta in pages if meta.get("type") == page_type])
     return "\n".join(lines).rstrip() + "\n"
 
 
+def readable_pages(wiki_root: Path) -> list[tuple[Path, dict]]:
+    """Pages whose frontmatter parses and names a title; lint reports the rest."""
+    result = []
+    for path in page_paths(wiki_root):
+        try:
+            meta = read_page(path)[0]
+        except (WikiError, OSError, UnicodeDecodeError):
+            continue
+        if isinstance(meta.get("title"), str):
+            result.append((path, meta))
+    return result
+
+
 def build_index(wiki_root: Path) -> str:
-    return render_index(wiki_root, [(path, read_page(path)[0]) for path in page_paths(wiki_root)])
+    return render_index(wiki_root, readable_pages(wiki_root))

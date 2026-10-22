@@ -15,7 +15,8 @@ from rwiki.pages import read_page, section_bounds, write_page
 from rwiki.server import create_app
 from rwiki.suggest import suggest
 from rwiki.templates import mark_ready, verify_template
-from rwiki.workflow import replay_available, workflow_snapshot
+from rwiki.verification import replay_available
+from rwiki.workflow import workflow_snapshot
 
 
 def test_repeated_ingest_never_signs_new_version(workspace):

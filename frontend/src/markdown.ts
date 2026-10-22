@@ -61,6 +61,11 @@ const MARKERS = /<!-- (facts|user):(start|end) -->\n?/g;
 
 export const userBlock = (body: string) => body.match(USER_BLOCK)?.[1].trim() ?? '';
 
+// The viewer shows the figure, so the image embeds right under the title (kept for Obsidian) are
+// dropped; images further down the body are content and stay.
+const LEAD_EMBEDS = /^(# [^\n]*\r?\n)(?:\s*!\[\[[^\]\n]+\.png\]\][ \t]*\r?\n)+/;
+export const withoutLeadEmbeds = (body: string) => body.replace(LEAD_EMBEDS, '$1');
+
 /** Render a page body; the H1 is shown by the view, the user block by the note editor. */
 export function renderBody(body: string, env: RenderEnv, { dropUser = false, dropFacts = false } = {}): string {
   let src = body.replace(/^# .*\n/, '');
@@ -74,5 +79,3 @@ export function methodPurpose(body: string): string {
   const start = /^## 用途[ \t]*\r?\n/m.exec(agent);
   return start ? agent.slice(start.index + start[0].length).trim().split(/\r?\n## /)[0].split(/\r?\n\s*\r?\n/)[0] : '';
 }
-
-export const renderText = (text: string, env: RenderEnv) => md.render(text, env);

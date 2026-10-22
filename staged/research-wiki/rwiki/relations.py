@@ -71,7 +71,7 @@ def _ready_covering_template(config, layout: dict, template_id: str) -> bool:
             and all(panels[letter] == template["chart_types"][0] for letter in panels))
 
 
-def _record_errors(config, record: dict) -> list[str]:
+def _record_errors(config, record: dict, method: dict | None = None) -> list[str]:
     errors = []
     figure = canonical_figure(record.get("figure"))
     if figure is None:
@@ -112,11 +112,15 @@ def _record_errors(config, record: dict) -> list[str]:
                     if (not assets.resolve().is_relative_to(config.wiki_root.resolve())
                             or not (assets / "spec.json").resolve().is_relative_to(assets.resolve())):
                         raise WikiError("direct 模板资产越出 Wiki 或专属资产目录")
-                    spec = load_spec(assets)
-                    for key in ("entry", "panel"):
-                        if key in spec and not (path.with_suffix("") / spec[key]).resolve().is_relative_to(
-                                path.with_suffix("").resolve()):
-                            errors.append(f"direct 模板 spec.{key} 越出专属资产目录")
+                    spec = load_spec(assets)  # also confines spec.entry / spec.panel to the folder
+                    if target.get("status") == "draft":
+                        errors.append("direct 目标模板仍为 draft；作者确认可用前用 adaptable 或 candidate")
+                    if method is not None:
+                        required = {table["interface"] for table in spec["tables"].values()}
+                        missing = sorted(required - set(method.get("outputs") or []))
+                        if missing:
+                            errors.append("direct 要求模板读取的接口均为方法声明输出；缺 "
+                                          + "、".join(missing) + "，否则写 adaptable")
             if target["type"] == "layout":
                 covering = [tid for tid in target.get("templates", [])
                             if _ready_covering_template(config, target, tid)]
@@ -141,7 +145,7 @@ def _checked(config, meta: dict):
         if not isinstance(record, dict):
             diagnostics.append(f"{prefix} 必须为对象")
             continue
-        errors = _record_errors(config, record)
+        errors = _record_errors(config, record, meta)
         figure = canonical_figure(record.get("figure")) or record.get("figure")
         if isinstance(figure, str) and figures[figure] > 1:
             errors.append(f"figure 重复: {figure}")

@@ -59,9 +59,26 @@ export function QueueView({ data }: { data: AppData }) {
             </h2>
             <p className="muted">{hint}</p>
             {shown.length === 0 ? <p className="empty">这一栏是空的。</p> : <div className="grid">{shown.map((p, i) => key === 'archived' ? <div className="archived-entry" key={p.path}>{card(p, i)}<DeleteArchived meta={p.meta} onDeleted={data.reload} /></div> : card(p, i))}</div>}
+            {key === 'archived' && <HiddenSources data={data} />}
           </div>
         );
       })}
     </section>
   );
+}
+
+/** Archived whole-figure sources stay out of browsing (single-panel scope) but remain deletable here. */
+function HiddenSources({ data }: { data: AppData }) {
+  const sources = data.hiddenPages.filter((p): p is PageSummary<ItemMeta> => isItem(p.meta) && p.meta.status === 'archived');
+  if (sources.length === 0) return null;
+  return <div className="hidden-sources">
+    <h3>历史整图来源 <span className="count">{sources.length}</span></h3>
+    <p className="muted small">只读溯源记录：已拆出的单 panel 模板保留在图库，完整原图保留在画廊。按“仅单 panel”口径不提供打开或恢复，可查看删除范围后永久删除 Wiki 记录。</p>
+    <ul className="links">
+      {sources.map((p) => <li key={p.path} className="panel-row">
+        <span>{p.meta.title}</span>
+        <DeleteArchived meta={p.meta} onDeleted={data.reload} />
+      </li>)}
+    </ul>
+  </div>;
 }

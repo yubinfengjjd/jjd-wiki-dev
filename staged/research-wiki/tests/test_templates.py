@@ -232,9 +232,10 @@ def test_verify_panel_preview_commit_and_ignore(fake_template):
     assert not (target / "verify/compare.png").exists()
     assert (target / "preview.png").read_bytes() == (target / "verify/figure.png").read_bytes()
     assert commit_count(config.wiki_root) == 4
+    # The receipt and the outputs it hashes are the evidence ready depends on, so they are versioned.
     tracked = git(config.wiki_root, "ls-files")
-    assert "/verify/" not in tracked and "/preview.png" in tracked
-    assert git(config.wiki_root, "check-ignore", f"templates/{ENTRY_ID}/verify/figure.png").strip()
+    assert f"templates/{ENTRY_ID}/verify/verify.json" in tracked
+    assert f"templates/{ENTRY_ID}/verify/figure.png" in tracked and "/preview.png" in tracked
 
 
 def test_verify_uses_example_style_for_replay(fake_template):

@@ -11,7 +11,10 @@ from rwiki.ingest import ingest_figure
 from rwiki.templates import scaffold_template, render
 from rwiki.sizing import DEFAULTS
 
-PY=Path('C:/Users/86186/.codex/venvs/sci-figure-replica/Scripts/python.exe')
+import os
+# The plotting interpreter (matplotlib/pandas); override on another machine.
+PY=Path(os.environ.get('RWIKI_PLOT_PYTHON','C:/Users/86186/.codex/venvs/sci-figure-replica/Scripts/python.exe'))
+needs_plot_python=pytest.mark.skipif(not PY.is_file(),reason='set RWIKI_PLOT_PYTHON to a Python with matplotlib/pandas')
 
 
 @pytest.mark.parametrize('defaults',[[],{'unknown':2},{'sizing':{'item_width_in':-1}}])
@@ -22,6 +25,7 @@ def test_invalid_function_defaults(workspace,defaults):
     with pytest.raises(WikiError):load_config(path)
 
 
+@needs_plot_python
 def test_new_scaffold_render_and_portable_copy(workspace,tmp_path):
     config,path=workspace
     config=replace(config,python_exe=PY,function_defaults={'sizing':DEFAULTS})
@@ -70,6 +74,7 @@ def test_new_scaffold_render_and_portable_copy(workspace,tmp_path):
         render(config,ENTRY_ID+'--bar',tmp_path/'data-8',tmp_path/'limited',override)
 
 
+@needs_plot_python
 def test_compose_checks_adaptive_space_without_resizing(layout_workspace,tmp_path):
     from rwiki.layouts import compose
     config,_,target,layout=layout_workspace

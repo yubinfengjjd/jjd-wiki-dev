@@ -1,9 +1,9 @@
 import { useCallback, useEffect, useState } from 'react';
-import { api, imageOf, isItem, LayoutMeta, PageDetail, pageCache, PageSummary, TYPE_LABEL, wikiFile } from '../api';
+import { api, imageOf, isItem, LayoutMeta, PageDetail, pageCache, PageSummary, safeUrl, TYPE_LABEL, wikiFile } from '../api';
 import type { AppData } from '../App';
 import { FigureImage, TypeMark } from '../components';
 import { figureLabel, isWholeSource, methodFigures, templateSourceNote } from '../figureModels';
-import { renderBody, userBlock } from '../markdown';
+import { renderBody, userBlock, withoutLeadEmbeds } from '../markdown';
 import { pageLink } from '../nav';
 import { Chain } from './Chain';
 import { ItemActions, LayoutImages, MethodSource, NoteEditor, TagsEditor } from './ItemPanel';
@@ -12,8 +12,6 @@ import { RelationList } from '../RelationList';
 import { adaptableTemplateRelations } from '../relations';
 import { MethodOverview } from './MethodOverview';
 
-// The viewer shows the figure, so the page's own leading image embed (kept for Obsidian) is dropped here.
-const LEAD_EMBED = /^!\[\[[^\]]+\.png\]\]\n/m;
 
 export function PageView({ path, data }: { path: string; data: AppData }) {
   // A page opened from a card was prefetched, so it paints in the transition's first frame.
@@ -25,20 +23,29 @@ export function PageView({ path, data }: { path: string; data: AppData }) {
     api.page(path).then(setPage, (e: Error) => setError(e.message));
   }, [path]);
 
+  /** Resolves true only when the write succeeded, so forms keep their input on failure. */
   const run = useCallback(
-    async (action: () => Promise<PageDetail>) => {
+    async (action: () => Promise<PageDetail>): Promise<boolean> => {
       setBusy(true);
       setError('');
       try {
         const next = await action();
         pageCache.set(path, next);
         setPage(next);
-        await data.reload();
       } catch (e) {
         setError((e as Error).message);
+        setBusy(false);
+        return false;
+      }
+      // The write is committed; a failed refresh is reported, not mistaken for a failed write.
+      try {
+        await data.reload();
+      } catch (e) {
+        setError(`已保存，但刷新列表失败：${(e as Error).message}`);
       } finally {
         setBusy(false);
       }
+      return true;
     },
     [data, path],
   );
@@ -48,9 +55,11 @@ export function PageView({ path, data }: { path: string; data: AppData }) {
   const { meta } = page;
   if (isWholeSource(meta)) return <p className="notice">整图来源已归档并隐藏。请从图库选择单 panel 图样或可调用模板；完整原图保留在画廊作溯源。</p>;
   const item = isItem(meta) ? meta : null;
-  const html = renderBody(page.body.replace(LEAD_EMBED, ''), data.env, { dropUser: item !== null, dropFacts: meta.type === 'method' });
+  const html = renderBody(withoutLeadEmbeds(page.body), data.env, { dropUser: item !== null, dropFacts: meta.type === 'method' });
   const byPath = new Map(data.pages.map((p) => [p.path, p]));
-  const pagesOf = (paths: string[]) => paths.flatMap((p) => byPath.get(p) ?? []);
+  // Archived pages are never offered as a current chain step or split template.
+  const pagesOf = (paths: string[]) => paths.flatMap((p) => byPath.get(p) ?? [])
+    .filter((p) => !isItem(p.meta) || p.meta.status !== 'archived');
   const { flow } = data;
   const structuralTemplates = meta.type === 'method' ? pagesOf(flow.figuresOf(path)) : [];
   const adaptableTemplates = meta.type === 'method'
@@ -164,7 +173,7 @@ export function PageView({ path, data }: { path: string; data: AppData }) {
               <h3>来源</h3>
               <dl className="facts">
                 <dt>帖子</dt>
-                <dd>{page.gallery.post.url ? <a href={page.gallery.post.url} target="_blank" rel="noreferrer">{page.gallery.post.title ?? page.gallery.post.url}</a> : page.gallery.post.title ?? '—'}</dd>
+                <dd>{safeUrl(page.gallery.post.url) ? <a href={safeUrl(page.gallery.post.url)!} target="_blank" rel="noreferrer">{page.gallery.post.title ?? page.gallery.post.url}</a> : page.gallery.post.title ?? page.gallery.post.url ?? '—'}</dd>
                 <dt>数据</dt>
                 <dd>{page.gallery.data_provenance}</dd>
                 <dt>代码</dt>

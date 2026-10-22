@@ -7,7 +7,13 @@ export interface Route {
 }
 
 function parse(hash: string): Route {
-  const [view, ...rest] = decodeURIComponent(hash.replace(/^#\/?/, '')).split('/');
+  let text: string;
+  try {
+    text = decodeURIComponent(hash.replace(/^#\/?/, ''));
+  } catch {
+    return { view: 'gallery', arg: '' }; // a truncated or hand-typed %-sequence
+  }
+  const [view, ...rest] = text.split('/');
   return { view: view || 'gallery', arg: rest.join('/') };
 }
 

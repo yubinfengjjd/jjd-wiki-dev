@@ -143,7 +143,8 @@ export class FlowField {
     requestAnimationFrame(this.frame);
     const dt = Math.min((now - (this.last || now)) / 1000, 0.05);
     this.last = now;
-    if (this.reduced.matches) return;
+    // A hidden tab or reduced motion keeps the last frame instead of simulating 2400 strokes.
+    if (this.reduced.matches || document.hidden) return;
     this.step(dt);
     this.draw();
   };
