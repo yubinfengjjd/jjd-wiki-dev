@@ -41,9 +41,12 @@ def load_spec(template_dir: Path) -> dict:
     for name, table in tables.items():
         if not isinstance(table, dict):
             raise WikiError(f"tables.{name} 必须为对象")
-        unknown = table.keys() - {"interface", "description"}
+        unknown = table.keys() - {"interface", "description", "required"}
         if unknown:
-            raise WikiError(f"tables.{name} 不支持字段: {', '.join(sorted(unknown))}；只允许 interface 和 description")
+            raise WikiError(f"tables.{name} 不支持字段: {', '.join(sorted(unknown))}；"
+                            "只允许 interface、description 和 required")
+        if "required" in table and not isinstance(table["required"], bool):
+            raise WikiError(f"tables.{name}.required 必须为布尔值")
         slug = table.get("interface")
         if not isinstance(slug, str) or not slug.strip():
             raise WikiError(f"tables.{name}.interface 必须为非空字符串")
@@ -64,10 +67,16 @@ def check_data(spec: dict, data_dir: Path) -> None:
 
 def check_table_data(name: str, table: dict, path: Path) -> None:
     if not path.is_file():
-        raise WikiError(f"tables.{name} 数据文件不存在: {path}")
+        if table.get("required", True):
+            raise WikiError(f"tables.{name} 数据文件不存在: {path}")
+        return
     with path.open(encoding="utf-8-sig", newline="") as stream:
         header = next(csv.reader(stream), [])
-    missing = [column for column in table["columns"] if column not in header]
+    # Only the columns the implementation really reads are required; an optional
+    # column is declared by the interface and handled by the template's own default.
+    required = [column for column, definition in table["columns"].items()
+                if definition.get("required", True)]
+    missing = [column for column in required if column not in header]
     if missing:
         raise WikiError(f"tables.{name} 缺列: {', '.join(missing)} ({path})")
 
@@ -76,10 +85,22 @@ def requirements_markdown(spec: dict) -> str:
     lines = []
     for name, table in spec["tables"].items():
         link = f"[[interfaces/{table['interface']}|{table['interface_title']}]]"
-        lines.extend([f"### {name}（{table['interface']}.csv）：{table['description']} {link}", "",
-                      "| 列 | 类型 | 含义 |", "|---|---|---|"])
-        for column, definition in table["columns"].items():
-            lines.append(f"| {column} | {definition['type']} | {definition.get('description', '')} |")
+        optional = "" if table.get("required", True) else "（可选表）"
+        columns = table["columns"]
+        # Keep the historical three-column table until a template really has an
+        # optional table/column; then the required/optional distinction is explicit.
+        has_optional = (not table.get("required", True)
+                        or any(not definition.get("required", True) for definition in columns.values()))
+        lines.extend([f"### {name}（{table['interface']}.csv）{optional}：{table['description']} {link}", ""])
+        if has_optional:
+            lines.extend(["| 列 | 类型 | 必需 | 含义 |", "|---|---|---|---|"])
+            for column, definition in columns.items():
+                required = "必需" if definition.get("required", True) else "可选"
+                lines.append(f"| {column} | {definition['type']} | {required} | {definition.get('description', '')} |")
+        else:
+            lines.extend(["| 列 | 类型 | 含义 |", "|---|---|---|"])
+            for column, definition in columns.items():
+                lines.append(f"| {column} | {definition['type']} | {definition.get('description', '')} |")
         lines.append("")
     lines.extend(["### 可覆盖的 style", ""])
     for key, value in spec["style"].items():

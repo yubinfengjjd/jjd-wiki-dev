@@ -74,6 +74,52 @@ def test_check_data_missing_file_missing_column_and_extra_allowed(valid_spec):
     check_data(spec, directory)  # Only the header is checked, never values.
 
 
+def test_optional_table_and_columns_follow_the_implementation(valid_spec):
+    directory, spec = valid_spec
+    root = directory.parents[1]
+    write_interface(root, "sample-values", {
+        "value": {"type": "float", "description": "数值"},
+        "note": {"type": "str", "description": "备注", "required": False},
+    }, "样本数值")
+    spec["tables"]["samples"]["required"] = False
+    write_spec(directory, spec)
+    loaded = load_spec(directory)
+    assert loaded["tables"]["samples"]["required"] is False
+    # A declared optional table may be absent; a declared optional column may be absent.
+    check_data(loaded, directory)
+    path = directory / "sample-values.csv"
+    path.write_text("value\n1.5\n", encoding="utf-8")
+    check_data(loaded, directory)
+    loaded["tables"]["samples"]["required"] = True
+    (directory / "sample-values.csv").unlink()
+    with pytest.raises(WikiError, match="不存在"):
+        check_data(loaded, directory)
+    path.write_text("note\nx\n", encoding="utf-8")
+    with pytest.raises(WikiError, match="缺列: value"):
+        check_data(loaded, directory)
+    text = requirements_markdown(loaded)
+    assert "（可选表）" not in text
+    assert "| value | float | 必需 |" in text and "| note | str | 可选 |" in text
+
+
+def test_invalid_required_flags_are_rejected(valid_spec):
+    directory, spec = valid_spec
+    spec["tables"]["samples"]["required"] = "yes"
+    write_spec(directory, spec)
+    with pytest.raises(WikiError, match="required"):
+        load_spec(directory)
+    spec["tables"]["samples"]["required"] = False
+    write_spec(directory, spec)
+    load_spec(directory)
+    root = directory.parents[1]
+    write_interface(root, "sample-values", {
+        "value": {"type": "float", "description": "数值", "required": "yes"}}, "样本数值")
+    spec["tables"]["samples"]["required"] = True
+    write_spec(directory, spec)
+    with pytest.raises(WikiError, match="required"):
+        load_spec(directory)
+
+
 @pytest.mark.parametrize("legacy", [{"file": "sample-values.csv"}, {"columns": {}}])
 def test_load_spec_rejects_legacy_table_fields(valid_spec, legacy):
     directory, spec = valid_spec

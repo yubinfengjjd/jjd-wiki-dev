@@ -1,5 +1,5 @@
 import { Component, lazy, ReactNode, Suspense, useCallback, useEffect, useMemo, useState } from 'react';
-import { api, effectiveStatus, GraphData, isItem, PageSummary } from './api';
+import { api, effectiveStatus, GraphData, isItem, MethodTaxonomy, PageSummary } from './api';
 import { useBackdropZone } from './backdrop/instance';
 import { Flow } from './flow';
 import { singlePanelKnowledge } from './figureModels';
@@ -22,6 +22,8 @@ export interface AppData {
   graph: GraphData;
   flow: Flow;
   env: RenderEnv;
+  /** Derived by the backend from analysis pages; never a second frontend word list. */
+  taxonomy: MethodTaxonomy;
   reload: () => Promise<void>;
 }
 
@@ -59,15 +61,17 @@ export function App() {
   useBackdropZone(route.view);
   const [pages, setPages] = useState<PageSummary[] | null>(null);
   const [graph, setGraph] = useState<GraphData | null>(null);
+  const [taxonomy, setTaxonomy] = useState<MethodTaxonomy | null>(null);
   const [error, setError] = useState('');
   const [hiddenSources, setHiddenSources] = useState<Set<string>>(new Set());
   const [hiddenPages, setHiddenPages] = useState<PageSummary[]>([]);
 
   const reload = useCallback(async () => {
-    const [p, g] = await Promise.all([api.pages(), api.graph()]);
+    const [p, g, t] = await Promise.all([api.pages(), api.graph(), api.methodTaxonomy()]);
     const visible = singlePanelKnowledge(p, g);
     setPages(visible.pages);
     setGraph(withEffectiveStatus(visible.graph, visible.pages));
+    setTaxonomy(t);
     setHiddenSources(visible.hiddenSources);
     setHiddenPages(p.filter((page) => visible.hiddenSources.has(page.path)));
   }, []);
@@ -83,11 +87,11 @@ export function App() {
 
   let content;
   if (error) content = <p className="notice error">连不上本地服务（{error}）。在终端运行 wiki.py serve 后刷新页面。</p>;
-  else if (!pages || !graph) content = null;
+  else if (!pages || !graph || !taxonomy) content = null;
   else {
-    const data: AppData = { pages, hiddenPages, graph, flow, env, reload };
+    const data: AppData = { pages, hiddenPages, graph, flow, env, taxonomy, reload };
     if (route.view === 'page') content = <PageView key={route.arg} path={route.arg} data={data} />;
-    else if (route.view === 'methods') content = <MethodsView data={data} />;
+    else if (route.view === 'methods') content = <MethodsView data={data} query={route.query} />;
     else if (route.view === 'graph') content = <Suspense fallback={null}><GraphView data={data} /></Suspense>;
     else if (route.view === 'queue') content = <QueueView data={data} />;
     else if (route.view === 'log') content = <LogView />;

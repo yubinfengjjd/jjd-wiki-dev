@@ -17,6 +17,8 @@ def validate_columns(columns: dict) -> None:
         description = definition.get("description")
         if not isinstance(description, str) or not description.strip():
             raise WikiError(f"interface.columns.{column}.description 必须为非空字符串")
+        if "required" in definition and not isinstance(definition["required"], bool):
+            raise WikiError(f"interface.columns.{column}.required 必须为布尔值")
 
 
 def load_interface(wiki_root: Path, slug: str) -> dict:
