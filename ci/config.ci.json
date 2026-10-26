@@ -1,0 +1,9 @@
+{
+  "wiki_root": "知识库",
+  "gallery_root": "画廊",
+  "taxonomy": "spec/scenario_taxonomy.yaml",
+  "python_exe": "python",
+  "rscript_exe": "Rscript",
+  "port": 8765,
+  "single_panel_only": true
+}

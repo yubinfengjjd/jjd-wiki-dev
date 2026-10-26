@@ -1,0 +1,5 @@
+# 作者字节不被改写：全仓库关闭行尾转换（D6）
+* -text
+*.png binary
+*.pdf binary
+*.rds binary

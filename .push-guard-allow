@@ -1,0 +1,12 @@
+# 格式：<abs-path|size> <glob>  # 理由；画廊、GPL、课题数据不可豁免
+abs-path staged/research-wiki/tests/**  # 测试夹具：合成假路径、越界路径用例与本机工具默认路径（local 测试）
+abs-path staged/research-wiki/rwiki/contact_sheet.py  # Windows 系统字体目录，非个人数据
+size obsidian-neural-view/media/orb.mp4  # 插件背景视频（约 8 MB），属于插件构建所需资产
+abs-path staged/research-wiki/SKILL.md  # 技能运行说明：本机解释器与临时目录是操作指引
+abs-path staged/research-wiki/assets/AGENTS.md  # 规则文档：限定 Obsidian vault 位置
+abs-path staged/integration-patches.md  # 历史安装记录：技能部署位置
+abs-path frontend/tests/real-taxonomy.ts  # 本机 taxonomy 快照，只供 local 测试，路径为方法代码来源记录
+abs-path qa/cdp.mjs  # 浏览器检查脚本：Chrome 系统安装路径
+abs-path obsidian-neural-view/README.md  # 插件构建说明：本机检出位置
+abs-path review/**  # 历史评审与验收记录：路径即证据定位
+abs-path spec/**  # 历史设计计划：引用 vault 位置

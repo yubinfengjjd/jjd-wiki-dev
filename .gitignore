@@ -12,3 +12,15 @@ codex/R1-before/
 **/__pycache__/
 **/*.pyc
 *.log
+.pytest_cache/
+# 本机配置：含本机绝对路径，仓库内只保留 config.example.json 与 ci/config.ci.json
+staged/research-wiki/config.json
+# Codex 运行记录：提示词、回放日志与渲染截图含本机路径
+codex/
+# 画廊图片类：受版权的论文图与其派生副本
+画廊/
+test-gallery*/
+# 课题数据留在课题目录
+**/wiki-use/_project/
+# Windows 快捷方式内嵌本机绝对路径
+*.lnk
