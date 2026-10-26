@@ -10,3 +10,10 @@ abs-path qa/cdp.mjs  # 浏览器检查脚本：Chrome 系统安装路径
 abs-path obsidian-neural-view/README.md  # 插件构建说明：本机检出位置
 abs-path review/**  # 历史评审与验收记录：路径即证据定位
 abs-path spec/**  # 历史设计计划：引用 vault 位置
+# 以下逐条登记 master 历史（b8c32d6、8bf636f、98cad4e）中命中的测试/QA 文件；重放保留原提交内容，现行版本已改为 Path.home() 或合成路径
+abs-path staged/research-wiki/tests/test_adaptive.py  # 历史版本写死绘图解释器默认路径（本机 venv），现行版本改用 Path.home()
+abs-path staged/research-wiki/tests/test_layouts.py  # 历史版本写死绘图解释器默认路径（本机 venv），现行版本改用 Path.home()
+abs-path staged/research-wiki/tests/test_config.py  # 配置用例中的合成 Rscript 路径
+abs-path staged/research-wiki/tests/test_t3.py  # record-use 用例中的合成输出路径
+abs-path staged/research-wiki/tests/test_code_assets.py  # 拒绝越界与绝对路径的合成用例
+abs-path staged/research-wiki/tests/conftest.py  # 夹具中的合成解释器路径
