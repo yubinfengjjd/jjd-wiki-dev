@@ -39,14 +39,21 @@ def save(config: Config, message: str) -> None:
     root = config.wiki_root
     refresh_facts(config)
     (root / "index.md").write_text(build_index(root), encoding="utf-8", newline="\n")
-    if not git(root, "status", "--porcelain").strip():
+    # Every git mutation is pathspec-scoped to ``.`` — the working dir is
+    # wiki_root, so ``.`` means the wiki subtree only. When the wiki lives
+    # inside a larger repository, unrelated staged/index changes and untracked
+    # sibling planning/maintenance work stay untouched and uncommitted; no
+    # reset/clean/stash is ever used to hide them. A standalone wiki repo
+    # behaves exactly as before (``.`` == the whole repo).
+    scope = "."
+    if not git(root, "status", "--porcelain", "--", scope).strip():
         return
     timestamp = datetime.now(timezone.utc).strftime("%Y-%m-%d %H:%M UTC")
     with (root / "log.md").open("a", encoding="utf-8", newline="\n") as stream:
         stream.write(f"\n## [{timestamp}] {message}\n")
-    git(root, "add", "-A")
+    git(root, "add", "-A", "--", scope)
     git(root, "-c", "user.name=research-wiki", "-c", "user.email=research-wiki@localhost",
-        "commit", "-m", message)
+        "commit", "-m", message, "--", scope)
 
 
 def init(config: Config) -> None:

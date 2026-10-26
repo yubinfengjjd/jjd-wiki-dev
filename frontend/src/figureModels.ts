@@ -1,4 +1,4 @@
-import { isFigure, LayoutMeta, PageSummary, TemplateMeta, GraphData, Relation } from './api';
+import { isFigure, LayoutMeta, PageSummary, TemplateMeta, GraphData, Relation, displayStatus } from './api';
 import type { Flow } from './flow';
 
 export type FigureMeta = LayoutMeta | TemplateMeta;
@@ -25,6 +25,14 @@ export interface MethodFigure {
   sourceLinks?: SourceLink[];
 }
 export interface SourceLink { path: string; title: string }
+
+/** In a method's associated-figure card, qualify a bare '可用' so template
+ * availability is not read as availability of an unverified analysis. */
+export function methodFigureStatusLabel(figure: MethodFigure): string {
+  const label = displayStatus(figure.meta);
+  if (label !== '可用') return label;
+  return figure.meta.type === 'template' ? '图模板可用' : '图样可用';
+}
 
 function coversSource(template: TemplateMeta, source: LayoutMeta): boolean {
   const letters = source.template_panels[template.id] ?? [];

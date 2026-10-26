@@ -245,3 +245,12 @@ def test_cli_serve_loopback(web):
         process.communicate(timeout=10)
     with pytest.raises((httpx.ConnectError, httpx.ConnectTimeout)):
         httpx.get(f"http://127.0.0.1:{port}/api/pages", timeout=1, trust_env=False)
+
+
+def test_discover_methods_limit_is_validated_as_4xx(web):
+    """A malformed caller limit is a 4xx client error, never a 500."""
+    _, _, client = web
+    assert client.get("/api/discover-methods", params={"limit": -1}).status_code == 422
+    ok = client.get("/api/discover-methods", params={"limit": 5})
+    assert ok.status_code == 200
+    assert 'candidates' in ok.json()
