@@ -41,6 +41,8 @@ def serve(config, no_browser: bool) -> None:
 def parser() -> argparse.ArgumentParser:
     result = argparse.ArgumentParser(description="科研知识库")
     result.add_argument("--config", type=Path, default=Path(__file__).resolve().parents[1] / "config.json")
+    result.add_argument("--wiki-root", type=Path,
+                        help="覆盖配置中的 wiki_root；优先于环境变量 RWIKI_WIKI_ROOT")
     commands = result.add_subparsers(dest="command", required=True)
     commands.add_parser("init")
     ingest = commands.add_parser("ingest-figure")
@@ -48,7 +50,48 @@ def parser() -> argparse.ArgumentParser:
     selection.add_argument("entry_id", nargs="?")
     selection.add_argument("--all", action="store_true")
     commands.add_parser("save").add_argument("message")
-    commands.add_parser("lint")
+    commands.add_parser("lint").add_argument(
+        "--ci", action="store_true", help="被 git 忽略而缺失的引用报告为 LOCAL-ONLY，不计为错误")
+    github = commands.add_parser("gh", help="GitHub 结构化工作流（git 与 gh CLI 的薄封装）")
+    gh_sub = github.add_subparsers(dest="gh_command", required=True)
+    guard = gh_sub.add_parser("guard", help="推送前防泄漏检查（纯本地，不需要 gh）")
+    guard.add_argument("--range", dest="rev_range", help="检查的提交范围，如 origin/main..HEAD")
+    guard.add_argument("--pre-push", nargs=2, metavar=("REMOTE", "URL"),
+                       help="pre-push hook 入口：从标准输入读取待推送的 ref")
+    guard.add_argument("--sync-ignore", action="store_true", help="重写知识库 .gitignore 的 GPL 托管块")
+    gh_sub.add_parser("protect-baseline", help="生成或核验作者块字节基准（纯本地，不需要 gh）").add_argument(
+        "--check", action="store_true", help="只核验，不写基准")
+    gh_sub.add_parser("preflight", help="只读检查 gh、账号、远端仓库、分支保护与待推送范围；有阻断项时退出 1")
+    batch = gh_sub.add_parser("start-batch", help="从 origin/main 建长期分支与同名 Milestone")
+    batch.add_argument("kind", help="project 或 ingest")
+    batch.add_argument("name", help="批次名（小写 slug）")
+    batch.add_argument("--title", required=True, help="中文标题，写入 Milestone 描述")
+    batch.add_argument("--repo", required=True, choices=("dev", "vault"))
+    task = gh_sub.add_parser("start-task", help="在批次的 Milestone 下建 Issue 并创建任务分支（需要 RWIKI_AGENT）")
+    task.add_argument("batch")
+    task.add_argument("stage", help="P0–P5 或 T<数字>")
+    task.add_argument("topic", help="主题（小写 slug）")
+    task.add_argument("--title", required=True, help="Issue 标题")
+    task.add_argument("--worktree", action="store_true", help="在 worktree_root 下建独立 worktree（并行或 Obsidian 使用中时）")
+    gh_sub.add_parser("finish-task", help="推送当前任务分支并开 PR 到所属长期分支").add_argument(
+        "--local-report", type=Path, help="仅本地运行的检查摘要，填入 PR 的本地专属验证一栏")
+    reviewing = gh_sub.add_parser("review", help="以 PR review（COMMENT）回帖 Codex 评审结论")
+    reviewing.add_argument("pr", type=int)
+    reviewing.add_argument("--verdict", required=True, choices=("pass", "changes"))
+    reviewing.add_argument("--findings", type=Path, required=True, help="问题列表文件，每行一条")
+    merging = gh_sub.add_parser("merge", help="合并门禁通过后合并 PR 并收尾（关闭 Issue、释放锁、清理分支）")
+    merging.add_argument("pr", type=int)
+    merging.add_argument("--plan", help="门禁不通过时回帖的修复计划")
+    gh_sub.add_parser("close-batch", help="Milestone 内 Issue 全部关闭后开长期分支到 main 的 PR").add_argument("batch")
+    migrating = gh_sub.add_parser("migrate-legacy", help="按 legacy-map.json 把旧任务书与遗留缺口迁到 Issue")
+    migrating.add_argument("--map", dest="mapping", type=Path, required=True)
+    migrating.add_argument("--dry-run", action="store_true", help="只输出计划，不写 GitHub 与文件")
+    gh_sub.add_parser("bootstrap", help="首推：无 --confirm 时只读输出授权摘要；--confirm 时构造 main、建私有仓库并推送"
+                      ).add_argument("--confirm", action="store_true",
+                                     help="用户已明确授权：改名 master、构造并切到 main、建远端仓库、推送与配置")
+    gh_sub.add_parser("install-hook", help="为仓库写 pre-push hook（调用 gh guard --pre-push；不需要 gh，可重复运行）"
+                      ).add_argument("--repo", choices=("dev", "vault"),
+                                     help="按 config.json 的 github.dev_root / vault_root 选仓库；缺省为当前目录所在仓库")
     commands.add_parser("pending").add_argument('--json', action='store_true')
     checking = commands.add_parser('check-entry')
     checking.add_argument('entry_id')
@@ -441,15 +484,72 @@ def _project_dispatch(args, config) -> None:
                      ensure_ascii=False, indent=2))
 
 
+def _gh_dispatch(args, config) -> int:
+    from . import ghflow, push_guard
+    from .store import git
+
+    verb = args.gh_command
+    if verb not in ("guard", "protect-baseline"):
+        # finish-task、review、merge 作用于当前目录所在的检出（主检出或 worktree）。
+        checkout = (lambda: Path(git(Path.cwd(), "rev-parse", "--show-toplevel").strip()))
+        result = {
+            "preflight": lambda: ghflow.preflight(config),
+            "start-batch": lambda: ghflow.start_batch(config, args.kind, args.name, args.title, args.repo),
+            "start-task": lambda: ghflow.start_task(config, args.batch, args.stage, args.topic, args.title,
+                                                    args.worktree),
+            "finish-task": lambda: ghflow.finish_task(config, checkout(), args.local_report),
+            "review": lambda: ghflow.review(config, checkout(), args.pr, args.verdict, args.findings),
+            "merge": lambda: ghflow.merge(config, checkout(), args.pr, args.plan),
+            "close-batch": lambda: ghflow.close_batch(config, args.batch),
+            "migrate-legacy": lambda: ghflow.migrate_legacy(config, args.mapping, args.dry_run),
+            "bootstrap": lambda: ghflow.bootstrap(config, args.confirm, args.config),
+            "install-hook": lambda: {"hook": str(ghflow.install_hook(
+                ghflow.repo_root(config, args.repo) if args.repo else checkout(), args.config))},
+        }[verb]()
+        print(json.dumps(result, ensure_ascii=False, indent=2))
+        return 1 if verb in ("preflight", "bootstrap") and result.get("blockers") else 0
+    if args.gh_command == "protect-baseline":
+        if not args.check:
+            data = push_guard.write_baseline(config.wiki_root)
+            print(f"已写入 {push_guard.BASELINE_FILE}：{len(data['files'])} 个文件")
+            return 0
+        problems = push_guard.check_baseline(config.wiki_root)
+        for line in problems:
+            print(line)
+        if problems:
+            return 1
+        print("OK")
+        return 0
+    repo = Path(git(Path.cwd(), "rev-parse", "--show-toplevel").strip())
+    if args.sync_ignore:
+        changed = push_guard.sync_ignore(config.wiki_root)
+        print("GPL 托管块已更新" if changed else "GPL 托管块无变化")
+        if not (args.pre_push or args.rev_range):
+            return 0
+    rules = push_guard.load_rules(config, repo)
+    if args.pre_push:
+        return push_guard.pre_push(repo, args.pre_push[0], sys.stdin.read(), rules)
+    # 未指定范围时检查所有尚未出现在任何远端的提交（首推前的干跑）。
+    findings = push_guard.scan(repo, args.rev_range or "HEAD --not --remotes", rules)
+    for finding in findings:
+        print(push_guard.format_finding(finding))
+    if findings:
+        return 1
+    print("OK")
+    return 0
+
+
 def main(argv: list[str] | None = None) -> int:
     args = parser().parse_args(argv)
     try:
         # 课题状态命令只依赖课题目录；check 有配置时才核查 Wiki 引用。
-        config = (load_config(args.config)
+        config = (load_config(args.config, args.wiki_root)
                   if args.command != 'project' or args.config.is_file() else None)
         if args.command == "project":
             _project_dispatch(args, config)
             return 0
+        if args.command == "gh":
+            return _gh_dispatch(args, config)
         elif args.command == "discover-methods":
             from .discovery import discover_methods
             print(json.dumps(discover_methods(config, args.q, args.limit),
@@ -541,7 +641,7 @@ def main(argv: list[str] | None = None) -> int:
                               project_root=args.project_root, run_id=args.run,
                               note=args.note)
         elif args.command == "lint":
-            diagnostics = lint(config)
+            diagnostics = lint(config, ci=args.ci)
             for line in diagnostics:
                 print(line)
             if any(line.startswith("ERROR ") for line in diagnostics):

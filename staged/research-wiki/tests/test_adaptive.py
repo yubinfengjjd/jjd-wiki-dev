@@ -13,7 +13,7 @@ from rwiki.sizing import DEFAULTS
 
 import os
 # The plotting interpreter (matplotlib/pandas); override on another machine.
-PY=Path(os.environ.get('RWIKI_PLOT_PYTHON','C:/Users/86186/.codex/venvs/sci-figure-replica/Scripts/python.exe'))
+PY=Path(os.environ.get('RWIKI_PLOT_PYTHON',Path.home()/'.codex/venvs/sci-figure-replica/Scripts/python.exe'))
 needs_plot_python=pytest.mark.skipif(not PY.is_file(),reason='set RWIKI_PLOT_PYTHON to a Python with matplotlib/pandas')
 
 

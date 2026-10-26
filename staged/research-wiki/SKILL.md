@@ -1,6 +1,6 @@
 ---
 name: research-wiki
-description: Use when the author wants a figure or an analysis for a research project and may already have a reusable figure template or analysis method in their 科研知识库 (LLM Wiki), such as 出图前查模板、推荐图、换数据套用、SHAP/差异分析等可复用方法、分析→出图、处理待办、收录复刻图或方法、知识库体检; also when sci-figure-replica, medfig-render or medpaper-pipeline reach a drawing step.
+description: Use when the author wants a figure or an analysis for a research project and may already have a reusable figure template or analysis method in their 科研知识库 (LLM Wiki), such as 出图前查模板、推荐图、换数据套用、SHAP/差异分析等可复用方法、分析→出图、处理待办、收录复刻图或方法、知识库体检; also when sci-figure-replica, medfig-render or medpaper-pipeline reach a drawing step; and for the project's GitHub workflow on the research-wiki repos (开任务分支、提 PR、Codex 评审、合并、首推/迁移, via wiki.py gh).
 ---
 
 # 科研知识库（research-wiki）
@@ -24,6 +24,30 @@ description: Use when the author wants a figure or an analysis for a research pr
    ```
 
 2. **读总库根目录的 `AGENTS.md`**（路径 = config.json 的 `wiki_root`）。页面类型、谁能改什么、收录与推荐的规则都在那里，以它为准。
+
+## GitHub 结构化工作流（2026-10-27）
+
+知识库与开发代码分属两个 GitHub 私有仓库（`research-wiki-vault`、`research-wiki-dev`，默认分支 `main`），任务、评审、验收用 Milestone / Issue / PR 管理，文件任务书已停用（旧任务书经 `gh migrate-legacy` 迁为 Issue）。完整的子命令参数、前置条件、仅本地运行的检查清单与 `--local-report` 用法见 [GitHub 工作流](references/github-workflow.md)。
+
+- **项目自带、与宿主无关**：规则由 `wiki.py gh` 子命令、仓库内 `.github/` 模板与 CI、pre-push hook 实现；Codex、Claude、Devin、Kiro 等任何 agent 都通过 `wiki.py gh` 遵守，不依赖 Kiro 或宿主配置。
+- **写入前先开任务分支**：`main`、`project/*`、`ingest/*` 上 `save` 与网页写入都被拒；先 `gh start-batch`（每批一次）再 `gh start-task <批次> <阶段> <主题> --title … [--worktree]`（需设 `RWIKI_AGENT`）。网页编辑用 `--worktree`，按输出设置 `RWIKI_WIKI_ROOT` 后运行 launcher。
+- **一次任务**：`start-task` → `save`/普通提交 → `finish-task [--local-report <文件>]` → CI → `review` → `merge` → 批次收尾 `close-batch`。
+- **分工**：评审须由非编码 agent（Codex 角色）执行并以 `wiki.py gh review <pr> --verdict pass|changes --findings <文件>` 回帖；编码 agent 不评审自己的 PR。
+- **合并只经 `wiki.py gh merge`**：免费私有仓库无远端分支保护（保护 API 403 → 本地门禁模式）时这是唯一合并入口，不在网页上点合并，也不直接运行 `gh pr merge`；门禁要求 CI 全部 pass 且最新 codex-review 为 pass、sha 等于 PR 当前 head。
+- **hook 不入库**：新克隆或新机器运行 `wiki.py gh install-hook --repo dev|vault` 重新安装 pre-push hook。`gh guard`、`gh protect-baseline` 不需要 gh。
+- **不要在主检出检出 `legacy/master`**：会把画廊、维护记录等未进 `main` 的文件从磁盘删除。
+
+| 子命令 | 用途 |
+|---|---|
+| `gh preflight` | 只读检查 gh、账号、仓库可见性、分支保护与待推送范围 |
+| `gh bootstrap [--confirm]` | 首推；无 `--confirm` 只输出授权摘要 |
+| `gh install-hook [--repo dev\|vault]` | 安装 pre-push hook |
+| `gh start-batch` / `gh start-task` | 建长期分支 + Milestone / 任务 Issue + 任务分支 |
+| `gh finish-task [--local-report <文件>]` | 推送任务分支并开 PR |
+| `gh review` / `gh merge [--plan]` | Codex 评审回帖 / 门禁合并 |
+| `gh close-batch` | 批次全部 Issue 关闭后开到 `main` 的 PR |
+| `gh migrate-legacy [--dry-run]` | 旧任务书与遗留缺口迁为 Issue |
+| `gh guard` / `gh protect-baseline` | 推送防泄漏检查 / 作者块字节基准（纯本地） |
 
 ## 作者要出图或做分析
 
@@ -68,14 +92,15 @@ description: Use when the author wants a figure or an analysis for a research pr
 | sci-figure-replica 复刻完一张图 | `ingest-figure <画廊条目 id>`，再按 AGENTS.md“收录”补适用说明 |
 | 作者说“处理待办” | `pending`，按实际剩余工作继续已有草稿或补齐模板；不按状态盲目重建 |
 | 收录一段分析代码或写方法笔记 | AGENTS.md“收录方法”（`scaffold-method` → 写笔记 → 作者确认） |
-| 体检 | `lint` |
-| 网页 | `serve`（作者在网页签核、确认方法、改标签） |
+| 体检 | `lint`（CI 用 `lint --ci`：被忽略而缺失的 GPL 源码、画廊、维护记录报 `LOCAL-ONLY`） |
+| 网页 | `serve`（作者在网页签核、确认方法、改标签；主检出在 `main` 时写入被拒，经 `RWIKI_WIKI_ROOT` / `--wiki-root` 指向任务分支检出） |
+| 开任务、提 PR、评审、合并 | `gh start-task` / `gh finish-task` / `gh review` / `gh merge`，见上节与 [GitHub 工作流](references/github-workflow.md) |
 
 作者源码函数化保留原语言、源字节/哈希与修改副本，记录输入/输出、依赖、随机性和限制；比较原版与封装版数值等价，再在不同工作目录/换数据检查可移植性。函数不硬编码课题/知识库路径，使用课题环境；绘图对象按语言返回，多个 axes 仍可构成一个 panel。保留现有 `draw(fig, rect, tables, style)`/render 入口并共用绘图核心。统计逻辑改变或补缺失分析算法前询问作者；不为收录而制作公共 pip/R 包。详细契约见总库 AGENTS.md。
 
 函数化也要验证改变组数/类别数/行列后能套用，不能只封装固定规模。 n为实际数据中的任意合法数量，由课题agent识别并编排，不为固定几个n另写分支/模板；尺寸默认系数可按课题覆盖。按数据结构配置尺寸增长，默认保持单panel与间距并继续加宽/增高；只在作者明确设置上限时协商其他布局。新Python模板使用可复制的 `code/sizing.py` 和 `spec.style.sizing`，独立函数与render共用核心；复刻比例与换数据自适应分开验收。实现、配置和迁移边界见 [尺寸适配契约](references/adaptive-sizing.md)。
 
-Wiki 写操作最后都是 `save "<说明>"`（多数命令已自带）；`project` 课题状态命令只写课题 `wiki-use/_project/`，不进 save 链。完整参数：`wiki.py <命令> --help`。
+Wiki 写操作最后都是 `save "<说明>"`（多数命令已自带），只在 `task/*` 任务分支上提交并附 `Issue`/`Agent`/`Pages` trailer；`project` 课题状态命令只写课题 `wiki-use/_project/`，不进 save 链。完整参数：`wiki.py <命令> --help`。
 
 ## 方法家族与入库八步（2026-10-23）
 

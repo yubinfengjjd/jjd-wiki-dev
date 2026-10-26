@@ -1,4 +1,6 @@
 import re
+import subprocess
+from pathlib import Path
 
 from .catalog import LAYOUT_STATUSES, TEMPLATE_STATUSES, METHOD_STATUSES, page_paths, render_index
 from .config import Config, read_json
@@ -86,11 +88,14 @@ def asset_diagnostics(config: Config, path, meta: dict) -> list[tuple[str, str]]
     return []
 
 
+GALLERY_MISSING = "画廊 meta.json 不存在"
+
+
 def layout_diagnostics(config: Config, meta: dict) -> list[tuple[str, str]]:
     diagnostics = []
     entry = config.gallery_root / meta["gallery_entry"] / "meta.json"
     if not entry.is_file():
-        diagnostics.append(("ERROR", "画廊 meta.json 不存在"))
+        diagnostics.append(("ERROR", GALLERY_MISSING))
     else:
         gallery = read_json(entry)
         status, approved = meta["status"], gallery["status"] == "approved"
@@ -196,14 +201,32 @@ def visual_diagnostics(config: Config, path, meta: dict, body: str,
     return diagnostics
 
 
-def lint(config: Config) -> list[str]:
+def lint(config: Config, ci: bool = False) -> list[str]:
+    """ci=True：因被 git 忽略（GPL 托管块、画廊、维护记录）而缺失的引用报告为 LOCAL-ONLY。"""
     root = config.wiki_root
     diagnostics = []
     valid_pages = []
     derived_pages = []
     parsed_pages = []
+    gpl_missing = []
+    if ci:
+        from .push_guard import gpl_method_dirs
+        gpl_missing = [root / d for d in gpl_method_dirs(root) if not (root / d).exists()]
 
-    def report(level: str, path, message: str) -> None:
+    def local_only(missing) -> bool:
+        # 目录以 `/` 结尾传给 check-ignore，目录型忽略规则才会匹配不存在的路径。
+        return not Path(missing).exists() and subprocess.run(
+            ["git", "-C", str(root), "check-ignore", "-q", "--", str(missing)],
+            capture_output=True).returncode == 0
+
+    def method_missing(path):
+        """方法页的复核依赖其 GPL 源码目录；CI 检出中这些目录被忽略而缺失。"""
+        asset = path.with_suffix("")
+        return next((f"{d}/" for d in gpl_missing if d.is_relative_to(asset)), None)
+
+    def report(level: str, path, message: str, missing=None) -> None:
+        if ci and level == "ERROR" and missing is not None and local_only(missing):
+            level = "LOCAL-ONLY"
         diagnostics.append(f"{level} {path.relative_to(root).as_posix()}: {' '.join(message.splitlines())}")
 
     for path in page_paths(root):
@@ -266,7 +289,9 @@ def lint(config: Config) -> list[str]:
                     derived_pages.append((path, meta, body))
             if meta["type"] in ("layout", "template"):
                 for level, message in visual_diagnostics(config, path, meta, body, valid_metadata):
-                    report(level, path, message)
+                    report(level, path, message,
+                           config.gallery_root / meta["gallery_entry"] / "meta.json"
+                           if message == GALLERY_MISSING else None)
                 if meta["type"] == "template":
                     from .runtime_contract import lint_manifest
                     for message in lint_manifest(path.with_suffix(''), meta['id'], 'template'):
@@ -282,9 +307,11 @@ def lint(config: Config) -> list[str]:
                     and meta.get('status') not in ('archived', 'pending_signoff')):
                 from .acceptance import entry_errors, acceptance_stale
                 for message in entry_errors(config, path):
-                    report('ERROR' if meta['status'] == 'ready' else 'WARN', path, f'入库验收: {message}')
+                    report('ERROR' if meta['status'] == 'ready' else 'WARN', path, f'入库验收: {message}',
+                           method_missing(path))
                 if meta['status'] == 'ready' and acceptance_stale(path):
-                    report('ERROR', path, '入库验收记录已过期，请核对后 check-entry --record')
+                    report('ERROR', path, '入库验收记录已过期，请核对后 check-entry --record',
+                           method_missing(path))
         for name in ("user", "facts"):
             if meta.get("type") in ("layout", "template", "method", "interface") or f"<!-- {name}:" in body:
                 error = block_error(body, name)
@@ -292,9 +319,10 @@ def lint(config: Config) -> list[str]:
                     report("ERROR", path, error)
         for target in extract_links(body):
             if not resolve(root, target).exists():
-                report("ERROR", path, f"断链或嵌入目标不存在: {target}")
+                report("ERROR", path, f"断链或嵌入目标不存在: {target}", resolve(root, target))
     # A canonical relation graph requires valid pages, assets, references and blocks.
-    if not any(line.startswith("ERROR ") for line in diagnostics):
+    # LOCAL-ONLY 表示本地资产缺失，facts 无法在此检出中重算。
+    if not any(line.startswith(("ERROR ", "LOCAL-ONLY ")) for line in diagnostics):
         for path, meta, body in derived_pages:
             if get_block(body, "facts") != page_facts(config, meta):
                 report("WARN", path, "facts 与资产不一致，请运行 save")
@@ -302,7 +330,7 @@ def lint(config: Config) -> list[str]:
     actual_index = index.read_text(encoding="utf-8") if index.exists() else ""
     for target in extract_links(actual_index):
         if not resolve(root, target).exists():
-            report("ERROR", index, f"断链或嵌入目标不存在: {target}")
+            report("ERROR", index, f"断链或嵌入目标不存在: {target}", resolve(root, target))
     # Malformed metadata still belongs in the directory; lint reports its problems separately.
     from .catalog import readable_pages
     if actual_index != render_index(root, readable_pages(root)):

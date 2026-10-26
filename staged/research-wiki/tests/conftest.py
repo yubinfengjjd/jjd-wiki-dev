@@ -1,8 +1,10 @@
 import hashlib
 import json
+import os
 import shutil
 import subprocess
 import sys
+from dataclasses import dataclass
 from pathlib import Path
 
 import pytest
@@ -10,7 +12,199 @@ import pytest
 SKILL_ROOT = Path(__file__).resolve().parents[1]
 DEV_ROOT = SKILL_ROOT.parents[1]
 ENTRY_ID = "2026-08-17-shap-feature-mechanism__fig01-shap-a-f"
+FAKE_GH_DIR = Path(__file__).resolve().parent / "fake_gh"
 sys.path.insert(0, str(SKILL_ROOT))
+# 这些夹具复制 DEV_ROOT/test-gallery（受版权的画廊副本，不入库），依赖它的测试只在本机运行。
+LOCAL_FIXTURES = {"workspace"}
+
+
+def pytest_collection_modifyitems(items):
+    for item in items:
+        if LOCAL_FIXTURES & set(item.fixturenames):
+            item.add_marker(pytest.mark.local)
+
+
+def git_run(repo, *args, env=None):
+    """测试里的 git 调用：失败直接抛出，返回 stdout。"""
+    return subprocess.run(["git", "-C", str(repo), *args], check=True, capture_output=True,
+                          text=True, encoding="utf-8", env=env).stdout
+
+
+def git_init(path, branch="main"):
+    path.mkdir(parents=True, exist_ok=True)
+    git_run(path, "init", "-q", "-b", branch)
+    for key, value in (("user.name", "tester"), ("user.email", "tester@localhost"),
+                       ("core.autocrlf", "true")):
+        git_run(path, "config", key, value)
+    return path
+
+
+def commit_file(repo, relative, data, message="change"):
+    """写入字节并提交该文件，返回新提交 sha。"""
+    target = Path(repo) / relative
+    target.parent.mkdir(parents=True, exist_ok=True)
+    target.write_bytes(data if isinstance(data, bytes) else data.encode("utf-8"))
+    git_run(repo, "add", "--", relative)
+    git_run(repo, "commit", "-q", "-m", message)
+    return git_run(repo, "rev-parse", "HEAD").strip()
+
+
+def fake_repo_entry(visibility="PRIVATE", protection_status=403):
+    return {"visibility": visibility, "protection_status": protection_status, "milestones": [],
+            "issues": [], "prs": [], "labels": [], "secrets": [], "deploy_keys": []}
+
+
+@dataclass
+class FakeGh:
+    state_path: Path
+    log_path: Path
+
+    def state(self) -> dict:
+        return json.loads(self.state_path.read_text(encoding="utf-8"))
+
+    def write(self, state: dict) -> None:
+        self.state_path.write_text(json.dumps(state, ensure_ascii=False, indent=2), encoding="utf-8")
+
+    def update(self, **changes) -> None:
+        self.write({**self.state(), **changes})
+
+    def calls(self) -> list[list[str]]:
+        text = self.log_path.read_text(encoding="utf-8") if self.log_path.is_file() else ""
+        return [json.loads(line) for line in text.splitlines() if line]
+
+
+@pytest.fixture
+def fake_gh(tmp_path, monkeypatch):
+    """假 gh 置于 PATH 最前；场景状态与调用日志都在 tmp_path 下。"""
+    state_path, log_path = tmp_path / "fake-gh-state.json", tmp_path / "fake-gh-log.jsonl"
+    fake = FakeGh(state_path, log_path)
+    fake.write({"login": "tester", "authenticated": True, "default_repo": "tester/research-wiki-vault",
+                "clock": 0, "remote_map": {},
+                "repos": {"tester/research-wiki-vault": fake_repo_entry(),
+                          "tester/research-wiki-dev": fake_repo_entry()}})
+    monkeypatch.setenv("PATH", str(FAKE_GH_DIR) + os.pathsep + os.environ["PATH"])
+    monkeypatch.setenv("FAKE_GH_STATE", str(state_path))
+    monkeypatch.setenv("FAKE_GH_LOG", str(log_path))
+    monkeypatch.setenv("FAKE_GH_PYTHON", sys.executable)
+    return fake
+
+
+@dataclass
+class GitPair:
+    work: Path
+    remote: Path
+
+
+@pytest.fixture
+def git_pair(tmp_path):
+    """工作仓库 + --bare 远端（origin），core.autocrlf=true，main 已推送。"""
+    remote = tmp_path / "remote.git"
+    subprocess.run(["git", "init", "-q", "--bare", "-b", "main", str(remote)], check=True)
+    work = git_init(tmp_path / "work")
+    git_run(work, "remote", "add", "origin", str(remote))
+    commit_file(work, "README.md", "# 测试仓库\n", "init")
+    git_run(work, "push", "-q", "-u", "origin", "main")
+    return GitPair(work, remote)
+
+
+def write_config(path, wiki_root, **extra):
+    """最小配置文件；extra 可带 push_guard、github 等新字段。"""
+    path.write_text(json.dumps({
+        "wiki_root": str(wiki_root), "gallery_root": str(path.parent / "gallery"),
+        "taxonomy": str(path.parent / "taxonomy.yaml"), "python_exe": sys.executable,
+        "rscript_exe": "D:/R-4.5.0/bin/Rscript.exe", "port": 8765, **extra,
+    }, ensure_ascii=False), encoding="utf-8", newline="\n")
+    return path
+
+
+def install_test_hook(work, config_path):
+    """与 bootstrap 的 install_hook 同形：sh 脚本调用本解释器与本 wiki.py 的 gh guard --pre-push。"""
+    hook = Path(work) / ".git" / "hooks" / "pre-push"
+    hook.write_text("#!/bin/sh\n"
+                    f'exec "{Path(sys.executable).as_posix()}" -X utf8 "{(SKILL_ROOT / "wiki.py").as_posix()}" '
+                    f'--config "{Path(config_path).as_posix()}" gh guard --pre-push "$1" "$2"\n',
+                    encoding="utf-8", newline="\n")
+    return hook
+
+
+def run_wiki(cwd, *args, env=None):
+    """在指定目录运行 wiki.py（gh guard 以 cwd 所在仓库为准）。"""
+    return subprocess.run([sys.executable, "-X", "utf8", str(SKILL_ROOT / "wiki.py"), *args],
+                          cwd=cwd, capture_output=True, text=True, encoding="utf-8", env=env)
+
+
+@pytest.fixture
+def wiki_repo(tmp_path):
+    """最小 vault：根仓库在 main 上，知识库/ 是其中的子树；返回 (config, config_path, vault)。"""
+    from rwiki.config import load_config
+
+    vault = git_init(tmp_path / "vault")
+    wiki = vault / "知识库"
+    for directory in ("layouts", "templates", "methods", "interfaces", "chart-types", "projects"):
+        (wiki / directory).mkdir(parents=True)
+    (wiki / ".gitignore").write_text("**/__pycache__/\n", encoding="utf-8", newline="\n")
+    (wiki / "log.md").write_text("# 操作日志\n", encoding="utf-8", newline="\n")
+    (vault / "文档").mkdir()
+    (vault / "文档/说明.md").write_text("# 说明\n", encoding="utf-8", newline="\n")
+    git_run(vault, "add", "-A")
+    git_run(vault, "commit", "-q", "-m", "init vault")
+    (tmp_path / "gallery").mkdir()
+    config_path = write_config(tmp_path / "config.json", wiki)
+    return load_config(config_path), config_path, vault
+
+
+@dataclass
+class GhRepos:
+    config: object
+    config_path: Path
+    vault: Path
+    dev: Path
+    worktrees: Path
+    gh: FakeGh
+
+    def reload(self):
+        from rwiki.config import load_config
+        self.config = load_config(self.config_path)
+        return self.config
+
+
+@pytest.fixture
+def gh_repos(wiki_repo, fake_gh, tmp_path, monkeypatch):
+    """vault（含 知识库/）与 dev 两个工作仓库，各带 --bare 远端且 main 已推送；假 gh 按 origin 地址映射仓库。"""
+    from rwiki.config import load_config
+
+    monkeypatch.delenv("RWIKI_WIKI_ROOT", raising=False)
+    monkeypatch.delenv("RWIKI_AGENT", raising=False)
+    config, config_path, vault = wiki_repo
+    dev = git_init(tmp_path / "dev")
+    commit_file(dev, "README.md", "# dev\n", "init")
+    remote_map = {}
+    for key, repo in (("vault", vault), ("dev", dev)):
+        remote = tmp_path / f"{key}.git"
+        subprocess.run(["git", "init", "-q", "--bare", "-b", "main", str(remote)], check=True)
+        git_run(repo, "remote", "add", "origin", str(remote))
+        git_run(repo, "push", "-q", "-u", "origin", "main")
+        remote_map[str(remote)] = f"tester/research-wiki-{key}"
+    fake_gh.update(remote_map=remote_map)
+    worktrees = tmp_path / "worktrees"
+    write_config(config_path, config.wiki_root, github={
+        "owner": "tester", "dev_root": str(dev), "vault_root": str(vault), "worktree_root": str(worktrees)})
+    return GhRepos(load_config(config_path), config_path, vault, dev, worktrees, fake_gh)
+
+
+def gh_writes(fake) -> list[list[str]]:
+    """假 gh 日志中的写操作（只读调用：auth status、view、list、checks、GET api）。"""
+    reads = {"status", "view", "list", "checks"}
+    writes = []
+    for call in fake.calls():
+        if call[:1] == ["--version"] or (len(call) > 1 and call[1] in reads):
+            continue
+        if call[0] == "api" and ("-X" not in call or call[call.index("-X") + 1] == "GET") and "-f" not in call:
+            continue
+        if call[0] == "api" and "-X" in call and call[call.index("-X") + 1] == "GET":
+            continue
+        writes.append(call)
+    return writes
 
 
 def run_cli(config_path, *args):

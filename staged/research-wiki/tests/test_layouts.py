@@ -12,7 +12,7 @@ from rwiki.errors import WikiError
 from rwiki.ingest import ingest_figure
 from rwiki.pages import read_page, write_page
 
-DRAW_PYTHON = Path("C:/Users/86186/.codex/venvs/sci-figure-replica/Scripts/python.exe")
+DRAW_PYTHON = Path.home() / ".codex/venvs/sci-figure-replica/Scripts/python.exe"
 
 
 @pytest.mark.parametrize("field,value,message", [

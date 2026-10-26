@@ -1,4 +1,5 @@
 import json
+import os
 from dataclasses import dataclass, field
 from pathlib import Path
 
@@ -15,6 +16,8 @@ class Config:
     port: int
     function_defaults: dict = field(default_factory=dict)
     single_panel_only: bool = False
+    push_guard: dict = field(default_factory=dict)
+    github: dict = field(default_factory=dict)
 
 
 def read_json(path: Path) -> dict:
@@ -26,8 +29,12 @@ def read_json(path: Path) -> dict:
         raise WikiError(f"JSON 无法解析 {path}: {error}") from error
 
 
-def load_config(path: Path) -> Config:
+def load_config(path: Path, wiki_root: Path | None = None) -> Config:
+    """wiki_root 覆盖顺序：参数（--wiki-root）> 环境变量 RWIKI_WIKI_ROOT > 配置文件。"""
     values = read_json(path)
+    override = wiki_root or os.environ.get("RWIKI_WIKI_ROOT")
+    if override:
+        values["wiki_root"] = str(override)
     required = ("wiki_root", "gallery_root", "taxonomy", "python_exe", "rscript_exe")
     missing = [key for key in (*required, "port") if key not in values]
     if missing:
@@ -45,7 +52,8 @@ def load_config(path: Path) -> Config:
         except ValueError as error:
             raise WikiError(str(error)) from error
     return Config(*(Path(values[key]).resolve() for key in required), port=values["port"],
-                  function_defaults=defaults, single_panel_only=single_only)
+                  function_defaults=defaults, single_panel_only=single_only,
+                  push_guard=values.get("push_guard", {}), github=values.get("github", {}))
 
 
 def load_taxonomy(path: Path) -> dict:

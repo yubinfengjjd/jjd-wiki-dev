@@ -10,6 +10,9 @@ import pytest
 
 from rwiki.pages import get_block, read_page, write_page
 
+# 迁移脚本在 codex/（不入库），只在本机检出可运行。
+pytestmark = pytest.mark.local
+
 
 SCRIPT = Path(__file__).resolve().parents[3] / "codex" / "R1-migrate.py"
 

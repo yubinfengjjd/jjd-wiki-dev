@@ -115,9 +115,27 @@
 - 其余正文由 agent 负责：可以重写、合并、补链接，保持准确简洁。
 - frontmatter 的 `status`、`favorite`、`archived_from` 只通过 `wiki.py` 或网页修改。
 
+## GitHub 结构化工作流（2026-10-27）
+
+任务、评审与验收在 GitHub 私有仓库的 Milestone / Issue / PR 中进行，不再新建或维护文件形式的任务书；旧任务书（T1–T7、P1、P2、M1–M3、R1）与 `remaining-gaps.md` 经 `wiki.py gh migrate-legacy` 迁为 Issue 后只读停用。各子命令的参数、前置条件与仅本地运行的检查清单见 research-wiki 技能的 `references/github-workflow.md`。
+
+- **项目自带、与宿主无关**：流程由本项目的 `wiki.py gh` 子命令、仓库内 `.github/`（PR/Issue 模板与 CI）和 pre-push hook 实现。Codex、Claude、Devin、Kiro 等任何 agent 都通过 `wiki.py gh` 遵守同一套规则，不依赖 Kiro 或任何宿主的私有配置。
+- **两个仓库**：`research-wiki-dev`（`开发/`，代码与技能）与 `research-wiki-vault`（项目根，含本知识库、`文档/`、`tools/`），默认分支都是 `main`。主检出平时停在 `main`，作为 Obsidian 与 launcher 的阅读检出。
+- **分支命名**：长期分支 `project/<课题>`、`ingest/<批次>`；任务分支 `task/<批次>-<阶段>-<主题>`，阶段为 `P0`–`P5` 或 `T<数字>`，批次与主题是小写 slug（≤ 40 字符），如 `task/scp-wave3-P2-harmony`。中文名称写在 Milestone/Issue 标题里。
+- **Milestone / Issue / Label**：每个长期分支有同名 Milestone（`gh start-batch` 建）；每个任务一个 Issue（`gh start-task` 建），正文含 `rwiki-task` 标记与“目标 / 验收标准 / 本地证据 / 验收结论”四节，本地证据只写相对路径与 sha256。Label 分四组：`type:*`、`stage:*`、`status:进行中|待评审|需修改|已验收`、`blocked:*`。
+- **PR 模板**：关联 Issue / 改动摘要 / 测试结果（CI）/ 本地专属验证 / 受保护字节核验 / 未完成项。`gh finish-task --local-report <文件>` 把仅本地运行的检查摘要填入“本地专属验证”，并把 `gh protect-baseline --check` 结果填入“受保护字节核验”。作者改了 user 块时，重新运行 `gh protect-baseline` 并在该栏写明。
+- **分工**：编码 agent 负责 `start-task` → `save`/提交 → `finish-task`；评审必须由非编码 agent（Codex 角色）执行，并用 `wiki.py gh review <pr> --verdict pass|changes --findings <文件>` 回帖。编码 agent 不评审自己的 PR。回帖是 COMMENT 类型 review，正文首行为 `<!-- codex-review: verdict=pass|changes sha=<PR head 的 40 位 SHA> -->`。
+- **Merge_Gate**：`wiki.py gh merge <pr>` 只在 CI 检查非空且全部 pass、最新一条 codex-review 标记为 pass 且其 sha 等于 PR 当前 head 时合并；PR 之后再有提交，旧评审即失效。不通过时 PR 保持未合并，回帖 `<!-- rwiki-gate: blocked sha=<head> -->`、原因与修复计划（`--plan`，缺省“待补”），命令退出 1。合并后自动关闭 Issue、标 `status:已验收`、释放写入锁并清理任务分支与 worktree。批次内 Issue 全部关闭后由 `gh close-batch` 开到 `main` 的 PR，同样经 `gh merge`。
+- **本地门禁模式**：免费私有仓库没有远端分支保护（保护 API 返回 403，bootstrap 记为 `protection: local`）时，合并只能经 `wiki.py gh merge`，不在网页上点合并，也不直接运行 `gh pr merge`；pre-push hook 拒绝直接推送 `main`、`project/*`、`ingest/*`（新建长期分支且等于 `origin/main` 除外）以及任何 `legacy/*`。
+- **pre-push hook 不入库**：新克隆或新机器先运行 `wiki.py gh install-hook --repo dev|vault` 重新安装。hook 调用 `gh guard`，拦截画廊、GPL 源码、课题数据、超限文件与本机绝对路径；`gh guard` 与 `gh protect-baseline` 是纯本地检查，不需要 gh。
+- **save 与前端写入**：`main` 与长期分支上 `wiki.py save` 被拒（提示先 `gh start-task`），网页（`server.py`）的写入端点同样被拒，页面改动被还原。只有在 `task/*` 分支、由持有写入锁的 `RWIKI_AGENT` 执行时 save 才提交，提交附 `Issue`、`Agent`、`Pages` trailer。要在网页里编辑，先 `gh start-task … --worktree`，按其输出设置 `RWIKI_WIKI_ROOT=<worktree>\知识库`，再运行 `tools\launcher.ps1`（launcher 会把该变量以 `--wiki-root` 传给 server），UI 写入即落到任务分支检出。
+- **GitHub 上的 vault 不含** GPL 源码目录（`知识库/.gitignore` 的 push-guard 托管块）、`画廊/` 与 `维护记录/`。CI 用 `lint --ci`，这些缺失报 `LOCAL-ONLY`、不计错误；完整 `lint` 与方法复核只在主检出或带 GPL 目录联接的 worktree（`start-task --worktree` 自动建 `mklink /J` 联接）中本地运行。
+- **部署来源限制**：`tools/deploy.py` 只在 `开发` 工作区干净、HEAD 等于 `origin/main` 或恰为已推送 tag 时部署 5 处技能目录，manifest 记 `source_commit`/`source_tag`；首推前只能用 `--verify-only` 核对。
+- **不要在主检出检出 `legacy/master`**：旧 master 跟踪了画廊与维护记录，检出它再切回会把这些未进新 `main` 的文件从磁盘删除，且远端没有副本。
+
 ## 操作
 
-所有写操作的最后一步都是 `wiki.py save "<说明>"`：重建 index；有变化时追加 log 并 git 提交，没有变化时什么也不做。`ingest-figure` 已经包含这一步。save 的 git stage/commit 限定在 Wiki 根目录子树（`git -C <wiki_root> -- .`）：Wiki 是更大仓库的子目录时，兄弟路径的已暂存/未跟踪改动保持原状，不被 Wiki 提交裹挟。
+所有写操作的最后一步都是 `wiki.py save "<说明>"`：重建 index；有变化时追加 log 并提交到当前任务分支，没有变化时什么也不做。`ingest-figure` 已经包含这一步。save 只在 `task/*` 任务分支上提交（`main`、`project/*`、`ingest/*` 上拒绝，见“GitHub 结构化工作流”）；git stage/commit 限定在 Wiki 根目录子树（`git -C <wiki_root> -- .`）：Wiki 是更大仓库的子目录时，兄弟路径的已暂存/未跟踪改动保持原状，不被 Wiki 提交裹挟。
 
 ### 后续入库八步（2026-10-23 追加，方法和来源通用）
 
