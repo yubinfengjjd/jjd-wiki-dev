@@ -9,17 +9,19 @@ from rwiki.pages import get_block, read_page, write_page
 from rwiki.server import create_app
 
 
-def test_ingest_translates_primary_secondary_and_keeps_free_tags(workspace):
+def test_ingest_translates_primary_secondary_and_moves_free_tags_to_keywords(workspace):
     config, _ = workspace
     update_gallery(config, scenarios={'primary': ['model-explanation-shap'],
                                      'secondary': ['single-cell', 'model-explanation-shap'],
                                      'free': ['SHAP', '单细胞分析', 'SHAP']})
     ingest_figure(config, ENTRY_ID)
     meta, body = read_page(config.wiki_root / f'layouts/{ENTRY_ID}.md')
-    assert meta['tags'] == ['模型解释与特征重要性', '单细胞分析', 'SHAP']
+    assert meta['tags'] == ['模型解释与特征重要性', '单细胞分析']
+    assert meta['keywords'] == ['SHAP']
     assert 'scenarios' not in meta
     assert not (config.wiki_root / 'scenarios').exists()
     assert '单细胞分析' in get_block(body, 'facts')
+    assert 'SHAP' in get_block(body, 'facts')
     assert '[[scenarios/' not in body
 
 

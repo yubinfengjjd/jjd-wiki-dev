@@ -43,6 +43,12 @@ def metadata_errors(meta: dict) -> list[str]:
         # Templates only come from a replicated source (scaffold-template / attach-template).
         errors.append("模板必须记录至少一个来源版式 layouts；不能手工新建无来源模板")
     if page_type == "method":
+        from .method_implementations import implementation_metadata_errors
+        from .method_taxonomy import purpose_errors
+        errors.extend(implementation_metadata_errors(meta))
+        errors.extend(purpose_errors(meta))
+        if meta.get("method_kind") in ("workflow", "technical") and meta.get("figure_relations"):
+            errors.append("workflow/technical 资料不应维护主 figure_relations；迁往真正的分析家族")
         source = meta.get("source")
         fields = {"post": ("gallery_entry",), "project": ("path",), "repo": ("url", "commit"), "written": ()}
         if not isinstance(source, dict) or source.get("kind") not in ("post", "project", "repo", "written"):
@@ -214,8 +220,40 @@ def lint(config: Config) -> list[str]:
         parsed_pages.append((path, meta, body, errors))
 
     valid_metadata = dict(valid_pages)
+    families = {}
     for path, meta, body, errors in parsed_pages:
+        if meta.get('type') == 'method':
+            from .method_implementations import implementation_status
+            if not meta.get('method_kind'):
+                report('WARN', path, 'method_kind 缺失：旧页待分类，不参与分析推荐')
+            from .method_taxonomy import missing_purpose
+            if missing_purpose(meta):
+                report('WARN', path, 'purposes 缺失：请按分析用途分类；旧页仍可读，但不进入用途筛选')
+            if meta.get('method_kind') == 'analysis' and meta.get('status') != 'archived':
+                name = ''.join(str(meta.get('title', '')).casefold().split())
+                if name in families:
+                    report('ERROR', path, f'重复分析家族：标题与 {families[name]} 相同，须人工核对范围')
+                families[name] = path.relative_to(root).as_posix()
+                if not meta.get('implementations'):
+                    report('WARN', path, '未声明实现：笔记可确认，实现仍待实现')
+            for item in implementation_status(path, meta):
+                if item['state'] != 'verified':
+                    report('WARN', path, f"实现 {item['id']}：{item['state']}；当前不能推荐执行")
+                runtime = item.get('runtime') or {}
+                if runtime.get('declared') and runtime.get('dependency_match') is False:
+                    report('WARN', path, f"实现 {item['id']}：页面 dependencies 与 runtime.json 不一致，"
+                                          "展示以 runtime.json 为准")
+            from .runtime_contract import lint_manifest
+            for message in lint_manifest(path.with_suffix(''), path.stem, 'method'):
+                report('WARN', path, message)
         if not errors:
+            if meta["type"] == "interface":
+                try:
+                    meaning = section_text(body, "含义")
+                except WikiError:
+                    meaning = ""
+                if not meaning.strip():
+                    report("WARN", path, "含义为空：写明一行代表什么、单位以及与相近接口的区别")
             if meta["type"] == "method" and meta.get("status") == "ready":
                 for level, message in (adaptable_interface_diagnostics(config, path, meta, body)
                                        + figureless_method_diagnostics(config, meta, body)):
@@ -229,6 +267,10 @@ def lint(config: Config) -> list[str]:
             if meta["type"] in ("layout", "template"):
                 for level, message in visual_diagnostics(config, path, meta, body, valid_metadata):
                     report(level, path, message)
+                if meta["type"] == "template":
+                    from .runtime_contract import lint_manifest
+                    for message in lint_manifest(path.with_suffix(''), meta['id'], 'template'):
+                        report('WARN', path, message)
             elif meta["type"] == "project":
                 for entry_id in meta["templates"]:
                     if not any((root / kind / f"{entry_id}.md").is_file() for kind in ("templates", "layouts")):
@@ -261,6 +303,8 @@ def lint(config: Config) -> list[str]:
     for target in extract_links(actual_index):
         if not resolve(root, target).exists():
             report("ERROR", index, f"断链或嵌入目标不存在: {target}")
-    if actual_index != render_index(root, valid_pages):
+    # Malformed metadata still belongs in the directory; lint reports its problems separately.
+    from .catalog import readable_pages
+    if actual_index != render_index(root, readable_pages(root)):
         report("WARN", index, "index.md 与页面不一致，请运行 save")
     return diagnostics

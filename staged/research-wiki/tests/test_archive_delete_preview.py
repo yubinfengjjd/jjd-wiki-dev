@@ -32,10 +32,21 @@ def test_archive_preview_is_source_if_no_replay(deletion_web):
     meta, body = read_page(origin); meta['panels'] = {'A': 'bar'}; write_page(origin, meta, body)
     detail = client.get('/api/page', params={'path': f'templates/{tid}.md'}).json()
     assert detail['preview']['kind'] == 'source'
+    assert detail['preview']['url'].startswith('/files/gallery/')
     assert client.get(detail['preview']['url']).status_code == 200
     assert '尚无回放' in detail['preview']['label']
     listed = next(p for p in client.get('/api/pages').json() if p['path'] == f'templates/{tid}.md')
     assert listed['preview'] == detail['preview']
+
+
+def test_layout_preview_reads_the_selected_source_panel_from_the_gallery(deletion_web):
+    config, client, _ = deletion_web
+    detail = client.get('/api/page', params={'path': f'layouts/{ENTRY_ID}.md'}).json()
+    assert detail['preview']['kind'] == 'source'
+    assert detail['preview']['url'].startswith('/files/gallery/')
+    assert detail['preview']['url'].endswith('/source/fig01.png')
+    assert client.get(detail['preview']['url']).status_code == 200
+    assert '来源 panel' in detail['preview']['label']
 
 
 def test_missing_preview_does_not_reference_missing_file(deletion_web):

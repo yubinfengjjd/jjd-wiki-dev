@@ -54,6 +54,10 @@ def _requirements(config: Config, slugs: list[str]) -> dict:
 
 def _method_candidate(config: Config, path, meta: dict, body: str, query: str,
                       columns: str | None, relations: list[dict]) -> dict:
+    from .method_implementations import verified_implementations, implementation_status
+    implementations = verified_implementations(path, meta)
+    branch_files = [path.with_suffix('').joinpath(item['entrypoint'].partition(':')[0]).relative_to(
+        config.wiki_root).as_posix() for item in implementations]
     requirements = _requirements(config, meta["inputs"])
     applicable = _section(body, "适用")
     searchable = "\n".join([meta["title"], *meta["tags"], applicable,
@@ -79,7 +83,10 @@ def _method_candidate(config: Config, path, meta: dict, body: str, query: str,
             "inputs": meta["inputs"], "outputs": meta["outputs"],
             "input_requirements": requirements, "prerequisites": prerequisites,
             "relations": relations, "license": meta["license"],
-            "code_files": _reusable_files(config, path), "code_status": _code_context(config, path),
+            "method_kind": meta.get('method_kind'), "data_contract": meta.get('data_contract'),
+            "implementations": implementations,
+            "implementation_status": [item for item in implementation_status(path, meta) if item['state'] == 'verified'],
+            "code_files": branch_files, "code_status": _code_context(config, path),
             "project_readiness": "requires_project_review", "discovery_note": DISCOVERY_NOTE}
 
 

@@ -6,6 +6,10 @@
 - 图样可只读引用画廊的 `original_code/` 与 `code/`。画廊 `code/` 常是重建绘图，不能标为原作者代码，也不能因有文件就称为可运行 Wiki 模板。
 - 原始文件保留语言、字节、来源和哈希；改造版另存。来源只给片段就写片段，原文缺失函数不补造“完整原版”。
 - 可选 `code-manifest.json` 为已存在文件附来源、许可证、分支与验证范围。枚举以真实文件为准；不存在的文件和空目录不能变成“已有实现”。
+- 方法实现写在 frontmatter `implementations`，每个分支用 `verification/<id>.json` 记录实际调用、范围、命令、环境和当前 `code/` 全部源文件哈希。`passed` 只给实际跑通且与上游等价的分支；缺包/失败写精确 `not_run`。页面 `ready` 与分支 `verified` 分开，一个分支通过不批准其他分支。见 [方法家族契约](method-families.md)。
+- `code-files` 接口从同一 `implementation_status` 按入口文件派生 `branches`：共享入口列出全部分支和各自 scope，混合状态显示 `mixed`；原始版仍按来源清单状态，未被任一分支提升。没有 receipt 的分支保持 `not_run`，不因目录里有文件就显示已验证。
+- 每个分支/模板的 `runtime.json` 由 `rwiki/runtime_contract.py` 解析后附在 `branches[].runtime`（模板在列表根 `runtime`）：运行方式、必要/可选包、复制文件、资源和独立性证据。没有清单显示“历史依赖待审计”，有 standalone 声明但没有证据只显示“独立声明，尚未验证”。这不改变算法 `state`。见 [最小运行清单](minimal-runtime.md)。
+- 可复制适配代码独立于绘图/分析核心：Python 用 `rwiki/input_binding.py`（仅标准库，可直接复制），R 用 `assets/input_binding.R`。两者只做显式列映射与无聚合 melt/pivot，不依赖知识库路径、网络或全局数据；复制后在课题调用层传入数据根与映射。它们不是分析算法，也不是任意格式的通行证明。
 
 网页卡片与详情的“查看代码”只读列出多文件、区分原始版/复用版，支持复制文本与下载原字节。Python/R/Notebook 等保留原语言；Notebook 以原始文本查看，不渲染执行输出。二进制或无法可靠解码时只下载。网页不训练、不安装、不执行代码。
 

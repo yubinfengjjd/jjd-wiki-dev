@@ -74,6 +74,15 @@ def test_pending_lists_only_pending_template(approved):
     assert run_cli(path, "pending").stdout == LAYOUT_ID + "\n"
 
 
+def test_scaffold_uses_explicit_content_title_not_layout_title(approved):
+    config, _ = approved
+    scaffold_template(config, LAYOUT_ID, "bar", ["A"], title="自定义面板名")
+    page = config.wiki_root / f"templates/{LAYOUT_ID}--bar.md"
+    meta, body = read_page(page)
+    assert meta["title"] == "自定义面板名"
+    assert body.startswith("# 自定义面板名\n")
+
+
 def test_scaffold_rejects_wrong_state(ingested):
     config, _ = ingested
     with pytest.raises(WikiError, match="pending_template"):

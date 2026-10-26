@@ -1,9 +1,10 @@
 import { PointerEvent, ReactNode, useRef, useState } from 'react';
-import { imageOf, previewOf, workflowOf, displayStatus, effectiveStatus, ItemMeta, LayoutMeta, MethodMeta, PageMeta, PageType, STATUS_LABEL, Status, TemplateMeta } from './api';
+import { imageOf, previewOf, workflowOf, displayStatus, effectiveStatus, ImplementationStatus, ItemMeta, LayoutMeta, MethodMeta, PageMeta, PageType, STATUS_LABEL, Status, TemplateMeta } from './api';
 import { pageLink } from './nav';
-import { figureLabel, MethodFigure, methodPlateFigures, SourceLink } from './figureModels';
+import { figureLabel, MethodFigure, methodFigureStatusLabel, methodPlateFigures, SourceLink } from './figureModels';
 import { CodeButton } from './CodeViewer';
 import { COMPATIBILITY_LABEL } from './relations';
+import { verifiedImplementations } from './methods';
 
 export function StatusBadge({ status, label }: { status: Status; label?: string }) {
   return <span className={`badge status-${status}`}>{label ?? STATUS_LABEL[status]}</span>;
@@ -30,7 +31,7 @@ const HINT: Record<ItemMeta['type'], Partial<Record<Status, string>>> = {
   },
   method: {
     draft: '笔记待完成或待你确认。',
-    ready: '可以推荐。',
+    ready: '笔记已确认，具体实现按各自验证记录判断。',
     archived: '已归档，不会被推荐。',
   },
 };
@@ -62,10 +63,11 @@ interface CardShell {
   back: ReactNode;
   note?: string;
   sourceLinks?: SourceLink[];
+  execution?: string;
 }
 
 /** Card stock with a figure plate on the front and a summary on the back. */
-function Card({ path, meta, number, label, plate, back, note, sourceLinks }: CardShell) {
+function Card({ path, meta, number, label, plate, back, note, sourceLinks, execution }: CardShell) {
   const [flipped, setFlipped] = useState(false);
   const plateRef = useRef<HTMLDivElement>(null);
   const link = pageLink(path, () => plateRef.current);
@@ -86,6 +88,7 @@ function Card({ path, meta, number, label, plate, back, note, sourceLinks }: Car
             {note && <p className="caption-note muted small">{note}</p>}
             <div className="caption-foot">
               <StatusBadge status={effectiveStatus(meta)} label={displayStatus(meta)} />
+              {execution && <span className="method-execution small">{execution}</span>}
               {'language' in meta && <span className="lang">{LANGUAGE[meta.language] ?? meta.language}</span>}
             </div>
           </div>
@@ -175,16 +178,20 @@ interface MethodProps {
   number: number;
   outputs: { path: string; title: string }[];
   figures: MethodFigure[];
+  implementationStatus?: ImplementationStatus[];
 }
 
 /** A method's plate is its chain: the tables it writes, flowing into the figures they can draw. */
-export function MethodCard({ path, meta, number, outputs, figures }: MethodProps) {
+export function MethodCard({ path, meta, number, outputs, figures, implementationStatus }: MethodProps) {
+  const verified = verifiedImplementations(meta, implementationStatus).length;
   return (
     <Card
       path={path}
       meta={meta}
       number={number}
-      label="方法"
+      label="分析家族"
+      note={meta.summary}
+      execution={verified ? `已验证 ${verified}/${meta.implementations?.length ?? 0} 个实现` : '暂无已验证实现'}
       plate={<ChainPlate outputs={outputs} figures={figures} />}
       back={
         <>
@@ -217,7 +224,7 @@ function ChainPlate({ outputs, figures }: Pick<MethodProps, 'outputs' | 'figures
         ))}
       </span>
       {figures.length === 0 && <span className="chain-empty">尚无关联图样<br />文字方法笔记</span>}
-      {shown.length > 0 && <span className="chain-ref-label">{shown[0].relation === 'semantic' ? COMPATIBILITY_LABEL[shown[0].semantic!.compatibility] : shown[0].relation === 'compatible' ? '接口结构匹配' : '参考图样'} · {displayStatus(shown[0].meta)}</span>}
+      {shown.length > 0 && <span className="chain-ref-label">{shown[0].relation === 'semantic' ? COMPATIBILITY_LABEL[shown[0].semantic!.compatibility] : shown[0].relation === 'compatible' ? '接口结构匹配' : '参考图样'} · {methodFigureStatusLabel(shown[0])}</span>}
       <span className="chain-out">
         {outputs.length > 0 && <span className="chain-arrow" />}
         {outputs.map((o) => (

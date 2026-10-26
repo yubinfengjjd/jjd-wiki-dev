@@ -6,7 +6,8 @@ import sys
 
 import pytest
 
-from conftest import run_cli, complete_sections, record_ready_receipt, seal_replay
+from conftest import (run_cli, complete_sections, record_implementation_receipt,
+                      record_ready_receipt, seal_replay)
 from rwiki.config import load_config
 from rwiki.pages import get_block, read_page, set_block, write_page
 from rwiki.store import init, save
@@ -15,6 +16,12 @@ from rwiki.store import init, save
 def write_json(path, value):
     path.parent.mkdir(parents=True, exist_ok=True)
     path.write_text(json.dumps(value, ensure_ascii=False), encoding="utf-8")
+
+
+def interface_body(title):
+    return (f"# {title}\n\n<!-- facts:start -->\n<!-- facts:end -->\n\n## 含义\n\n"
+            "一行代表一个测试单位；仅用于软件夹具。\n\n"
+            "<!-- user:start -->\nauthor note\n<!-- user:end -->\n")
 
 
 def page_body(title, applicable="", unsuitable="", note="author note"):
@@ -46,7 +53,7 @@ def tiny_wiki(tmp_path):
     }.items():
         write_page(root / f"interfaces/{slug}.md", {
             "type": "interface", "slug": slug, "title": slug, "columns": columns,
-        }, page_body(slug))
+        }, interface_body(slug))
     for method_id, inputs, output, applicable in (
         ("rank-a", [], "feature-importance", "marker ranking"),
         ("rank-b", [], "feature-importance", "stable ranking"),
@@ -57,6 +64,14 @@ def tiny_wiki(tmp_path):
         (directory / "code/run.py").write_text("# optional template\n", encoding="utf-8")
         write_page(root / f"methods/{method_id}.md", {
             "type": "method", "id": method_id, "title": method_id, "status": "ready",
+            "method_kind": "analysis", "purposes": ["降维与聚类"],
+            "summary": f"{method_id} synthetic software fixture.",
+            "data_contract": {"input": "Fixture feature rows.", "output": "Fixture ranking rows."},
+            "implementations": [{
+                "id": "run", "title": "Fixture entrypoint", "language": "Python",
+                "entrypoint": "code/run.py:run", "dependencies": [],
+                "verification": "verification/run.json",
+            }],
             "tags": ["单细胞"] if method_id == "rank-a" else ["组织"],
             "inputs": inputs, "outputs": [output],
             "source": {"kind": "project", "path": "source"}, "license": "MIT",
@@ -82,7 +97,8 @@ def tiny_wiki(tmp_path):
         "id": "src__rank", "version": 1, "status": "approved", "approved_version": 1,
         "language": "python", "data_provenance": "synthetic", "code_provenance": "synthetic",
         "post": {"title": None, "account": None, "publish_date": None, "url": None}})
-    write_page(root / "chart-types/rank.md", {"type": "chart-type", "slug": "rank", "title": "rank"}, "# rank\n")
+    write_page(root / "chart-types/rank.md", {"type": "chart-type", "slug": "rank", "title": "rank"},
+               "# rank\n\n用于软件夹具的排序图型判断；不代表科学能力。\n")
     write_page(root / "layouts/src__rank.md", {
         "type": "layout", "id": "src__rank", "title": "rank source", "status": "pending_template",
         "gallery_entry": "src/figures/rank", "gallery_version": 1, "signedoff_version": 1,
@@ -95,6 +111,8 @@ def tiny_wiki(tmp_path):
     seal_replay(directory)
     for page in (*(root / 'methods').glob('*.md'), root / 'templates/rank-plot.md'):
         record_ready_receipt(config, page)
+    for page in (root / 'methods').glob('*.md'):
+        record_implementation_receipt(page)
     return config, config_path
 
 

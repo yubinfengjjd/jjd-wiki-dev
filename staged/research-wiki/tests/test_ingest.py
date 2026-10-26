@@ -24,6 +24,30 @@ def test_null_source_and_empty_free_tags_omit_lines(workspace):
     assert "- 画廊条目：" in facts
 
 
+def test_free_scenarios_stay_in_keywords_not_tags(workspace):
+    config, _ = workspace
+    update_gallery(config, scenarios={
+        "primary": ["single-cell"], "secondary": [], "free": ["SCP", "pancreas_sub"]})
+    ingest_figure(config, ENTRY_ID)
+    meta, _ = read_page(config.wiki_root / f"layouts/{ENTRY_ID}.md")
+    assert "单细胞分析" in meta["tags"]
+    assert "SCP" not in meta["tags"] and "pancreas_sub" not in meta["tags"]
+    assert meta["keywords"] == ["SCP", "pancreas_sub"]
+
+
+def test_layout_title_uses_panel_name_not_post_title(workspace):
+    config, _ = workspace
+    entry = config.gallery_root / "2026-08-17-shap-feature-mechanism/figures/fig01-shap-a-f/meta.json"
+    gallery = json.loads(entry.read_text(encoding="utf-8"))
+    gallery["figure"]["label"] = "单panel：密度散点与边缘分布"
+    gallery["post"]["title"] = "很长的原帖标题"
+    update_gallery(config, figure=gallery["figure"], post=gallery["post"])
+    ingest_figure(config, ENTRY_ID)
+    meta, body = read_page(config.wiki_root / f"layouts/{ENTRY_ID}.md")
+    assert meta["title"] == "密度散点与边缘分布"
+    assert body.startswith(f"# {meta['title']}\n")
+
+
 def test_null_post_title_uses_only_figure_label(workspace):
     config, _ = workspace
     entry = config.gallery_root / "2026-08-17-shap-feature-mechanism/figures/fig01-shap-a-f/meta.json"
@@ -44,7 +68,8 @@ def test_first_ingest_builds_pages_thumbnail_facts_index_and_one_commit(workspac
     meta, body = read_page(root / f"layouts/{ENTRY_ID}.md")
     assert meta["status"] == "pending_signoff"
     assert meta["chart_types"] == ["bar", "beeswarm", "radial-bar"]
-    assert meta["tags"] == ["模型解释与特征重要性", "化学信息与QSAR", "SHAP", "LightGBM", "CatBoost", "pLC50", "AR-DBP"]
+    assert meta["tags"] == ["模型解释与特征重要性", "化学信息与QSAR"]
+    assert meta["keywords"] == ["SHAP", "LightGBM", "CatBoost", "pLC50", "AR-DBP"]
     assert meta["gallery_entry"] == "2026-08-17-shap-feature-mechanism/figures/fig01-shap-a-f"
     entry = config.gallery_root / meta["gallery_entry"]
     assert (root / f"layouts/{ENTRY_ID}/thumb.png").read_bytes() == (entry / "thumb.png").read_bytes()

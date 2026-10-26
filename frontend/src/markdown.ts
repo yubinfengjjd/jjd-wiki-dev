@@ -67,15 +67,57 @@ const LEAD_EMBEDS = /^(# [^\n]*\r?\n)(?:\s*!\[\[[^\]\n]+\.png\]\][ \t]*\r?\n)+/;
 export const withoutLeadEmbeds = (body: string) => body.replace(LEAD_EMBEDS, '$1');
 
 /** Render a page body; the H1 is shown by the view, the user block by the note editor. */
-export function renderBody(body: string, env: RenderEnv, { dropUser = false, dropFacts = false } = {}): string {
-  let src = body.replace(/^# .*\n/, '');
+export function renderBody(body: string, env: RenderEnv, {
+  dropUser = false,
+  dropFacts = false,
+  foldMethodDetails = false,
+  dropSections = [] as string[],
+} = {}): string {
+  let src = body.replace(/^# .*\r?\n/, '');
   if (dropUser) src = src.replace(USER_BLOCK, '');
+  const facts = src.match(/<!-- facts:start -->([\s\S]*?)<!-- facts:end -->\r?\n?/);
   if (dropFacts) src = src.replace(/<!-- facts:start -->[\s\S]*?<!-- facts:end -->\r?\n?/, '');
-  return md.render(src.replace(MARKERS, ''), env);
+  src = src.replace(MARKERS, '');
+  const dropped = new Set(dropSections);
+  if (!foldMethodDetails && dropped.size === 0) return md.render(src, env);
+
+  // Markdown token boundaries distinguish actual sections from headings inside fenced code.
+  // Every canonical section survives unless explicitly dropped; presentation never changes source Markdown.
+  const lines = src.split('\n');
+  const headings = md.parse(src, env).flatMap((token, index, tokens) => token.type === 'heading_open' && token.tag === 'h2' && token.level === 0 && token.map
+    ? [{ line: token.map[0], end: token.map[1], title: tokens[index + 1].content }]
+    : []);
+  let html = md.render(lines.slice(0, headings[0]?.line ?? lines.length).join('\n'), env);
+  for (let i = 0; i < headings.length; i++) {
+    const section = headings[i];
+    if (dropped.has(section.title)) continue;
+    const end = headings[i + 1]?.line ?? lines.length;
+    const sectionBody = lines.slice(section.end, end).join('\n');
+    if (foldMethodDetails && /^(参数|代码|源码|源代码|实现细节|来源|引用|许可证|历史|使用记录|知识关联)/.test(section.title)) {
+      html += `<details class="method-details"><summary>${md.utils.escapeHtml(section.title)}</summary>${md.render(sectionBody, env)}</details>`;
+    } else html += md.render(lines.slice(section.line, end).join('\n'), env);
+  }
+  if (dropFacts && facts?.[1].trim()) html += `<details class="method-details"><summary>来源元数据与派生记录</summary>${md.render(facts[1].replace(MARKERS, ''), env)}</details>`;
+  return html;
+}
+
+export function renderMarkdown(src: string, env: RenderEnv): string {
+  return md.render(src, env);
+}
+
+function methodSectionText(body: string, title: string): string {
+  const userAt = body.indexOf('<!-- user:start -->');
+  const agent = userAt >= 0 ? body.slice(0, userAt) : body;
+  const start = new RegExp(`^## ${title}[ \\t]*\\r?\\n`, 'm').exec(agent);
+  if (!start) return '';
+  const rest = agent.slice(start.index + start[0].length);
+  return rest.split(/\r?\n## /)[0].trim();
+}
+
+export function methodSection(body: string, title: string): string {
+  return methodSectionText(body, title);
 }
 
 export function methodPurpose(body: string): string {
-  const agent = body.split('<!-- user:start -->')[0];
-  const start = /^## 用途[ \t]*\r?\n/m.exec(agent);
-  return start ? agent.slice(start.index + start[0].length).trim().split(/\r?\n## /)[0].split(/\r?\n\s*\r?\n/)[0] : '';
+  return methodSectionText(body, '用途').split(/\r?\n\s*\r?\n/)[0];
 }

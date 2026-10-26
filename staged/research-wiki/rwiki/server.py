@@ -13,6 +13,7 @@ from .catalog import readable_pages
 from .config import Config, read_json
 from .errors import WikiError
 from .facts import declarations, input_interfaces, table_interfaces
+from .interfaces import load_interface
 from .links import extract_links, resolve
 from .pages import read_page, set_block, write_page
 from .methods import confirm_method
@@ -121,6 +122,29 @@ def create_app(config: Config) -> FastAPI:
         return sorted(target.relative_to(root).as_posix() for target in targets(body)
                       if target in allowed and read_page(target)[0]["type"] in ("layout", "template"))
 
+    def gallery_source(origin: dict, label: str) -> dict | None:
+        """The selected source panel stays read-only in the gallery; preview it in place."""
+        entry = origin.get("gallery_entry")
+        if not isinstance(entry, str) or not entry:
+            return None
+        meta_path = config.gallery_root / entry / "meta.json"
+        if not meta_path.is_file():
+            return None
+        try:
+            gallery = read_json(meta_path)
+        except (WikiError, OSError):
+            return None
+        source = (gallery.get("files") or {}).get("source_image")
+        if not isinstance(source, str) or not source:
+            return None
+        try:
+            resolved = safe_file(config.gallery_root, f"{entry}/{source}")
+        except (HTTPException, WikiError, OSError):
+            return None
+        relative = resolved.relative_to(config.gallery_root.resolve()).as_posix()
+        return {"url": "/files/gallery/" + quote(relative, safe="/"),
+                "kind": "source", "label": label}
+
     def preview(meta: dict) -> dict | None:
         if meta["type"] not in ("layout", "template"):
             return None
@@ -135,14 +159,24 @@ def create_app(config: Config) -> FastAPI:
             for lid in meta.get("layouts") or []:
                 origin = root / "layouts" / f"{lid}.md"
                 try:
-                    single = len(read_page(origin)[0].get("panels") or {}) == 1
+                    origin_meta = read_page(origin)[0]
                 except WikiError:
-                    single = False
-                if single:
-                    candidates.append((root / "layouts" / lid / "thumb.png", "source", "来源参考图 · 模板尚无回放"))
+                    continue
+                if len(origin_meta.get("panels") or {}) == 1:
+                    source = gallery_source(origin_meta, "来源 panel · 模板尚无回放")
+                    if source:
+                        candidates.append(source)
+                    candidates.append((root / "layouts" / lid / "thumb.png", "source",
+                                       "来源版式的复刻缩略图 · 模板尚无回放"))
         else:
-            candidates.append((root / "layouts" / meta["id"] / "thumb.png", "source", "来源图样"))
-        for path, kind, label in candidates:
+            source = gallery_source(meta, "来源 panel · 只读溯源")
+            if source:
+                candidates.append(source)
+            candidates.append((root / "layouts" / meta["id"] / "thumb.png", "source", "复刻缩略图"))
+        for candidate in candidates:
+            if isinstance(candidate, dict):
+                return candidate
+            path, kind, label = candidate
             resolved = path.resolve()
             if resolved.is_relative_to(root) and resolved.is_file():
                 return {"url": "/files/wiki/" + quote(resolved.relative_to(root).as_posix()),
@@ -152,6 +186,7 @@ def create_app(config: Config) -> FastAPI:
     def response(path: Path) -> dict:
         meta, body = read_page(path)
         reuse = None
+        input_contract = None
         if meta["type"] == "template":
             spec_path = path.with_suffix("") / "spec.json"
             spec = read_json(spec_path) if spec_path.is_file() else {}
@@ -159,6 +194,25 @@ def create_app(config: Config) -> FastAPI:
             reuse = {"sizing_declared": isinstance(sizing, dict),
                      "mode": sizing.get("mode") if isinstance(sizing, dict) else None,
                      "profile": sizing.get("profile") if isinstance(sizing, dict) else None}
+            tables = []
+            for key, table in (spec.get("tables") or {}).items():
+                slug = table.get("interface") if isinstance(table, dict) else None
+                columns = []
+                if isinstance(slug, str) and slug:
+                    try:
+                        definition = load_interface(root, slug)
+                    except WikiError:
+                        definition = None
+                    if definition:
+                        columns = [{"name": name, "type": column["type"],
+                                    "description": column["description"],
+                                    "required": column.get("required", True)}
+                                   for name, column in definition["columns"].items()]
+                tables.append({"key": key, "interface": slug if isinstance(slug, str) else "",
+                               "description": table.get("description", "") if isinstance(table, dict) else "",
+                               "required": table.get("required", True) if isinstance(table, dict) else True,
+                               "columns": columns})
+            input_contract = {"bindings": True, "tables": tables}
         backlinks = []
         for other in pages():
             if other == path:
@@ -167,10 +221,18 @@ def create_app(config: Config) -> FastAPI:
             if path in targets(other_body):
                 backlinks.append({"path": other.relative_to(root).as_posix(),
                                   "title": other_meta["title"], "type": other_meta["type"]})
+        from .method_implementations import implementation_status
+        from .runtime_contract import runtime_facts
+        runtime = None
+        if meta['type'] == 'template':
+            runtime = runtime_facts(path.with_suffix(''), meta['id'], 'template')
         return {"path": path.relative_to(root).as_posix(), "meta": meta, "body": body,
+                "implementation_status": implementation_status(path, meta) if meta['type'] == 'method' else [],
+                "runtime": runtime,
                 "backlinks": sorted(backlinks, key=lambda item: item["title"]),
                 "gallery": read_json(gallery_file(meta)) if meta["type"] == "layout" else None,
-                "reuse": reuse, "figure_refs": figure_refs(meta, body), "preview": preview(meta),
+                "reuse": reuse, "input_contract": input_contract,
+                "figure_refs": figure_refs(meta, body), "preview": preview(meta),
                 "workflow": workflow_snapshot(config).get(path.relative_to(root).as_posix()),
                 "relations": relations_for(config, path.relative_to(root).as_posix())}
 
@@ -201,6 +263,12 @@ def create_app(config: Config) -> FastAPI:
         path.write_text(json.dumps(gallery, ensure_ascii=False, indent=2) + "\n",
                         encoding="utf-8", newline="\n")
 
+    @app.get("/api/method-taxonomy")
+    def method_taxonomy():
+        from .method_taxonomy import taxonomy
+
+        return taxonomy(root)
+
     @app.get("/api/pages")
     def list_pages():
         records = []
@@ -209,7 +277,11 @@ def create_app(config: Config) -> FastAPI:
         for path in pages():
             meta, body = read_page(path)
             page = path.relative_to(root).as_posix()
+            from .method_implementations import implementation_status
+            from .runtime_contract import runtime_facts
             records.append({"path": page, "meta": meta,
+                            "implementation_status": implementation_status(path, meta) if meta['type'] == 'method' else [],
+                            "runtime": runtime_facts(path.with_suffix(''), meta['id'], 'template') if meta['type'] == 'template' else None,
                             "figure_refs": figure_refs(meta, body), "preview": preview(meta),
                             "workflow": workflow.get(page),
                             "relations": [r for r in relations if page in (r["method"], r["figure"])]})
@@ -249,6 +321,15 @@ def create_app(config: Config) -> FastAPI:
                       "active": item["active"]}
                      for item in all_relations(config) if item["method"] in ids and item["figure"] in ids)
         return {"nodes": nodes, "links": links}
+
+    @app.get("/api/discover-methods")
+    def discover_methods_api(q: str = "", limit: int = 20):
+        """Read-only opportunity list; executable stays gated by ready_for_use."""
+        from .discovery import discover_methods
+        try:
+            return discover_methods(config, q, limit)
+        except WikiError as error:
+            raise HTTPException(422, str(error)) from error
 
     @app.get("/api/relations")
     def semantic_relations(path: str | None = None):

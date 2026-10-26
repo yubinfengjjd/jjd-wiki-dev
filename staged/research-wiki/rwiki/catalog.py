@@ -20,17 +20,28 @@ def render_index(wiki_root: Path, pages: list[tuple[Path, dict]]) -> str:
     def append_pages(selected: list[tuple[Path, dict]]) -> None:
         for path, meta in sorted(selected, key=lambda item: item[1]["title"]):
             target = path.relative_to(wiki_root).with_suffix("").as_posix()
-            lines.append(f"- [[{target}|{meta['title']}]]")
+            summary = ' '.join(str(meta.get('summary') or '').split())
+            lines.append(f"- [[{target}|{meta['title']}]]" + (f" — {summary}" if summary else ''))
         lines.append("")
 
     for title, kind, statuses in (("版式", "layout", LAYOUT_STATUSES),
-                                  ("模板", "template", TEMPLATE_STATUSES),
-                                  ("方法", "method", METHOD_STATUSES)):
+                                  ("模板", "template", TEMPLATE_STATUSES)):
         lines.extend([f"## {title}", ""])
         for status in statuses:
             lines.extend([f"### {status}", ""])
             append_pages([(path, meta) for path, meta in pages
                           if meta.get("type") == kind and meta.get("status") == status])
+    for title, method_kind in (("分析家族", "analysis"), ("组合流程", "workflow"),
+                               ("技术资料", "technical"), ("待分类方法", None)):
+        lines.extend([f"## {title}", ""])
+        for status in (*METHOD_STATUSES, None):
+            selected = [(path, meta) for path, meta in pages if meta.get('type') == 'method'
+                        and (meta.get('method_kind') == method_kind if method_kind else
+                             meta.get('method_kind') not in ('analysis', 'workflow', 'technical'))
+                        and (meta.get('status') == status if status else meta.get('status') not in METHOD_STATUSES)]
+            if selected:
+                lines.extend([f"### {status or '状态待核对'}", ""])
+                append_pages(selected)
     for title, page_type in (("接口", "interface"), ("图型", "chart-type"), ("课题", "project")):
         lines.extend([f"## {title}", ""])
         append_pages([(path, meta) for path, meta in pages if meta.get("type") == page_type])

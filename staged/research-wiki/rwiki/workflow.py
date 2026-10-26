@@ -29,13 +29,27 @@ def workflow_snapshot(config) -> dict[str, dict]:
                 put(path, 'template_work', 'agent', '待完成回放',
                     '；'.join(errors) or '验收记录与当前内容不同，请 check-entry --record；不重复新建。')
         elif kind == 'method' and status in ('draft', 'ready'):
+            from .method_implementations import METHOD_KINDS, implementation_status
             errors = entry_errors(config, root / path)
-            if errors or (status == 'ready' and acceptance_stale(root / path)):
+            method_kind = meta.get('method_kind')
+            if method_kind not in METHOD_KINDS:
+                put(path, 'method_classify', 'agent', '待分类', '旧方法尚未分类；先核对研究问题与资料类型。')
+            elif errors or (status == 'ready' and acceptance_stale(root / path)):
                 put(path, 'method_work', 'agent', '待完善笔记', '；'.join(errors) or '验收记录需重新核对。')
             elif status == 'draft':
                 put(path, 'method_confirm', 'confirm', '待你确认', '笔记与知识关联检查已填写，待作者核对。')
+            elif method_kind in ('workflow', 'technical'):
+                label = '流程资料已确认' if method_kind == 'workflow' else '技术资料已确认'
+                put(path, 'complete', None, label,
+                    '笔记与资料内容已确认；不作为可执行分析推荐，也不要求分析实现收据。')
             else:
-                put(path, 'complete', None, '可用', '已确认可用；笔记完整性已核对。')
+                states = implementation_status(root / path, meta)
+                verified = any(item['state'] == 'verified' for item in states)
+                if verified:
+                    put(path, 'complete', None, '已验证实现', '笔记已确认；仅实现收据中列明的分支和范围通过验证。')
+                else:
+                    put(path, 'method_implementation', 'agent', '待验证实现' if states else '待实现',
+                        '笔记已确认；实现尚无当前有效验证，不作为可执行分析推荐。')
         elif status == 'ready' and kind != 'layout':
             put(path, 'complete', None, '可用', '已确认可用。')
 

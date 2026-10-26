@@ -76,7 +76,7 @@ def test_scaffold_generates_linked_facts_and_blocks_covered_panels(ingested):
     tid = ENTRY_ID + "--bar"
     meta, body = read_page(config.wiki_root / f"layouts/{ENTRY_ID}.md")
     assert meta["template_panels"] == {tid: ["A", "D"]}
-    assert f"[[templates/{tid}|bar · " in get_block(body, "facts")
+    assert f"[[templates/{tid}|bar]]" in get_block(body, "facts")
     assert "（A、D）" in get_block(body, "facts")
     tm, tb = read_page(config.wiki_root / f"templates/{tid}.md")
     assert tm["status"] == "draft" and tm["panels"] == ["A", "D"]

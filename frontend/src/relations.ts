@@ -5,7 +5,10 @@ export const COMPATIBILITY_LABEL: Record<Compatibility, string> = {
 };
 
 export function verificationLabel(verification?: Verification): string {
-  const labels: Record<string, string> = { not_run: '未运行验证', example: '示例验证', project: '课题验证', unknown: '验证状态未知' };
+  const labels: Record<string, string> = {
+    verified: '已验证', mixed: '分支状态不一', stale: '验证已过期', invalid: '验证无效',
+    not_run: '未运行验证', example: '示例验证', project: '课题验证', unknown: '验证状态未知',
+  };
   return labels[verification?.state ?? 'unknown'] ?? '验证状态未知';
 }
 

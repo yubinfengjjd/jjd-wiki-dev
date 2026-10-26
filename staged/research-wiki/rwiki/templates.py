@@ -1,6 +1,7 @@
 import csv
 import json
 import shutil
+import tempfile
 from copy import deepcopy
 from pathlib import Path
 
@@ -44,7 +45,8 @@ def infer_type(values: list[str]) -> str:
     return "str"
 
 
-def scaffold_template(config: Config, entry_id: str, chart_type: str, panels: list[str]) -> None:
+def scaffold_template(config: Config, entry_id: str, chart_type: str, panels: list[str],
+                      title: str | None = None) -> None:
     page = config.wiki_root / "layouts" / f"{entry_id}.md"
     meta, body = read_page(page)
     require_pending(meta)
@@ -73,7 +75,9 @@ def scaffold_template(config: Config, entry_id: str, chart_type: str, panels: li
                 matches.append(path.stem)
         print(json.dumps({"file": source.name, "columns": columns, "interfaces": matches,
                           "filename_convention": "<interface>.csv",
-                          "next_step": "选择或新建接口后，将 example 中此 CSV 改名为 <interface>.csv；原文件暂保留。"},
+                          "bindings_supported": True,
+                          "next_step": "选择或新建接口后，将 example 中此 CSV 改名为 <interface>.csv（内部标准输入）；"
+                                       "外部课题数据可用 render --bindings 映射，无需改名。原文件暂保留。"},
                          ensure_ascii=False))
         tables[source.stem] = {"interface": "", "description": ""}
     language = gallery["language"]
@@ -87,7 +91,9 @@ def scaffold_template(config: Config, entry_id: str, chart_type: str, panels: li
             shutil.copyfile(Path(__file__).parents[1] / "assets/function_render.py", target / entry)
     (target / "spec.json").write_text(json.dumps(spec, ensure_ascii=False, indent=2) + "\n",
                                       encoding="utf-8", newline="\n")
-    title = f"{chart_type} · {meta['title']}"
+    # The title is the reusable panel's content name. Do not concatenate the
+    # chart type and layout title; callers pass --title when they have one.
+    title = (title or chart_type).strip()
     template_meta = {"type": "template", "id": tid, "title": title, "status": "draft",
                      "layouts": [entry_id], "panels": panels, "language": language,
                      "tags": meta["tags"], "chart_types": [chart_type], "favorite": False}
@@ -169,10 +175,9 @@ def layout_ready_errors(config: Config, meta: dict) -> list[str]:
 
 
 def render(config: Config, entry_id: str, data_dir: Path, out_dir: Path,
-           style: Path | None = None) -> None:
+           style: Path | None = None, bindings: Path | None = None) -> None:
     target = config.wiki_root / "templates" / entry_id
     spec = load_spec(target)
-    check_data(spec, data_dir)
     if style is not None:
         overrides = read_json(style)
         if not isinstance(overrides, dict):
@@ -181,20 +186,44 @@ def render(config: Config, entry_id: str, data_dir: Path, out_dir: Path,
         if unknown:
             raise WikiError(f"未知 style 键: {', '.join(sorted(unknown))}")
     executable = config.python_exe if spec["language"] == "python" else config.rscript_exe
-    command = [str(executable)] + (["-X", "utf8"] if spec["language"] == "python" else [])
-    command += [spec["entry"], "--data", str(data_dir.resolve()),
-               "--out", str(out_dir.resolve())]
-    if style is not None:
-        command.extend(["--style", str(style.resolve())])
     out_dir.mkdir(parents=True, exist_ok=True)
-    # A previous run's files must not satisfy this run's output check.
-    for extension in ("png", "pdf", "svg"):
-        (out_dir / f"figure.{extension}").unlink(missing_ok=True)
-    run(command, target)
-    missing = [f"figure.{ext}" for ext in ("png", "pdf", "svg")
-               if not (out_dir / f"figure.{ext}").is_file()]
-    if missing:
-        raise WikiError(f"模板缺少输出文件: {', '.join(missing)}")
+    temporary = None
+    if bindings is not None:
+        from .input_binding import BindingError, load_bindings, prepare_tables, report_payload
+
+        try:
+            declared = load_bindings(bindings)
+            # Canonical tables live only for this run and only under the caller's output.
+            temporary = tempfile.TemporaryDirectory(prefix=".bindings-", dir=out_dir)
+            reports = prepare_tables(spec, declared, data_dir, Path(temporary.name))
+        except BindingError as error:
+            if temporary is not None:
+                temporary.cleanup()
+            raise WikiError(f"数据绑定失败: {error}") from error
+        (out_dir / "bindings-report.json").write_text(
+            json.dumps(report_payload(reports), ensure_ascii=False, indent=2) + "\n",
+            encoding="utf-8", newline="\n")
+        source_data = Path(temporary.name)
+    else:
+        source_data = data_dir
+    try:
+        check_data(spec, source_data)
+        command = [str(executable)] + (["-X", "utf8"] if spec["language"] == "python" else [])
+        command += [spec["entry"], "--data", str(source_data.resolve()),
+                    "--out", str(out_dir.resolve())]
+        if style is not None:
+            command.extend(["--style", str(style.resolve())])
+        # A previous run's files must not satisfy this run's output check.
+        for extension in ("png", "pdf", "svg"):
+            (out_dir / f"figure.{extension}").unlink(missing_ok=True)
+        run(command, target)
+        missing = [f"figure.{ext}" for ext in ("png", "pdf", "svg")
+                   if not (out_dir / f"figure.{ext}").is_file()]
+        if missing:
+            raise WikiError(f"模板缺少输出文件: {', '.join(missing)}")
+    finally:
+        if temporary is not None:
+            temporary.cleanup()
 
 
 def verify_template(config: Config, entry_id: str) -> None:

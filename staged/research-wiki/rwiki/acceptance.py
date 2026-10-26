@@ -84,10 +84,12 @@ def snapshot(path) -> str:
     # A usage link appended by record-use must not stale the acceptance receipt.
     body = _without_usage_links(body)
     content = {'meta': meta, 'body': body}
-    for folder in ('source', 'code'):
+    # Method approval covers knowledge, while per-implementation receipts cover code.
+    for folder in (('source',) if meta.get('type') == 'method' else ('source', 'code')):
         content[folder] = {p.relative_to(path.with_suffix('')).as_posix(): hashlib.sha256(p.read_bytes()).hexdigest()
                            for p in sorted((path.with_suffix('') / folder).rglob('*'))
-                           if p.is_file() and '__pycache__' not in p.parts and p.suffix not in ('.pyc', '.pyo')}
+                           if p.is_file() and p.resolve().is_relative_to(path.with_suffix('').resolve())
+                           and '__pycache__' not in p.parts and p.suffix not in ('.pyc', '.pyo')}
     return hashlib.sha256(json.dumps(content, ensure_ascii=False, sort_keys=True).encode()).hexdigest()
 
 
@@ -125,6 +127,9 @@ def ready_for_use(config, path, meta=None) -> bool:
     if (meta.get('status') != 'ready' or entry_errors(config, path)
             or acceptance_stale(path)):
         return False
+    if meta['type'] == 'method':
+        from .method_implementations import verified_implementations
+        return meta.get('method_kind') == 'analysis' and bool(verified_implementations(path, meta))
     if meta['type'] == 'layout':
         from .templates import layout_ready_errors
         if layout_ready_errors(config, meta):

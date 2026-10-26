@@ -208,6 +208,20 @@ def test_layout_gallery_replica_and_historical_reconstruction_are_labelled_gener
     assert "非作者原版" in rows["original_code/previous_reconstruction.py"]["source"]
 
 
+def test_method_uses_gallery_originals_without_a_second_source_copy(code_config):
+    origin = gallery(code_config, entry_id="fig01")
+    asset(origin, "original_code/native.R", b"x <- 1\n")
+    root = page(code_config, source={
+        "kind": "post", "gallery_entry": "post/figures/fig01"})
+    rows = code_assets.code_files(code_config, "methods/demo.md")["files"]
+    assert {(row["variant"], row["path"]) for row in rows} == {
+        ("original", "gallery/fig01/original_code/native.R")}
+    assert code_assets.code_file(
+        code_config, "methods/demo.md", "original",
+        "gallery/fig01/original_code/native.R").read_bytes() == b"x <- 1\n"
+    assert not (root / "source").exists()
+
+
 def test_template_uses_own_versions_and_existing_origin_originals_without_copying(code_config):
     origin = gallery(code_config)
     asset(origin, "original_code/native.R", b"x <- 1\n")

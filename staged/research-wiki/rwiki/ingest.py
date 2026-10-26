@@ -34,6 +34,8 @@ def render_facts(page_meta: dict, gallery_meta: dict, templates: dict) -> str:
                                         ("publish_date", "日期"), ("url", "URL"))
                      if post[key] is not None)
     free_tags = f"- 标签：{tags}\n" if tags else ""
+    keywords = "、".join(page_meta.get("keywords", []))
+    keyword_line = f"- 关键词：{keywords}\n" if keywords else ""
     letters = list(page_meta["panels"])
     panels = "、".join(letters) if len(letters) < 2 else f"{letters[0]}–{letters[-1]}"
     panel_line = f"尚未拆分（{panels}）"
@@ -47,6 +49,7 @@ def render_facts(page_meta: dict, gallery_meta: dict, templates: dict) -> str:
             f"- 数据来源：{gallery_meta['data_provenance']}\n"
             f"- 代码来源：{gallery_meta['code_provenance']}\n"
             f"{free_tags}"
+            f"{keyword_line}"
             f"- 图型：{charts}\n"
             f"- 面板：{panel_line}\n")
 
@@ -66,30 +69,38 @@ def ensure_hubs(config: Config, page_meta: dict) -> None:
 
 
 def new_page(gallery_meta: dict, relative_entry: str, taxonomy: dict) -> tuple[dict, str]:
-    title = gallery_meta['figure']['label']
-    if gallery_meta['post']['title'] is not None:
-        title += f" {gallery_meta['post']['title']}"
+    # The layout title names the panel, not the post. Post metadata stays in
+    # facts; appending it produced long duplicate titles on every source page.
+    title = gallery_meta['figure']['label'].strip()
+    for prefix in ("单panel：", "单panel:", "单 panel：", "单 panel:"):
+        if title.startswith(prefix):
+            title = title[len(prefix):].strip()
+            break
     entry_id = gallery_meta["id"]
     # A legacy gallery without an explicit approved_version is not proof of
     # approval for a new page; the author must sign the current source version.
     approved = (gallery_meta['status'] == 'approved'
                 and gallery_meta.get('approved_version') == gallery_meta['version'])
+    tags = list(dict.fromkeys(
+        taxonomy.get(key, {'label': key})['label']
+        for key in gallery_meta['scenarios']['primary'] + gallery_meta['scenarios'].get('secondary', [])))
+    free = [value for value in dict.fromkeys(gallery_meta['scenarios'].get('free', []))
+            if value not in tags]
     meta = {
         "type": "layout", "id": entry_id, "title": title,
         "status": "pending_template" if approved else "pending_signoff",
         "gallery_entry": relative_entry, "gallery_version": gallery_meta["version"],
         "signedoff_version": gallery_meta['version'] if approved else None,
         "language": gallery_meta["language"],
-        "tags": list(dict.fromkeys([
-            *(taxonomy.get(key, {'label': key})['label'] for key in
-              gallery_meta['scenarios']['primary'] + gallery_meta['scenarios'].get('secondary', [])),
-            *gallery_meta['scenarios']['free']])),
+        "tags": tags,
         "panels": {letter: slugify(value) for letter, value in gallery_meta["figure"]["panel_map"].items()},
         "chart_types": list(dict.fromkeys(slugify(value) for value in gallery_meta["figure"]["panel_map"].values())),
         "templates": [],
         "template_panels": {},
         "favorite": False,
     }
+    if free:
+        meta["keywords"] = free
     body = (f"# {title}\n\n![[layouts/{entry_id}/thumb.png]]\n\n"
             "<!-- facts:start -->\n<!-- facts:end -->\n\n"
             "## 适用\n\n## 不适用\n\n## 知识关联检查\n\n"

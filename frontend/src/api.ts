@@ -27,6 +27,72 @@ export interface Relation {
   active: boolean;
 }
 export type CodeVariant = 'original' | 'reusable';
+export type RuntimeMode = 'standalone' | 'bundle' | 'unknown';
+export type PortabilityState = 'verified' | 'declared' | 'not_run' | 'stale' | 'invalid' | 'unknown' | 'bundle';
+export interface RuntimeResource { path: string; sha256: string | null; role: string }
+export interface RuntimePortability {
+  state: PortabilityState;
+  scope: string;
+  evidence: string | null;
+  closure_hash: string | null;
+  issues?: string[];
+}
+export interface RuntimeTool {
+  name: string;
+  version_constraint?: string;
+  platform?: string;
+  /** Declared gate for when this tool is required; display only. */
+  condition?: string;
+  notes?: string;
+}
+export interface RuntimeExternalResource {
+  name: string;
+  role: string;
+  source?: string;
+  sha256?: string;
+}
+export interface RuntimeHardware {
+  accelerator?: 'cpu' | 'gpu' | 'tpu';
+  min_memory_gb?: number;
+  min_vram_gb?: number;
+  min_cpu_cores?: number;
+  /** Declared gate for when this hardware is required; display only. */
+  condition?: string;
+  notes?: string;
+}
+export interface RuntimeFacts {
+  id?: string;
+  mode: RuntimeMode;
+  declared: boolean;
+  entry?: string | null;
+  /** v2: 'function' | 'script' | 'external_program'; absent on old manifests. */
+  entry_kind?: string | null;
+  entry_function?: string | null;
+  language?: string | null;
+  files: string[];
+  resources: RuntimeResource[];
+  required_packages: Record<string, string[]>;
+  optional_packages: Record<string, Record<string, string>>;
+  /** v2 declared conditions: display only, never grant verification. */
+  tools?: RuntimeTool[];
+  external_resources?: RuntimeExternalResource[];
+  hardware?: RuntimeHardware;
+  invocation?: {command?: string; args?: string[]; env?: Record<string, string>; notes?: string};
+  fingerprint_mode?: 'v1' | 'v2' | 'unknown';
+  portability: RuntimePortability;
+  source?: Record<string, unknown>;
+  issues?: string[];
+  /** Method pages only: branch id to its runtime fact. */
+  implementations?: Record<string, RuntimeFacts>;
+}
+export interface ImplementationBranch {
+  id: string;
+  title: string;
+  state: 'verified' | 'not_run' | 'stale' | 'invalid';
+  scope: string;
+  receipt?: string;
+  runtime?: RuntimeFacts;
+}
 export interface CodeFile {
   variant: CodeVariant;
   path: string;
@@ -36,6 +102,8 @@ export interface CodeFile {
   text: boolean;
   source: unknown;
   verification: Verification;
+  /** Present for reusable files whose entrypoint belongs to one or more declared branches. */
+  branches?: ImplementationBranch[];
 }
 export interface CodeListing { files: CodeFile[]; note: string }
 export interface CodeText {
@@ -78,8 +146,33 @@ export interface TemplateMeta extends ItemBase {
   chart_types: string[];
 }
 
+export type MethodKind = 'analysis' | 'workflow' | 'technical';
+export interface MethodImplementation {
+  id: string;
+  title: string;
+  language: string;
+  entrypoint: string;
+  dependencies: string[];
+  verification?: string;
+}
+export interface ImplementationStatus {
+  id: string;
+  title: string;
+  state: 'verified' | 'not_run' | 'stale' | 'invalid';
+  scope: string;
+  runtime?: RuntimeFacts;
+}
+
 export interface MethodMeta extends ItemBase {
   type: 'method';
+  /** Missing classification remains unclassified; it must not default to analysis. */
+  method_kind?: MethodKind;
+  /** Controlled analysis purpose list; discovery only, never an execution gate. */
+  purposes?: string[];
+  keywords?: string[];
+  summary?: string;
+  data_contract?: { input: string; output: string };
+  implementations?: MethodImplementation[];
   /** Interface slugs the analysis reads and the tables it is finally shaped into. */
   inputs: string[];
   outputs: string[];
@@ -92,11 +185,47 @@ export interface MethodMeta extends ItemBase {
   cite: string[];
 }
 
+export interface InterfaceColumn {
+  type: string;
+  description: string;
+  /** Absent means required, matching the backend and the execution check. */
+  required?: boolean;
+}
+
 export interface InterfaceMeta {
   type: 'interface';
   slug: string;
   title: string;
-  columns: Record<string, { type: string; description: string }>;
+  columns: Record<string, InterfaceColumn>;
+}
+
+/** Backend-derived template input contract. Bindings map author columns to these internal fields. */
+export interface InputContractColumn {
+  name: string;
+  type: string;
+  description: string;
+  required: boolean;
+}
+export interface InputContractTable {
+  key: string;
+  interface: string;
+  description: string;
+  required: boolean;
+  columns: InputContractColumn[];
+}
+export interface InputContract {
+  bindings: boolean;
+  tables: InputContractTable[];
+}
+
+export interface TaxonomyCount { value: string; count: number }
+export interface TaxonomyDomain extends TaxonomyCount { purposes: TaxonomyCount[] }
+/** Vocabulary and distinct-page counts come from the backend; the UI holds no second word list. */
+export interface MethodTaxonomy {
+  total: number;
+  domains: TaxonomyDomain[];
+  purposes: TaxonomyCount[];
+  unclassified: { id: string; title: string; path: string }[];
 }
 
 export interface HubMeta {
@@ -115,6 +244,10 @@ export interface PageSummary<M extends PageMeta = PageMeta> {
   relations?: Relation[];
   preview?: Preview | null;
   workflow?: Workflow | null;
+  /** Computed by the backend against current code and receipts, never inferred from metadata. */
+  implementation_status?: ImplementationStatus[];
+  /** Template detail only: the same runtime fact used by lint and the code viewer. */
+  runtime?: RuntimeFacts | null;
 }
 
 /** Derived remaining action, independent of stored signoff and layout replay state. */
@@ -166,6 +299,8 @@ export interface PageDetail extends PageSummary {
   backlinks: Backlink[];
   gallery: GalleryMeta | null;
   reuse?: { sizing_declared: boolean; mode: string | null; profile: string | null } | null;
+  /** Templates only: the internal tables and the explicit binding path. */
+  input_contract?: InputContract | null;
 }
 
 export interface GraphNode {
@@ -209,7 +344,7 @@ export const STATUS_LABEL: Record<Status, string> = {
 export const TYPE_LABEL: Record<PageType, string> = {
   layout: '来源图样',
   template: '可调用模板',
-  method: '分析方法',
+  method: '方法页',
   interface: '数据接口',
   'chart-type': '图型',
   project: '课题',
@@ -257,6 +392,7 @@ export const api = {
     return page;
   },
   graph: () => request<GraphData>('/api/graph'),
+  methodTaxonomy: () => request<MethodTaxonomy>('/api/method-taxonomy'),
   codeFiles: (kind: Kind, id: string, signal?: AbortSignal) => request<CodeListing>(act(kind, id, 'code-files'), { signal }),
   code: (kind: Kind, id: string, variant: CodeVariant, path: string, signal?: AbortSignal) =>
     request<CodeText>(`${act(kind, id, 'code')}?${new URLSearchParams({ variant, path })}`, { signal }),
@@ -307,7 +443,16 @@ export function workflowOf(meta: PageMeta): Workflow | null {
 }
 
 export function displayStatus(meta: ItemMeta): string {
-  return workflowOf(meta)?.label ?? STATUS_LABEL[meta.status];
+  const workflow = workflowOf(meta);
+  if (meta.type === 'method') return methodNoteLabel(meta, workflow);
+  return workflow?.label ?? STATUS_LABEL[meta.status];
+}
+
+/** Author confirmation concerns the knowledge note, independently of algorithm execution. */
+export function methodNoteLabel(meta: MethodMeta, workflow?: Workflow | null): string {
+  if (meta.status === 'archived') return '已归档';
+  if (workflow && workflow.stage !== 'complete' && workflow.label !== '可用') return workflow.label;
+  return meta.status === 'ready' ? '笔记已确认' : '笔记待确认';
 }
 
 /** Workflow stage → the status colour it stands for; one mapping for badges, graph rings, census and filters. */

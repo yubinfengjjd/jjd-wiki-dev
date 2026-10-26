@@ -1,9 +1,9 @@
 import { useCallback, useEffect, useState } from 'react';
-import { api, imageOf, isItem, LayoutMeta, PageDetail, pageCache, PageSummary, safeUrl, TYPE_LABEL, wikiFile } from '../api';
+import { api, imageOf, isItem, LayoutMeta, PageDetail, pageCache, PageSummary, safeUrl, wikiFile } from '../api';
 import type { AppData } from '../App';
 import { FigureImage, TypeMark } from '../components';
 import { figureLabel, isWholeSource, methodFigures, templateSourceNote } from '../figureModels';
-import { renderBody, userBlock, withoutLeadEmbeds } from '../markdown';
+import { methodSection, renderBody, renderMarkdown, userBlock, withoutLeadEmbeds } from '../markdown';
 import { pageLink } from '../nav';
 import { Chain } from './Chain';
 import { ItemActions, LayoutImages, MethodSource, NoteEditor, TagsEditor } from './ItemPanel';
@@ -11,6 +11,7 @@ import { CodeButton } from '../CodeViewer';
 import { RelationList } from '../RelationList';
 import { adaptableTemplateRelations } from '../relations';
 import { MethodOverview } from './MethodOverview';
+import { allPackages, conditionFacts, entryKindLabel, pageTypeLabel, portabilityLabel, runtimeModeLabel } from '../methods';
 
 
 export function PageView({ path, data }: { path: string; data: AppData }) {
@@ -55,7 +56,17 @@ export function PageView({ path, data }: { path: string; data: AppData }) {
   const { meta } = page;
   if (isWholeSource(meta)) return <p className="notice">整图来源已归档并隐藏。请从图库选择单 panel 图样或可调用模板；完整原图保留在画廊作溯源。</p>;
   const item = isItem(meta) ? meta : null;
-  const html = renderBody(withoutLeadEmbeds(page.body), data.env, { dropUser: item !== null, dropFacts: meta.type === 'method' });
+  const analysisMethod = meta.type === 'method' && meta.method_kind === 'analysis';
+  const purposeHtml = analysisMethod ? renderMarkdown(methodSection(page.body, '用途'), data.env) : '';
+  const dropSections = analysisMethod
+    ? (meta.data_contract ? ['用途', '输入', '输出'] : ['用途'])
+    : [];
+  const html = renderBody(withoutLeadEmbeds(page.body), data.env, {
+    dropUser: item !== null,
+    dropFacts: meta.type === 'method',
+    foldMethodDetails: meta.type === 'method',
+    dropSections,
+  });
   const byPath = new Map(data.pages.map((p) => [p.path, p]));
   // Archived pages are never offered as a current chain step or split template.
   const pagesOf = (paths: string[]) => paths.flatMap((p) => byPath.get(p) ?? [])
@@ -81,17 +92,29 @@ export function PageView({ path, data }: { path: string; data: AppData }) {
           <a href={meta.type === 'method' || meta.type === 'interface' ? '#/methods' : '#/gallery'}>
             {meta.type === 'method' || meta.type === 'interface' ? '方法库' : '图库'}
           </a>{' '}
-          / {meta.type === 'template' ? '单 panel 图样 / 可调用模板' : meta.type === 'layout' ? figureLabel(meta) : TYPE_LABEL[meta.type]}
+          / {meta.type === 'template' ? '单 panel 图样 / 可调用模板' : meta.type === 'layout' ? figureLabel(meta) : pageTypeLabel(meta)}
         </p>
         <div className="page-title-row"><h1>{meta.title}</h1>{item && <CodeButton meta={item} />}</div>
         {error && <p className="notice error" role="alert">{error}</p>}
 
         {meta.type === 'layout' && <LayoutImages page={page} meta={meta} />}
         {meta.type === 'template' && <figure className="viewer"><div className="plate"><FigureImage key={imageOf(meta)} meta={meta} /></div></figure>}
+        {meta.type === 'template' && page.runtime && <details className="method-details template-runtime">
+          <summary>运行方式与依赖 <span className={`runtime-mode runtime-${page.runtime.mode}`}>{runtimeModeLabel(page.runtime)}</span> · <span className={`portability portability-${page.runtime.portability.state}`}>{portabilityLabel(page.runtime)}</span></summary>
+          <p className="small">必要依赖：{allPackages(page.runtime).join('、') || '未声明'}。复制清单见下；课题使用课题自己的 R 环境，不在这里安装包。</p>
+          <p className="small">复制：{page.runtime.files.length ? page.runtime.files.join('、') : '未声明清单'}</p>
+          {entryKindLabel(page.runtime) && <p className="small">入口类型：{entryKindLabel(page.runtime)}</p>}
+          {!!page.runtime.resources.length && <p className="small">资源：{page.runtime.resources.map((resource) => `${resource.path}（${resource.role}）`).join('、')}</p>}
+          {!!conditionFacts(page.runtime).length && <p className="small">运行条件（仅声明）：{conditionFacts(page.runtime).join('；')}</p>}
+          {Object.entries(page.runtime.optional_packages).map(([language, packages]) => Object.keys(packages).length > 0 && <p className="small" key={language}>可选 {language}：{Object.entries(packages).map(([name, purpose]) => `${name}（${purpose}）`).join('、')}</p>)}
+          {page.runtime.portability.evidence && <p className="small"><a href={wikiFile(`templates/${meta.id}/${page.runtime.portability.evidence}`)} target="_blank" rel="noreferrer">查看独立性证据</a></p>}
+          {!!page.runtime.portability.scope && <p className="small muted">{page.runtime.portability.scope}</p>}
+          {!!page.runtime.portability.issues?.length && <p className="small error-text">清单问题：{page.runtime.portability.issues.join('；')}</p>}
+        </details>}
         {meta.type === 'layout' && <PanelSet meta={meta} pages={pagesOf(meta.templates)} />}
 
-        {meta.type === 'method' && <MethodOverview meta={meta} body={page.body} figures={methodFigures(path, data.pages.map((p) => p.path === path ? page : p), data.graph, flow)} pages={data.pages} hiddenSources={data.env.hiddenSources} />}
-        {meta.type === 'method' && <details className="method-details"><summary>查看接口结构匹配与完整关联证据</summary>
+        {analysisMethod && <MethodOverview purposeHtml={purposeHtml} meta={meta} implementationStatus={page.implementation_status} figures={methodFigures(path, data.pages.map((p) => p.path === path ? page : p), data.graph, flow)} pages={data.pages} hiddenSources={data.env.hiddenSources} />}
+        {analysisMethod && <details className="method-details"><summary>查看接口结构匹配与完整关联证据</summary>
           <Chain
             title="接口结构匹配"
             hint="结构匹配只看模板是否消费方法声明的输出；仍需另行核对含义、每行单位、量纲与方法前提。"
@@ -121,6 +144,31 @@ export function PageView({ path, data }: { path: string; data: AppData }) {
         </details>}
         {item && meta.type !== 'method' && <RelationList relations={page.relations ?? []} self={path} pages={data.pages} />}
         {meta.type === 'template' && (
+          <details className="method-details template-inputs">
+            <summary>数据输入与绑定</summary>
+            <p className="small">
+              外部数据不必改名为 <code>&lt;接口&gt;.csv</code>：用 <code>render --bindings</code> 显式映射文件与列。
+              固定文件名只是标准输入的兼容入口，不是作者的命名要求。
+            </p>
+            <p className="small muted">
+              映射核对表/字段是否存在、必填项和数值是否可解析；不验证单位、粒度或配对关系，也不自动换算 0–1 / 0–100。
+              映射报告写入课题输出目录，原表不改。
+            </p>
+            {page.input_contract?.tables?.length ? page.input_contract.tables.map((table) => (
+              <section key={table.key} className="input-definition">
+                <h3>表 <code>{table.key}</code>：{table.description} <span className="muted small">{table.required ? '必需' : '可选'}</span></h3>
+                <p className="small">标准文件 <code>{table.interface}.csv</code></p>
+                <table className="input-columns">
+                  <thead><tr><th>内部字段</th><th>类型</th><th>必需</th><th>含义</th></tr></thead>
+                  <tbody>{table.columns.map((column) => (
+                    <tr key={column.name}><td><code>{column.name}</code></td><td>{column.type}</td><td>{column.required ? '必需' : '可选'}</td><td>{column.description}</td></tr>
+                  ))}</tbody>
+                </table>
+              </section>
+            )) : <p className="muted small">当前 template 页未返回输入契约；以“数据要求”节和接口页为准。</p>}
+          </details>
+        )}
+        {meta.type === 'template' && (
           <section className="reuse-note">
             <p>{templateSourceNote(meta, data.pages, data.env.hiddenSources)}</p>
             <strong>换数据与任意 n 复用</strong>
@@ -147,7 +195,7 @@ export function PageView({ path, data }: { path: string; data: AppData }) {
         {meta.type === 'interface' && (
           <Chain
             title="谁写它，谁读它"
-            hint={`文件名约定为 ${meta.slug}.csv；接口结构匹配仍需核对当前课题的含义、单位和前提。`}
+            hint={`标准输入文件名为 ${meta.slug}.csv（内部执行约定；外部列可用 render --bindings 映射）。接口结构匹配仍需核对当前课题的含义、单位和前提。`}
             self={path}
             columns={[
               { label: '产出方法', pages: pagesOf(flow.inputs(path)) },
@@ -183,19 +231,19 @@ export function PageView({ path, data }: { path: string; data: AppData }) {
               </dl>
             </div>
           )}
-          <Backlinks page={{ ...page, backlinks: page.backlinks.filter((b) => data.env.titles.has(b.path)) }} />
+          <Backlinks page={{ ...page, backlinks: page.backlinks.filter((b) => data.env.titles.has(b.path)) }} pages={data.pages} />
         </aside>
       )}
       {!item && (
         <aside className="page-side sheet">
-          <Backlinks page={{ ...page, backlinks: page.backlinks.filter((b) => data.env.titles.has(b.path)) }} />
+          <Backlinks page={{ ...page, backlinks: page.backlinks.filter((b) => data.env.titles.has(b.path)) }} pages={data.pages} />
         </aside>
       )}
     </article>
   );
 }
 
-function Backlinks({ page }: { page: PageDetail }) {
+function Backlinks({ page, pages }: { page: PageDetail; pages: PageSummary[] }) {
   return (
     <div className="panel small">
       <h3>反向链接</h3>
@@ -206,7 +254,7 @@ function Backlinks({ page }: { page: PageDetail }) {
           {page.backlinks.map((b) => (
             <li key={b.path}>
               <TypeMark type={b.type} />
-              <a {...pageLink(b.path)} title={TYPE_LABEL[b.type]}>{b.title}</a>
+              <a {...pageLink(b.path)} title={pageTypeLabel(pages.find((p) => p.path === b.path)?.meta, b.type)}>{b.title}</a>
             </li>
           ))}
         </ul>

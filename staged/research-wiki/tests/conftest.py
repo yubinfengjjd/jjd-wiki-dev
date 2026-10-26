@@ -1,3 +1,4 @@
+import hashlib
 import json
 import shutil
 import subprocess
@@ -76,12 +77,35 @@ def record_ready_receipt(config, page):
     record_acceptance(config, page)
 
 
+def record_implementation_receipt(page, implementation_id='run', **changes):
+    """Seal the current fixture code; never evidence of a scientific analysis."""
+    from rwiki.pages import read_page
+    meta, _ = read_page(page)
+    branch = next(item for item in meta['implementations'] if item['id'] == implementation_id)
+    asset = page.with_suffix('')
+    data = {
+        'schema_version': 1, 'implementation': implementation_id, 'state': 'passed',
+        'scope': 'Isolated software fixture only; no scientific result.',
+        'command': 'python fixture.py', 'checks': ['Fixture entrypoint is present and sealed'],
+        'environment': {'python': sys.executable},
+        'files': {path.relative_to(asset).as_posix(): hashlib.sha256(path.read_bytes()).hexdigest()
+                  for path in sorted((asset / 'code').rglob('*'))
+                  if path.is_file() and '__pycache__' not in path.parts
+                  and path.suffix.lower() not in ('.pyc', '.pyo')},
+    }
+    data.update(changes)
+    target = asset / (branch.get('verification') or f'verification/{implementation_id}.json')
+    target.parent.mkdir(parents=True, exist_ok=True)
+    target.write_text(json.dumps(data, ensure_ascii=False), encoding='utf-8')
+
+
 def write_interface(root, slug, columns, title="数值接口"):
     from rwiki.pages import write_page
 
     write_page(root / "interfaces" / f"{slug}.md", {
         "type": "interface", "slug": slug, "title": title, "columns": columns},
         f"# {title}\n\n<!-- facts:start -->\n<!-- facts:end -->\n\n## 含义\n\n"
+        "一行代表一个测试单位；仅用于软件夹具，不代表科学能力。\n\n"
         "<!-- user:start -->\n<!-- user:end -->\n")
 
 

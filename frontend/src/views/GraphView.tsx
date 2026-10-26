@@ -6,6 +6,7 @@ import { ForceGraph } from '../graph/ForceGraph';
 import { openPage } from '../nav';
 import { HAS_STATUS } from '../palette';
 import { COMPATIBILITY_LABEL, verificationLabel } from '../relations';
+import { pageTypeLabel } from '../methods';
 
 const TYPES: PageType[] = ['chart-type', 'layout', 'template', 'method', 'interface', 'project'];
 const STATUSES: [Status, string][] = [
@@ -76,6 +77,7 @@ export function GraphView({ data }: { data: AppData }) {
     const meta = metaOf.get(id);
     return meta ? imageOf(meta) : null;
   };
+  const typeLabel = (node: GraphNode) => pageTypeLabel(metaOf.get(node.id), node.type);
 
   return (
     <div className="graph-page">
@@ -152,12 +154,13 @@ export function GraphView({ data }: { data: AppData }) {
         <button onClick={() => engine.current!.fit()}>全部显示</button>
       </div>
 
-      {hover && hover.id !== selected && nodes.has(hover.id) && <HoverCard node={nodes.get(hover.id)!} x={hover.x} y={hover.y} thumb={thumbFor(hover.id)} />}
+      {hover && hover.id !== selected && nodes.has(hover.id) && <HoverCard node={nodes.get(hover.id)!} x={hover.x} y={hover.y} thumb={thumbFor(hover.id)} typeLabel={typeLabel(nodes.get(hover.id)!)} />}
 
       <NodePanel
         node={selected ? nodes.get(selected) ?? null : null}
         thumb={selected ? thumbFor(selected) : null}
         neighbours={selected ? neighboursOf(selected, data, nodes) : []}
+        typeLabel={selected ? typeLabel(nodes.get(selected)!) : ""}
         onPick={(id) => engine.current!.select(id)}
         onClose={() => engine.current!.select(null)}
       />
@@ -179,7 +182,7 @@ function neighboursOf(id: string, data: AppData, nodes: Map<string, GraphNode>) 
   }).sort((a, b) => TYPES.indexOf(a.node.type) - TYPES.indexOf(b.node.type));
 }
 
-function HoverCard({ node, x, y, thumb }: { node: GraphNode; x: number; y: number; thumb: string | null }) {
+function HoverCard({ node, x, y, thumb, typeLabel }: { node: GraphNode; x: number; y: number; thumb: string | null; typeLabel: string }) {
   const flip = x > innerWidth - 300;
   return (
     <div className="hover-card sheet" style={{ left: flip ? x - 276 : x + 18, top: Math.min(y + 18, innerHeight - 230) }} role="tooltip">
@@ -189,7 +192,7 @@ function HoverCard({ node, x, y, thumb }: { node: GraphNode; x: number; y: numbe
         </div>
       )}
       <strong>{node.title}</strong>
-      <span className="muted small">{TYPE_LABEL[node.type]}{HAS_STATUS(node.type) && node.status ? `，${node.label ?? STATUS_LABEL[node.status]}` : ''}</span>
+      <span className="muted small">{typeLabel}{HAS_STATUS(node.type) && node.status ? `，${node.label ?? STATUS_LABEL[node.status]}` : ''}</span>
     </div>
   );
 }
@@ -198,17 +201,18 @@ interface PanelProps {
   node: GraphNode | null;
   thumb: string | null;
   neighbours: { node: GraphNode; links: GraphLink[] }[];
+  typeLabel: string;
   onPick: (id: string) => void;
   onClose: () => void;
 }
 
-function NodePanel({ node, thumb, neighbours, onPick, onClose }: PanelProps) {
+function NodePanel({ node, thumb, neighbours, typeLabel, onPick, onClose }: PanelProps) {
   return (
     <aside className={node ? 'node-panel sheet open' : 'node-panel sheet'} aria-hidden={!node} aria-label="所选页面">
       {node && (
         <>
           <div className="panel-row">
-            <span className="muted small">{TYPE_LABEL[node.type]}</span>
+            <span className="muted small">{typeLabel}</span>
             <button className="ghost small" onClick={onClose}>关闭</button>
           </div>
           <h2>{node.title}</h2>

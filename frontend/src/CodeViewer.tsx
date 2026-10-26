@@ -1,6 +1,7 @@
 import { useEffect, useId, useRef, useState } from 'react';
 import { createPortal } from 'react-dom';
-import { api, CodeFile, CodeListing, CodeText, CodeVariant, codeDownload, ItemMeta, KIND_OF } from './api';
+import { api, CodeFile, CodeListing, CodeText, CodeVariant, codeDownload, ImplementationBranch, ItemMeta, KIND_OF } from './api';
+import { IMPLEMENTATION_LABEL, packageFacts, portabilityLabel, runtimeModeLabel } from './methods';
 import { verificationLabel } from './relations';
 
 const VARIANTS: CodeVariant[] = ['original', 'reusable'];
@@ -10,6 +11,26 @@ export const codeFileKey = (file: Pick<CodeFile, 'variant' | 'path'>) => `${file
 export const sourceText = (source: unknown): string => typeof source === 'string' ? source : source == null ? '来源未记录' : JSON.stringify(source);
 export const isReconstruction = (source: unknown) => /replica|reconstruct|generated|重建|复刻|生成/i.test(sourceText(source));
 export const isSnippet = (source: unknown) => /snippet|fragment|片段/i.test(sourceText(source));
+
+/** Shared entrypoint files can carry several independently verified branches. */
+export function CodeBranchList({ branches }: { branches: ImplementationBranch[] }) {
+  if (!branches.length) return null;
+  return <div className="code-branches small">
+    <h4>实现分支</h4>
+    <ul>{branches.map(branch => <li key={branch.id}>
+      <strong>{branch.title}</strong>
+      <span className={`implementation-state implementation-${branch.state}`}>{IMPLEMENTATION_LABEL[branch.state] ?? '未运行'}</span>
+      <span>{branch.scope || '未声明验证范围'}</span>
+      {branch.runtime && <>
+        <span className={`runtime-mode runtime-${branch.runtime.mode}`}>{runtimeModeLabel(branch.runtime)}</span>
+        <span className={`portability portability-${branch.runtime.portability.state}`}>{portabilityLabel(branch.runtime)}</span>
+        <span className="muted">必要依赖：{packageFacts(branch.runtime) || '未声明'}</span>
+        {!!branch.runtime.portability.issues?.length && <span className="error-text">清单问题：{branch.runtime.portability.issues.join('；')}</span>}
+      </>}
+      {branch.receipt && <code>{branch.receipt}</code>}
+    </li>)}</ul>
+  </div>;
+}
 
 /** An independent action, never nested inside a card's navigation link or flip button. */
 export function CodeButton({ meta, className = '' }: { meta: ItemMeta; className?: string }) {
@@ -66,7 +87,15 @@ export function CodeDialog({ meta, onClose }: { meta: ItemMeta; onClose: () => v
     api.codeFiles(kind, meta.id, controller.signal).then((result) => {
       if (controller.signal.aborted) return;
       setListing(result);
-      setVariant(result.files.length === 0 || result.files.some((f) => f.variant === 'original') ? 'original' : 'reusable');
+      const reusable = result.files.filter((file) => file.variant === 'reusable');
+      const preferredVariant = reusable.length ? 'reusable' : 'original';
+      setVariant(preferredVariant);
+      const entries = meta.type === 'method'
+        ? (meta.implementations ?? []).map((item) => item.entrypoint.split(':')[0])
+        : ['code/render.R', 'code/render.py', 'code/core.R'];
+      const pool = result.files.filter((file) => file.variant === preferredVariant);
+      const preferred = pool.find((file) => entries.includes(file.path)) ?? pool[0];
+      if (preferred) setSelected(codeFileKey(preferred));
     }, (e: Error) => { if (!controller.signal.aborted) setListError(e.message); });
     return () => controller.abort();
   }, [kind, meta.id]);
@@ -117,6 +146,7 @@ export function CodeDialog({ meta, onClose }: { meta: ItemMeta; onClose: () => v
                 {!!current.verification?.evidence?.length && <><dt>验证证据</dt><dd>{current.verification.evidence.join('；')}</dd></>}
                 <dt>SHA-256</dt><dd className="code-hash">{current.sha256 || '未提供'}</dd>
               </dl>
+              <CodeBranchList branches={current.branches ?? []} />
               <div className="panel-row code-toolbar">
                 <button type="button" className="small" disabled={content?.value?.text == null} onClick={copy}>复制当前文件</button>
                 <a className="button small" href={codeDownload(kind, meta.id, current)} download>下载原文件</a>

@@ -7,7 +7,8 @@ import sys
 
 import pytest
 
-from conftest import run_cli, complete_sections, record_ready_receipt, seal_replay
+from conftest import (run_cli, complete_sections, record_implementation_receipt,
+                      record_ready_receipt, seal_replay)
 from rwiki.config import load_config
 from rwiki.deletion import delete_archived, prepare
 from rwiki.facts import page_facts, refresh_facts
@@ -24,6 +25,12 @@ def body(title):
             "## 不适用\n\n不能据此断言临床有效。\n\n## 输入\n\n模型与逐条结果。\n\n"
             "## 怎么做\n\n## 代码\n\n## 输出\n\n## 使用记录\n\n"
             "<!-- user:start -->\n作者原始备注 <literal>\n<!-- user:end -->\n")
+
+
+def interface_body(title):
+    return (f"# {title}\n\n<!-- facts:start -->\n<!-- facts:end -->\n\n## 含义\n\n"
+            "一行代表一条测试记录；仅用于软件夹具。\n\n"
+            "<!-- user:start -->\n<!-- user:end -->\n")
 
 
 def relation(figure, compatibility="direct", **changes):
@@ -60,7 +67,8 @@ def semantic_wiki(tmp_path):
     config = load_config(config_path)
     for slug, column in (("source-values", "source_metric"), ("plot-values", "plot_metric")):
         write_page(root / f"interfaces/{slug}.md", {"type": "interface", "slug": slug,
-                   "title": slug, "columns": {column: {"type": "float", "description": "明确的逐条量"}}}, body(slug))
+                   "title": slug, "columns": {column: {"type": "float", "description": "明确的逐条量"}}},
+                   interface_body(slug))
     for fid, interface in (("f-a", "source-values"), ("f-b", "plot-values")):
         assets = root / "templates" / fid
         (assets / "code").mkdir(parents=True)
@@ -97,8 +105,19 @@ def semantic_wiki(tmp_path):
         "chart_types": [], "tags": ["same-label"], "favorite": False}, body("来源参考"))
     for mid, outputs in (("m-a", ["source-values"]), ("m-b", ["plot-values"]),
                          ("m-c", ["source-values"]), ("no-figure", [])):
+        assets = root / "methods" / mid
+        (assets / "code").mkdir(parents=True)
+        (assets / "code/run.py").write_text("# fixture entrypoint; never executed\n", encoding="utf-8")
         write_page(root / f"methods/{mid}.md", {"type": "method", "id": mid, "title": mid,
-            "status": "ready", "inputs": ["source-values"], "outputs": outputs,
+            "status": "ready", "method_kind": "analysis",
+            "summary": f"{mid} synthetic software fixture.",
+            "data_contract": {"input": "Fixture rows.", "output": "Fixture result rows."},
+            "implementations": [{
+                "id": "run", "title": "Fixture entrypoint", "language": "Python",
+                "entrypoint": "code/run.py:run", "dependencies": [],
+                "verification": "verification/run.json",
+            }],
+            "inputs": ["source-values"], "outputs": outputs,
             "tags": ["same-label"], "source": {"kind": "project", "path": f"independent-source/{mid}"},
             "license": "none", "cite": [], "favorite": False}, body(mid))
     update(config, "methods/m-a.md", figure_relations=[relation("templates/f-a"),
@@ -108,6 +127,8 @@ def semantic_wiki(tmp_path):
         complete_sections(page)
     for page in (*(root / 'methods').glob('*.md'), *(root / 'templates').glob('*.md')):
         record_ready_receipt(config, page)
+    for page in (root / 'methods').glob('*.md'):
+        record_implementation_receipt(page)
     return config, config_path
 
 
@@ -134,6 +155,16 @@ def test_adaptable_relation_requires_read_interfaces_in_body(semantic_wiki):
     remaining = [line for line in lint(config)
                  if line.startswith("WARN methods/m-a.md:") and "plot-values" in line]
     assert not remaining, remaining
+
+
+def test_interface_facts_show_methods_adapted_through_reading_templates(semantic_wiki):
+    config, _ = semantic_wiki
+    meta, _ = read_page(config.wiki_root / "interfaces/plot-values.md")
+    facts = page_facts(config, meta)
+    assert "经模板关联的方法" in facts
+    assert "[[methods/m-a|m-a]]（adaptable）" in facts
+    # m-b writes this interface directly, so it belongs to 产出方法, not the adapted list.
+    assert "[[methods/m-b|m-b]]" not in facts.split("经模板关联的方法", 1)[1]
 
 
 def test_many_to_many_and_cross_source_resolve_identically(semantic_wiki):
@@ -248,8 +279,8 @@ def test_discovery_keeps_methods_without_figures_or_matching_column_names(semant
     methods = suggest_methods(config, columns="entirely_different_name", limit=10)
     assert {item["id"] for item in methods} == {"m-a", "m-b", "m-c", "no-figure"}
     isolated = next(item for item in methods if item["id"] == "no-figure")
-    assert isolated["relations"] == [] and isolated["code_files"] == []
-    assert not isolated["code_status"]["available"]
+    assert isolated["relations"] == [] and isolated["code_files"] == ["methods/no-figure/code/run.py"]
+    assert isolated["code_status"]["available"] and isolated["code_status"]["has_reusable"]
     method = next(item for item in methods if item["id"] == "m-a")
     assert method["prerequisites"] == ["每行代表同一种验证单位"]
     assert method["input_requirements"]["source-values"]["columns"]
@@ -325,10 +356,15 @@ def test_code_inventory_is_actual_and_legacy_code_list_excludes_cache(semantic_w
     (assets / "code/run.py").write_text("# reusable fixture; no execution evidence\n", encoding="utf-8")
     (assets / "code/__pycache__/run.pyc").write_bytes(b"cache")
     record_ready_receipt(config, assets.with_suffix(".md"))  # new code assets are re-checked before recommending
+    record_implementation_receipt(assets.with_suffix(".md"))
     candidate = next(item for item in suggest_methods(config, limit=10) if item["id"] == "no-figure")
     assert candidate["code_files"] == ["methods/no-figure/code/run.py"]
     assert candidate["code_status"]["has_original"] and candidate["code_status"]["has_reusable"]
     assert len(candidate["code_status"]["files"]) == 2
-    assert all(item["verification"]["state"] == "unknown" for item in candidate["code_status"]["files"])
+    states = {item["path"]: item["verification"]["state"] for item in candidate["code_status"]["files"]}
+    assert states["source/original.r"] == "unknown"
+    assert states["code/run.py"] == "verified"
+    assert [branch["id"] for branch in next(
+        item for item in candidate["code_status"]["files"] if item["path"] == "code/run.py")["branches"]] == ["run"]
     facts = page_facts(config, read_page(assets.with_suffix(".md"))[0])
     assert "__pycache__" not in facts and "run.pyc" not in facts and "code/run.py" in facts

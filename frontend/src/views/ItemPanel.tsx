@@ -1,5 +1,5 @@
 import { useState } from 'react';
-import { api, effectiveStatus, galleryFile, ItemMeta, KIND_OF, LayoutMeta, MethodMeta, PageDetail, safeUrl, wikiFile, Workflow } from '../api';
+import { api, effectiveStatus, galleryFile, ItemMeta, KIND_OF, LayoutMeta, methodNoteLabel, MethodMeta, PageDetail, safeUrl, wikiFile, Workflow } from '../api';
 import { StatusBadge } from '../components';
 import { DeleteArchived } from '../DeleteArchived';
 
@@ -73,7 +73,7 @@ export function ItemActions({ meta, run, busy, onDeleted, workflow }: ActionProp
   return (
     <div className="panel">
       <div className="panel-row">
-        <StatusBadge status={effectiveStatus(meta, workflow ?? null)} label={workflow?.label} />
+        <StatusBadge status={effectiveStatus(meta, workflow ?? null)} label={meta.type === 'method' ? methodNoteLabel(meta, workflow) : workflow?.label} />
         <button className="ghost" disabled={busy} onClick={() => run(() => api.favorite(kind, meta.id, !meta.favorite))} aria-pressed={meta.favorite}>
           {meta.favorite ? '★ 已收藏' : '☆ 收藏'}
         </button>
@@ -106,7 +106,7 @@ export function ItemActions({ meta, run, busy, onDeleted, workflow }: ActionProp
             <>
               <p className="muted">方法笔记已写好。读完用途、适用与代码后再确认。</p>
               <div className="panel-row">
-                <button className="primary" disabled={busy} onClick={() => run(() => api.confirm(meta.id))}>确认可用</button>
+                <button className="primary" disabled={busy} onClick={() => run(() => api.confirm(meta.id))}>确认笔记</button>
                 <button className="ghost" disabled={busy} onClick={() => setReasoning(true)}>退回</button>
               </div>
             </>

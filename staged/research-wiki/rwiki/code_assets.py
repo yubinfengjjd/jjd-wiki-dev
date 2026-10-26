@@ -206,11 +206,21 @@ def _group(assets: list[_Asset], owner: Path, folder: str, boundary: Path,
 def _gallery(config: Config, meta: dict) -> tuple[Path, dict] | None:
     relative = meta.get("gallery_entry")
     if not _relative(relative):
+        source = meta.get("source")
+        if isinstance(source, dict):
+            relative = source.get("gallery_entry")
+    if not _relative(relative):
         return None
     boundary = config.gallery_root.resolve()
     entry = boundary.joinpath(*PurePosixPath(relative).parts)
     info = _json(entry / "meta.json", boundary)
-    if not isinstance(info, dict) or info.get("id", meta["id"]) != meta["id"]:
+    # A method may point at a gallery entry whose id differs from its own id;
+    # gallery ids are <post>__<figure>, while the pointer is <post>/figures/<figure>.
+    parts = PurePosixPath(relative).parts
+    derived = (f"{parts[-3]}__{parts[-1]}"
+               if len(parts) >= 3 and parts[-2] == "figures" else None)
+    expected = {meta.get("id"), PurePosixPath(relative).name, derived}
+    if not isinstance(info, dict) or info.get("id", meta.get("id")) not in expected:
         return None
     return entry, info
 
@@ -243,6 +253,13 @@ def _discover(config: Config, page_path: str) -> list[_Asset]:
                "Wiki 来源归档（原始版本分类；不据目录名推定作者原版或完整算法）")
         _group(assets, owner, "code", boundary, "reusable",
                "Wiki 复用/改造代码；具体实现与验证范围以条目和记录为准")
+    if meta["type"] == "method":
+        # Methods from a gallery entry share the immutable raw archive there;
+        # do not require a second copy under methods/<id>/source/.
+        source_meta = meta.get("source")
+        relative = source_meta.get("gallery_entry") if isinstance(source_meta, dict) else None
+        prefix = f"gallery/{PurePosixPath(relative).name}/" if _relative(relative) else ""
+        _gallery_originals(assets, config, meta, prefix)
     if meta["type"] == "layout":
         _gallery_originals(assets, config, meta)
         gallery = _gallery(config, meta)
@@ -300,18 +317,67 @@ def _selected(config: Config, page_path: str, variant: str, path: str) -> _Asset
     raise WikiError("代码文件不存在或不在此条目的资产清单中")
 
 
+def _implementation_branches(page: Path, meta: dict) -> dict[str, list[dict]]:
+    """Map entrypoint files to their declared branches; never infer a branch from a helper file."""
+    if meta.get("type") != "method":
+        return {}
+    from .method_implementations import implementation_status
+    result: dict[str, list[dict]] = {}
+    items = meta.get("implementations", [])
+    if not isinstance(items, list):
+        return result
+    statuses = implementation_status(page, meta)
+    for item, status in zip(items, statuses):
+        if not isinstance(item, dict):
+            continue
+        entry = str(item.get("entrypoint", "")).partition(":")[0]
+        if not entry:
+            continue
+        result.setdefault(entry, []).append({
+            "id": item.get("id", ""),
+            "title": item.get("title", ""),
+            "state": status.get("state", "invalid"),
+            "scope": status.get("scope", ""),
+            "runtime": status.get("runtime"),
+            "receipt": f"methods/{meta.get('id')}/{item['verification']}"
+                       if item.get("verification") else "",
+        })
+    return result
+
+
+def _branch_verification(branches: list[dict]) -> dict:
+    states = {branch["state"] for branch in branches}
+    state = "verified" if states == {"verified"} else "mixed" if len(states) > 1 else next(iter(states))
+    scope = "；".join(
+        f"{branch['id']}（{branch['title']}）：{branch['state']} — {branch['scope'] or '未声明验证范围'}"
+        for branch in branches)
+    evidence = [branch["receipt"] for branch in branches if branch.get("receipt")]
+    return {"state": state, "scope": scope[:4000], "evidence": evidence,
+            "basis": "由 implementation_status 按入口分支派生；不核对外部已安装依赖"}
+
+
 def code_files(config: Config, page_path: str) -> dict:
     """List only existing entry-owned assets and explicitly linked gallery code."""
+    page, meta = _page(config, page_path)
+    branches_by_file = _implementation_branches(page, meta)
     files = []
     for asset in _discover(config, page_path):
         size = asset.file.stat().st_size
         text, _, _ = _decode(asset, size)
+        branches = branches_by_file.get(asset.path, []) if asset.variant == "reusable" else []
+        verification = _branch_verification(branches) if branches else asset.verification
         files.append({"variant": asset.variant, "path": asset.path, "language": asset.language,
                       "size": size, "sha256": _hash(asset.file), "text": text is not None,
-                      "source": asset.source, "verification": asset.verification})
-    note = ("只读代码资产；原始版本分类不等于作者原版或完整实现，复用版不等于已验证。文本查看上限 1 MiB。"
+                      "source": asset.source, "verification": verification,
+                      "branches": branches})
+    note = ("只读代码资产；原始版本保持来源清单状态，复用版按入口分支派生实现收据。"
+            "共享文件列出其全部分支；文本查看上限 1 MiB。"
             if files else "暂无可查看的代码资产；未生成代码。")
-    return {"files": files, "note": note}
+    runtime = None
+    if meta.get("type") == "template":
+        from .runtime_contract import runtime_facts
+        runtime = runtime_facts(page.with_suffix(''), meta['id'], 'template')
+    return {"files": files, "note": note, "runtime": runtime}
 
 
 def read_code(config: Config, page_path: str, variant: str, path: str) -> dict:

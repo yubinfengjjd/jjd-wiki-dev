@@ -6,7 +6,7 @@ from .config import Config, read_json
 from .errors import WikiError
 from .interfaces import load_interface
 from .pages import read_page, set_block, write_page
-from .relations import COMPATIBILITY_LABELS, relations_for
+from .relations import COMPATIBILITY_LABELS, all_relations, relations_for
 
 
 def declarations(root, kind: str) -> dict:
@@ -119,7 +119,7 @@ def method_facts(config: Config, meta: dict) -> str:
                   if path.is_file() and "__pycache__" not in path.parts
                   and path.suffix.lower() not in (".pyc", ".pyo")]
     license_text = "仅供个人研究参考" if meta["license"] == "none" else meta["license"]
-    return "\n".join([
+    lines = [
         f"\n- 来源：{origin}", f"- 许可证：{license_text}",
         f"- 引用：{'；'.join(meta['cite']) or '无'}", f"- 标签：{'、'.join(meta['tags'])}",
         f"- 输入接口：{' · '.join(interface_link(root, slug) for slug in meta['inputs']) or '未声明'}",
@@ -127,7 +127,10 @@ def method_facts(config: Config, meta: dict) -> str:
         f"- 接口结构匹配的图（仅结构候选，未核实语义）：{' · '.join(figures) or '暂无'}",
         f"- 接口结构匹配的下一步方法（仅结构候选，未核实语义）：{' · '.join(next_methods) or '暂无'}",
         f"- 代码模板：{' · '.join(code_files) or '无'}",
-    ]) + "\n" + relationship_facts(config, f"methods/{meta['id']}.md")
+    ]
+    if meta.get("method_kind") == "analysis":
+        lines.insert(4, f"- 分析用途：{'、'.join(meta.get('purposes') or []) or '未分类'}")
+    return "\n".join(lines) + "\n" + relationship_facts(config, f"methods/{meta['id']}.md")
 
 
 def interface_facts(config: Config, meta: dict) -> str:
@@ -138,12 +141,33 @@ def interface_facts(config: Config, meta: dict) -> str:
     producers = [page_link("methods", mm) for mm, method in live(methods.values()) if slug in method["outputs"]]
     readers = [page_link("methods", mm) for mm, method in live(methods.values()) if slug in input_interfaces(method)]
     figures = [page_link("templates", tm) for tm, spec in live(templates.values()) if slug in table_interfaces(spec)]
-    lines = ["\n| 列 | 类型 | 含义 |", "|---|---|---|"]
+    lines = ["\n| 列 | 类型 | 必需 | 含义 |", "|---|---|---|---|"]
     for name, column in meta["columns"].items():
-        lines.append(f"| {name} | {column['type']} | {column['description']} |")
+        required = "必需" if column.get("required", True) else "可选"
+        lines.append(f"| {name} | {column['type']} | {required} | {column['description']} |")
     lines.extend(["", f"- 产出方法：{' · '.join(producers) or '无'}",
                   f"- 读取方法：{' · '.join(readers) or '无'}",
                   f"- 使用的模板：{' · '.join(figures) or '无'}"])
+    # A method whose declared outputs are empty can still feed a template that reads
+    # this interface, but only through an explicit adaptation. Showing that link here
+    # keeps the interface page from claiming "无" while the figure side says otherwise.
+    reading_templates = {tm["id"] for tm, spec in live(templates.values())
+                         if slug in table_interfaces(spec)}
+    related = {}
+    for record in all_relations(config):
+        figure = record["figure"].removesuffix(".md")
+        if (not record["active"] or record["compatibility"] == "direct"
+                or not figure.startswith("templates/")
+                or figure.split("/", 1)[1] not in reading_templates):
+            continue
+        previous = related.get(record["method"])
+        if previous is None or record["compatibility"] == "adaptable":
+            related[record["method"]] = record
+    if related:
+        links = [f"[[{path.removesuffix('.md')}|{record['method_title']}]]（{record['compatibility']}）"
+                 for path, record in sorted(related.items())]
+        lines.append("- 经模板关联的方法（经读取该接口的模板；不是 direct，按方法页准备数据）："
+                     + " · ".join(links))
     return "\n".join(lines) + "\n"
 
 

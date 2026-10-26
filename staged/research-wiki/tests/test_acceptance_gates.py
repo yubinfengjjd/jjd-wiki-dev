@@ -109,14 +109,17 @@ def test_text_only_method_with_review_can_confirm_and_records_acceptance(workspa
     assert record.is_file()
     assert '知识关联检查' in json.loads(record.read_text(encoding='utf-8'))['checks']
     assert not (page.with_suffix('') / 'code').exists()
-    assert [m['id'] for m in suggest_methods(config)] == ['note']
+    # Note confirmation is not execution evidence; an unclassified, code-free note stays unlisted.
+    assert suggest_methods(config) == []
+    assert workflow_snapshot(config)['methods/note.md']['label'] == '待分类'
     meta, body = read_page(page)
     write_page(page, meta, body.replace('隔离软件夹具的说明', '内容更新后的软件夹具说明', 1))
     assert workflow_snapshot(config)['methods/note.md']['queue'] == 'agent'
     assert suggest_methods(config) == []
     result = run_cli(config_path, 'check-entry', 'note', '--record')
     assert result.returncode == 0, result.stderr
-    assert workflow_snapshot(config)['methods/note.md']['queue'] is None
+    flow = workflow_snapshot(config)['methods/note.md']
+    assert flow['queue'] == 'agent' and flow['label'] == '待分类'
     assert (page.with_suffix('') / 'source/native.py').read_bytes() == source.read_bytes()
 
 
