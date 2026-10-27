@@ -32,47 +32,51 @@ def test_bad_env_is_error(tmp_path, env):
         load_config(_config(tmp_path, env=env))
 
 
-def test_existing_env_beats_config_beats_default(tmp_path, monkeypatch):
-    monkeypatch.setenv("HTTPS_PROXY", "http://already:1")
-    monkeypatch.delenv("RWIKI_TEST_FROM_CONFIG", raising=False)
-    monkeypatch.delenv("GH_PROMPT_DISABLED", raising=False)
+# 下列测试用独立的 environ 字典，不写进程环境，避免泄漏到同进程后面的测试。
+def test_existing_env_beats_config_beats_default(tmp_path):
+    environ = {"HTTPS_PROXY": "http://already:1"}
     config = load_config(_config(tmp_path, env={"vars": {
         "HTTPS_PROXY": "http://config:2", "RWIKI_TEST_FROM_CONFIG": "yes"}}))
-    prepare_env(config)
-    assert os.environ["HTTPS_PROXY"] == "http://already:1"
-    assert os.environ["RWIKI_TEST_FROM_CONFIG"] == "yes"
-    assert os.environ["GH_PROMPT_DISABLED"] == "1"  # 缺省只在未设置时补
+    prepare_env(config, environ)
+    assert environ["HTTPS_PROXY"] == "http://already:1"
+    assert environ["RWIKI_TEST_FROM_CONFIG"] == "yes"
+    assert environ["GH_PROMPT_DISABLED"] == "1"  # 缺省只在未设置时补
 
 
-def test_config_overrides_default_and_existing_overrides_default(tmp_path, monkeypatch):
-    monkeypatch.delenv("GH_PROMPT_DISABLED", raising=False)
-    prepare_env(load_config(_config(tmp_path, env={"vars": {"GH_PROMPT_DISABLED": "0"}})))
-    assert os.environ["GH_PROMPT_DISABLED"] == "0"
-    monkeypatch.setenv("GH_PROMPT_DISABLED", "keep")
-    prepare_env(load_config(_config(tmp_path)))
-    assert os.environ["GH_PROMPT_DISABLED"] == "keep"
+def test_config_overrides_default_and_existing_overrides_default(tmp_path):
+    environ = {}
+    prepare_env(load_config(_config(tmp_path, env={"vars": {"GH_PROMPT_DISABLED": "0"}})), environ)
+    assert environ["GH_PROMPT_DISABLED"] == "0"
+    environ = {"GH_PROMPT_DISABLED": "keep"}
+    prepare_env(load_config(_config(tmp_path)), environ)
+    assert environ["GH_PROMPT_DISABLED"] == "keep"
 
 
-def test_git_identity_not_injected_by_default(tmp_path, monkeypatch):
-    for key in ("GIT_AUTHOR_NAME", "GIT_AUTHOR_EMAIL", "GIT_COMMITTER_NAME", "GIT_COMMITTER_EMAIL"):
-        monkeypatch.delenv(key, raising=False)
-    prepare_env(load_config(_config(tmp_path)))
-    assert not any(key.startswith("GIT_AUTHOR") or key.startswith("GIT_COMMITTER") for key in os.environ)
-    prepare_env(load_config(_config(tmp_path, env={"vars": {"GIT_AUTHOR_NAME": "显式"}})))
-    assert os.environ["GIT_AUTHOR_NAME"] == "显式"
+def test_git_identity_not_injected_by_default(tmp_path):
+    environ = {}
+    prepare_env(load_config(_config(tmp_path)), environ)
+    assert not any(key.startswith(("GIT_AUTHOR", "GIT_COMMITTER")) for key in environ)
+    prepare_env(load_config(_config(tmp_path, env={"vars": {"GIT_AUTHOR_NAME": "显式"}})), environ)
+    assert environ["GIT_AUTHOR_NAME"] == "显式"
 
 
-def test_path_prepend_dedup_and_skip_missing(tmp_path, monkeypatch):
+@pytest.mark.parametrize("name", ["RWIKI_AGENT", "RWIKI_WIKI_ROOT", "RWIKI_BOOTSTRAP", "GIT_DIR",
+                                  "git_work_tree", "GIT_INDEX_FILE", "PATH", "Path"])
+def test_dangerous_env_names_rejected(tmp_path, name):
+    with pytest.raises(WikiError, match=name):
+        load_config(_config(tmp_path, env={"vars": {name: "x"}}))
+
+
+def test_path_prepend_dedup_and_skip_missing(tmp_path):
     present, other = tmp_path / "gh", tmp_path / "已在"
     present.mkdir()
     other.mkdir()
-    monkeypatch.setenv("PATH", os.pathsep.join([str(other), "base"]))
+    environ = {"PATH": os.pathsep.join([str(other), "base"])}
     config = load_config(_config(tmp_path, env={"path_prepend": [
         str(present), str(tmp_path / "不存在"), str(other), str(present)]}))
-    prepare_env(config)
-    prepare_env(config)  # 重复调用也不重复添加
-    parts = os.environ["PATH"].split(os.pathsep)
-    assert parts == [str(present), str(other), "base"]
+    prepare_env(config, environ)
+    prepare_env(config, environ)  # 重复调用也不重复添加
+    assert environ["PATH"].split(os.pathsep) == [str(present), str(other), "base"]
 
 
 def test_chinese_error_is_utf8_on_stderr(tmp_path):

@@ -29,6 +29,9 @@ class Config:
 
 # 只在环境与 config.env.vars 都没给时补；git 身份不在此列，避免掩盖用户真实身份。
 DEFAULT_ENV = {"GH_PROMPT_DISABLED": "1"}
+# 这些变量决定写入身份、目标仓库或 guard 的范围，只能由调用方显式设置，不能写进共享配置。
+FORBIDDEN_ENV = {"RWIKI_AGENT", "RWIKI_WIKI_ROOT", "RWIKI_BOOTSTRAP", "RWIKI_DEPLOYED_SKILL", "RWIKI_VAULT_ROOT",
+                 "GIT_DIR", "GIT_WORK_TREE", "GIT_INDEX_FILE", "GIT_COMMON_DIR", "GIT_OBJECT_DIRECTORY", "PATH"}
 
 
 def _check_env(env) -> dict:
@@ -37,6 +40,10 @@ def _check_env(env) -> dict:
     names = env.get("vars", {})
     if not isinstance(names, dict) or any(not isinstance(value, str) for value in names.values()):
         raise WikiError("env.vars 必须是 名称→字符串 的对象")
+    forbidden = sorted(name for name in names if name.upper() in FORBIDDEN_ENV)
+    if forbidden:
+        raise WikiError("env.vars 不能设置 " + "、".join(forbidden) + "：它们决定写入身份、目标仓库或 guard 范围，"
+                        "只能由调用方显式设置（PATH 用 env.path_prepend）")
     dirs = env.get("path_prepend", [])
     if not isinstance(dirs, list) or any(not isinstance(item, str) or not item for item in dirs):
         raise WikiError("env.path_prepend 必须是目录字符串列表")
