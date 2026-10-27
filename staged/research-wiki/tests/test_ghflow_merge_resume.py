@@ -71,6 +71,29 @@ def test_rerun_after_worktree_dir_left_empty_without_git_file(gh_repos, monkeypa
     assert_cleaned(gh_repos, pr, checkout, issue, gpl, before)
 
 
+def test_rerun_after_git_file_deleted_but_junctions_remain(gh_repos, monkeypatch, tmp_path):
+    """worktree remove 删掉了 .git 文件与普通文件，联接还在：重跑只 rmdir 联接，GPL 源码不受影响。"""
+    pr, checkout, issue, gpl, before = interrupted_merge(gh_repos, monkeypatch, tmp_path)
+    junctions = junctions_of(gh_repos)
+    assert junctions
+    for path in sorted(checkout.rglob("*"), key=lambda p: len(p.parts), reverse=True):
+        if any(ghflow.is_junction(parent) for parent in (path, *path.parents)):
+            continue
+        if path.is_file():
+            path.unlink()
+    assert not (checkout / ".git").exists()
+    assert all(ghflow.is_junction(checkout / relative) for relative in junctions)
+    assert merge(gh_repos.config, gh_repos.vault, pr, None)["merged"]
+    assert_cleaned(gh_repos, pr, checkout, issue, gpl, before)
+
+
+def test_upstream_misconfig_does_not_break_fast_forward(gh_repos):
+    """branch.main.merge 被配成多个值时 pull --ff-only 会失败；fast_forward_main 不读它。"""
+    git_run(gh_repos.vault, "config", "--add", "branch.main.merge", "refs/heads/other")
+    ghflow.fast_forward_main(gh_repos.vault)
+    assert git_run(gh_repos.vault, "rev-parse", "main") == git_run(gh_repos.vault, "rev-parse", "origin/main")
+
+
 def test_rerun_after_branch_deleted_but_meta_not_updated(gh_repos, monkeypatch, tmp_path):
     pr, checkout, issue, gpl, before = interrupted_merge(gh_repos, monkeypatch, tmp_path)
     ghflow.unlink_gpl_dirs(checkout, junctions_of(gh_repos))

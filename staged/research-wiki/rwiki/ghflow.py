@@ -603,6 +603,12 @@ def review(cfg, checkout: Path, pr: int, verdict: str, findings: Path) -> dict:
     return {"pr": pr, "sha": view["headRefOid"], "verdict": verdict}
 
 
+def fast_forward_main(main: Path) -> None:
+    """快进本地 main 到 origin/main；不用 pull（受 branch.main.merge 等配置影响，曾报“multiple branches”）。"""
+    git(main, "fetch", "origin")
+    git(main, "merge", "--ff-only", "origin/main")
+
+
 def after_task_merge(main: Path, meta: dict, branch: str, pr: int, sha: str) -> None:
     task = meta["tasks"][branch]
     issue = gh_json(["issue", "view", str(task["issue"]), "--json", "state,body"], main)
@@ -621,15 +627,18 @@ def after_task_merge(main: Path, meta: dict, branch: str, pr: int, sha: str) -> 
             unlink_gpl_dirs(checkout, task.get("junctions", []))
             remove_worktree(main, checkout, pr)
     elif task.get("worktree"):
-        # 上次 worktree remove 半途中断：目录已删或已不是 git 工作树，锁与联接无从处理，只清登记与空目录。
+        # 上次 worktree remove 半途中断：目录已删或已不是 git 工作树。锁随 .git 一起没了；
+        # 残留的 GPL 联接仍按 reparse 点逐个 rmdir（不带 /s），再清登记与空目录。
         git(main, "worktree", "prune")
+        if checkout.is_dir():
+            unlink_gpl_dirs(checkout, task.get("junctions", []))
         remove_empty_dirs(checkout)
         if os.path.lexists(checkout):
             raise occupied_error(checkout, pr, "上次移除 worktree 后目录仍有残留（被占用或非空）；若关闭占用后仍失败，"
                                                "请核对目录内容（其中的目录联接只用不带 /s 的 rmdir 删除）")
     if not task.get("worktree") and current_branch(main) == branch:
         git(main, "switch", "main")
-        git(main, "pull", "--ff-only")
+        fast_forward_main(main)
     if branch_exists(main, branch):
         if merged_into(main, branch, sha):
             git(main, "branch", "-D", branch)
@@ -649,7 +658,7 @@ def after_batch_merge(main: Path, meta: dict, branch: str) -> None:
     if branch_exists(main, branch):
         git(main, "branch", "-D", branch)
     if current_branch(main) == "main":
-        git(main, "pull", "--ff-only")
+        fast_forward_main(main)
     for info in meta.get("batches", {}).values():
         if info["branch"] == branch:
             info["state"] = "merged"
