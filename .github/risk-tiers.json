@@ -1,4 +1,5 @@
 {
+  "high_requires_owner": false,
   "high": [
     "staged/research-wiki/rwiki/ghflow.py",
     "staged/research-wiki/rwiki/push_guard.py",

@@ -37,7 +37,7 @@ v2（2026-10-27）起，Issue / PR / 他人评审是可选流程：知识库可�
 - 长期分支：`project/<课题>`、`ingest/<批次>`，与 Milestone 同名。
 - 任务分支：`task/<批次>-<阶段>-<主题>`，阶段为 `P0`–`P5` 或 `T<数字>`，批次与主题为小写 slug（`[a-z0-9]+(-[a-z0-9]+)*`，≤ 40 字符），如 `task/scp-wave3-P2-harmony`。中文名称写进 `--title`。
 - 遗留迁移的 Milestone：`legacy/<来源目录名>`。
-- Label：`type:project|ingest|code|legacy`、`stage:P0`…`stage:P5`、`stage:T1`…`stage:T9`、`stage:legacy`、`status:进行中|待评审|需修改|已验收`、`blocked:用户决定|本地验证|外部依赖|CI`。
+- Label：`type:project|ingest|code|legacy`、`stage:P0`…`stage:P5`、`stage:T1`…`stage:T9`、`stage:legacy`、`status:进行中|待评审|需修改|已验收`、`blocked:用户决定|本地验证|外部依赖|CI`、`risk:low|normal|high`（`finish-task` 写入，只供查看）、`owner-approved`（只由作者在网页上添加）。
 
 ## 子命令
 
@@ -50,14 +50,14 @@ v2（2026-10-27）起，Issue / PR / 他人评审是可选流程：知识库可�
 | `install-hook` | `[--repo dev\|vault]` | 写 pre-push hook（调用 `gh guard --pre-push`）：优先调用部署副本 `~/.agents/skills/research-wiki/` 的 `wiki.py` 与 `config.json`，不随主检出切分支或改坏而变；副本缺失时退回当前检出并警告（先运行 `tools/deploy.py`）；输出含所用 `wiki_py` 与 `source`；缺省为当前目录所在仓库；已有非本工具 hook 时拒绝覆盖 | 无（不需要 gh） |
 | `start-batch` | `<project\|ingest> <名称> --title <中文标题> --repo dev\|vault` | 从 `origin/main` 建长期分支、同名 Milestone，经 guard 推送 | 已 bootstrap |
 | `start-task` | `<批次> <阶段> <主题> --title <Issue 标题> [--worktree]` | 建 Issue（`rwiki-task` 标记、Milestone、`type:*`/`stage:*`/`status:进行中`），创建任务分支并取得写入锁；`--worktree` 在 `worktree_root` 下建独立检出并输出 `RWIKI_WIKI_ROOT` | 批次存在；已设 `RWIKI_AGENT` |
-| `finish-task` | `[--local-report <文件>]` | 经 guard 推送任务分支，开 PR 到所属长期分支，正文按 PR 模板填 `Refs #n`、本地专属验证、受保护字节核验；Issue 改 `status:待评审` | 在 task 分支；无未提交的已跟踪改动 |
+| `finish-task` | `[--local-report <文件>]` | 经 guard 推送任务分支，开 PR 到所属长期分支，正文按 PR 模板填 `Refs #n`、本地专属验证、受保护字节核验；按 base 上的规则算风险档，打 `risk:low\|normal\|high` 标签（移除另两个），“改动摘要”首行写 `风险档：<档>（前 3 条命中原因）`；重跑时更新标签与该行；Issue 改 `status:待评审` | 在 task 分支；无未提交的已跟踪改动 |
 | `review` | `<pr> --verdict pass\|changes --findings <文件>` | 针对 PR 当前 head 以 COMMENT 类型 review 回帖 codex-review 标记，更新状态标签 | PR 存在；由非编码 agent 执行 |
-| `merge` | `<pr> [--plan <文本>]` | Merge_Gate 判定；通过则 `--match-head-commit` 合并并收尾，不通过则回帖阻断原因与计划并退出 1；PR 已合并时只做收尾 | — |
+| `merge` | `<pr> [--plan <文本>]` | 按风险档做 Merge_Gate 判定（档位在合并时重算，不信 `risk:*` 标签；见下文）；输出 JSON 含 `tier`；通过则 `--match-head-commit` 合并并收尾，不通过则回帖阻断原因与计划并退出 1；PR 已合并时只做收尾 | — |
 | `close-batch` | `<批次>` | Milestone 内 Issue 全部关闭后开长期分支到 `main` 的 PR（再经 `review`/`merge`）；有未关闭 Issue 时拒绝并列出 | Milestone 内 Issue 全部关闭 |
 | `migrate-legacy` | `--map <legacy-map.json> [--dry-run]` | 按映射把旧任务书与 `remaining-gaps.md` 缺口迁为 Issue（`rwiki-legacy` 标记去重），非 dry-run 时在原文件顶部加迁移标记 | 首次推送完成 |
 | `guard` | `[--range <rev-range>] [--pre-push <remote> <url>] [--sync-ignore]` | 推送防泄漏扫描：画廊、限制性许可源码（路径与 GPL 文件头）、课题数据 `wiki-use/_project/`、超限文件、本机绝对路径；`--sync-ignore` 重写 `知识库/.gitignore` 的托管块；不带 `--range` 时扫描尚未推送的提交 | 无（纯本地，不需要 gh） |
 | `protect-baseline` | `[--check]` | 生成或核验 `知识库/.protected-hashes.json`（每个 user 块的 SHA-256，含行尾）；`--check` 输出为空表示通过 | 无（纯本地，不需要 gh） |
-| `tier` | `--range <rev-range>` | 按 `git diff --name-only <range>` 的改动路径与仓库内 `.github/risk-tiers.json`（`{"high": [glob], "low": [glob]}`；`*` 不跨 `/`，`**` 匹配零到多级目录，不带 `/` 的模式只匹配根目录）输出 JSON `{"tier", "reasons", "paths"}`：任一路径命中 high 为 `high`，全部命中 low 为 `low`，其余（含无改动、无规则文件）为 `normal` | 无（纯本地，不需要 gh） |
+| `tier` | `--range <rev-range>` | 按 `git diff --name-only <range>` 的改动路径与仓库内 `.github/risk-tiers.json`（`{"high": [glob], "low": [glob], "high_requires_owner": true\|false}`，最后一项可选、缺省 true、必须是布尔；`*` 不跨 `/`，`**` 匹配零到多级目录，不带 `/` 的模式只匹配根目录）输出 JSON `{"tier", "reasons", "paths"}`：任一路径命中 high 为 `high`，全部命中 low 为 `low`，其余（含无改动、无规则文件）为 `normal` | 无（纯本地，不需要 gh） |
 
 全局参数 `--wiki-root <目录>` 覆盖 `config.json` 的 `wiki_root`，优先级：`--wiki-root` > 环境变量 `RWIKI_WIKI_ROOT` > 配置文件。
 
@@ -123,8 +123,13 @@ CI 运行 `pytest -m "not r and not compose and not local"`、前端 `npm test`�
 ## Merge_Gate 与评审标记（走 PR 时）
 
 - 评审回帖首行：`<!-- codex-review: verdict=pass|changes sha=<40 位 head SHA> -->`，随后为结论、问题列表与所评审的 SHA。
-- 通过条件：`gh pr checks` 至少一项 pass，其余为 pass 或 skipping（全部 skipping 视为没有 CI 结果）；pending、fail、cancel 阻断；reviews 与 comments 中按时间最新的 codex-review 标记为 `pass`，且 sha 等于 PR 当前 head。PR 之后再有提交，旧评审失效，需要重新评审。
-- 不通过：回帖 `<!-- rwiki-gate: blocked sha=<head> -->`、原因列表与 `### 修复计划`（`--plan`，缺省“待补”），PR 保持未合并，退出 1。
+- 风险档在 `merge` 时重算，不信 PR 上的 `risk:*` 标签：规则读 PR base 分支当前提交（`origin/<base>`，先 fetch）上的 `.github/risk-tiers.json`，改动范围为 `origin/<base>...<headRefOid>`（merge-base 语义，与 GitHub PR diff 一致；head 本地没有时先按分支、再按 sha 取回）。PR 自己改规则（改松 glob、删文件、把 `high_requires_owner` 改成 false）都不影响本 PR 的档位与要求。不提供改规则来源的参数。
+- CI 条件（三档相同）：`gh pr checks` 至少一项 pass，其余为 pass 或 skipping（全部 skipping 视为没有 CI 结果）；pending、fail、cancel 阻断。
+- `low`：CI 通过即可合并，不需要 codex-review。
+- `normal`：CI 通过，且 reviews 与 comments 中按时间最新的 codex-review 标记为 `pass`、sha 等于 PR 当前 head。PR 之后再有提交，旧评审失效，需要重新评审。
+- `high`：`normal` 的全部要求；base 规则的 `high_requires_owner` 为 true（缺省）时还要作者确认：PR 上有 `owner-approved` 标签，且它最近一次 labeled 事件（PR timeline）晚于当前 head 的推送时间。推送时间取 timeline 中 `head_ref_force_pushed` 与 `committed` 事件时间的最晚值，timeline 没有 head 的 committed 事件时用 head 提交的 committer date（近似）。标签早于最新提交即失效，需作者移除后重新添加。
+- 开发仓库 `.github/risk-tiers.json` 设为 `"high_requires_owner": false`：作者 2026-10-28 明确放弃逐个确认高风险 PR；high 仍需独立评审与 CI。
+- 不通过：回帖 `<!-- rwiki-gate: blocked sha=<head> -->`、原因列表（第一条为档位与前 3 条命中规则）与 `### 修复计划`（`--plan`，缺省“待补”），PR 保持未合并，退出 1。
 - 通过：`gh pr merge --merge --match-head-commit <head> --delete-branch`；task PR 合并后关闭 Issue（附 PR 与合并 SHA）、标 `status:已验收`、释放锁、清理联接与 worktree、删本地分支，主检出模式切回 `main` 并 `pull --ff-only`；长期分支 PR 合并后关闭 Milestone 并删除长期分支。
 
 ## 推送边界与部署来源
