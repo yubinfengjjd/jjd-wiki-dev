@@ -46,6 +46,8 @@ NO_LOCAL_REPORT = "未运行：本 PR 不涉及仅本地运行的检查。"
 WIKI_PY = Path(__file__).resolve().parents[1] / "wiki.py"
 HOOK_MARK = "# rwiki pre-push hook：由 wiki.py gh install-hook / bootstrap 写入，不入库"
 LEGACY_BRANCH = "legacy/master"
+# 目录被占用时 git 自身的重试约几秒；超过这个时间就是挂起，不是慢。
+WORKTREE_REMOVE_SECONDS = 120
 REPO_FILES = (".gitignore", ".gitattributes", ".push-guard-allow")
 DEPLOY_KEY_TITLE = "rwiki-vault-ci"
 DEPLOY_SECRET = "DEV_DEPLOY_KEY"
@@ -421,6 +423,53 @@ def registered_worktree(repo: Path, path: Path) -> bool:
     return path.resolve() in listed
 
 
+def live_checkout(main: Path, checkout: Path) -> bool:
+    """检出仍是可用的 git 工作树；中断的 worktree remove 可能只留下登记、空目录或残留子目录。"""
+    return checkout.is_dir() and (checkout / ".git").exists() and (checkout == main
+                                                                  or registered_worktree(main, checkout))
+
+
+def occupied_error(checkout: Path, pr: int, detail: str) -> WikiError:
+    return WikiError(f"worktree 目录 {checkout} 删不掉（多半被终端、编辑器或其他进程占用）：\n{detail}\n"
+                     f"请关闭占用该目录的终端或编辑器后重跑 wiki.py gh merge {pr}；本地分支已保留，重跑会补完收尾。")
+
+
+def remove_worktree(main: Path, checkout: Path, pr: int) -> None:
+    """非交互地 git worktree remove：stdin 为空设备，GIT_ASK_YESNO=false 让 Git for Windows 的
+    “Should I try again? (y/n)” 直接答 no。失败时不 --force、不递归删除，只报错。"""
+    try:
+        result = subprocess.run(["git", "-C", str(main), "worktree", "remove", str(checkout)],
+                                stdin=subprocess.DEVNULL, capture_output=True, text=True, encoding="utf-8",
+                                errors="replace", timeout=WORKTREE_REMOVE_SECONDS,
+                                env={**os.environ, "GIT_TERMINAL_PROMPT": "0", "GIT_ASK_YESNO": "false"})
+    except subprocess.TimeoutExpired:
+        raise occupied_error(checkout, pr, f"git worktree remove 超过 {WORKTREE_REMOVE_SECONDS} 秒未结束") from None
+    if result.returncode == 0:
+        return
+    if (checkout / ".git").exists():
+        # git 在删除前就拒绝了（如有未提交或未跟踪的文件），目录原样保留。
+        raise WikiError(f"git 拒绝移除 worktree {checkout}：\n{result.stderr.strip()}\n"
+                        f"请提交或移走这些文件后重跑 wiki.py gh merge {pr}；本地分支已保留。")
+    raise occupied_error(checkout, pr, result.stderr.strip())
+
+
+def remove_empty_dirs(path: Path) -> None:
+    """自底向上只删空目录（rmdir 不删非空目录）；不进入、不删除目录联接或符号链接。"""
+    if path.is_symlink() or is_junction(path) or not path.is_dir():
+        return
+    for child in path.iterdir():
+        remove_empty_dirs(child)
+    try:
+        path.rmdir()
+    except OSError:
+        pass
+
+
+def merged_into(repo: Path, branch: str, sha: str) -> bool:
+    return subprocess.run(["git", "-C", str(repo), "merge-base", "--is-ancestor", branch, sha],
+                          stdin=subprocess.DEVNULL, capture_output=True).returncode == 0
+
+
 # ---- 子命令 ----
 
 def start_batch(cfg, kind: str, name: str, title: str, repo_key: str) -> dict:
@@ -563,17 +612,30 @@ def after_task_merge(main: Path, meta: dict, branch: str, pr: int, sha: str) -> 
             gh_body(["issue", "edit", str(task["issue"])], issue["body"].replace(PENDING_CONCLUSION, conclusion), main)
         set_status(main, task["issue"], "status:已验收")
         gh(["issue", "close", str(task["issue"]), "--comment", conclusion], main)
+    # 每步先查后做：任何一步中断后重跑 merge 都从当前状态补完。
     checkout = Path(task["worktree"]) if task.get("worktree") else main
-    if checkout.is_dir() and (writer_lock.read_lock(checkout) or {}).get("branch") == branch:
-        writer_lock.release(checkout)
-    if task.get("worktree") and registered_worktree(main, checkout):
-        unlink_gpl_dirs(checkout, task.get("junctions", []))
-        git(main, "worktree", "remove", str(checkout))
+    if live_checkout(main, checkout):
+        if (writer_lock.read_lock(checkout) or {}).get("branch") == branch:
+            writer_lock.release(checkout)
+        if task.get("worktree"):
+            unlink_gpl_dirs(checkout, task.get("junctions", []))
+            remove_worktree(main, checkout, pr)
+    elif task.get("worktree"):
+        # 上次 worktree remove 半途中断：目录已删或已不是 git 工作树，锁与联接无从处理，只清登记与空目录。
+        git(main, "worktree", "prune")
+        remove_empty_dirs(checkout)
+        if os.path.lexists(checkout):
+            raise occupied_error(checkout, pr, "上次移除 worktree 后目录仍有残留（被占用或非空）；若关闭占用后仍失败，"
+                                               "请核对目录内容（其中的目录联接只用不带 /s 的 rmdir 删除）")
     if not task.get("worktree") and current_branch(main) == branch:
         git(main, "switch", "main")
         git(main, "pull", "--ff-only")
     if branch_exists(main, branch):
-        git(main, "branch", "-D", branch)
+        if merged_into(main, branch, sha):
+            git(main, "branch", "-D", branch)
+        else:
+            print(f"提示：本地分支 {branch} 不是合并提交 {sha} 的祖先（有未合并的提交或合并提交未取回），"
+                  "未删除；请人工核对后再处理该分支", file=sys.stderr)
     task.update(state="merged", pr=pr, merge_sha=sha)
 
 
