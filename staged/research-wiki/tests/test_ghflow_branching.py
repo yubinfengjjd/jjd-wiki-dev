@@ -2,7 +2,7 @@ import random
 
 import pytest
 
-from conftest import git_run, gh_writes
+from conftest import FAKE_REPO_NAMES, git_run, gh_writes
 from rwiki.errors import WikiError
 from rwiki.ghflow import start_batch, start_task
 from test_ghflow_naming import EXAMPLES, broken_slug, slug, stage
@@ -31,7 +31,7 @@ def test_illegal_names_create_no_branch_or_github_object(gh_repos, monkeypatch):
             kind, name, repo_key = rng.choice(("project", "ingest")), f"{slug(rng)}-{iteration}", rng.choice(
                 ("vault", "dev"))
             result = start_batch(config, kind, name, f"批次 {iteration}", repo_key)
-            titles = [m["title"] for m in fake.state()["repos"][f"tester/research-wiki-{repo_key}"]["milestones"]]
+            titles = [m["title"] for m in fake.state()["repos"][f"tester/{FAKE_REPO_NAMES[repo_key]}"]["milestones"]]
             assert result["branch"] == result["milestone"] == f"{kind}/{name}", info
             assert titles.count(f"{kind}/{name}") == 1, info
             continue

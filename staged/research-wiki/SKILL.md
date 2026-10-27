@@ -27,13 +27,13 @@ description: Use when the author wants a figure or an analysis for a research pr
 
 ## GitHub 结构化工作流（2026-10-27）
 
-知识库与开发代码分属两个 GitHub 私有仓库（`research-wiki-vault`、`research-wiki-dev`，默认分支 `main`），任务、评审、验收用 Milestone / Issue / PR 管理，文件任务书已停用（旧任务书经 `gh migrate-legacy` 迁为 Issue）。完整的子命令参数、前置条件、仅本地运行的检查清单与 `--local-report` 用法见 [GitHub 工作流](references/github-workflow.md)。
+知识库与开发代码分属两个 GitHub 私有仓库（`jjd-wiki`、`jjd-wiki-dev`，默认分支 `main`），任务、评审、验收用 Milestone / Issue / PR 管理，文件任务书已停用（旧任务书经 `gh migrate-legacy` 迁为 Issue）。完整的子命令参数、前置条件、仅本地运行的检查清单与 `--local-report` 用法见 [GitHub 工作流](references/github-workflow.md)。
 
 - **项目自带、与宿主无关**：规则由 `wiki.py gh` 子命令、仓库内 `.github/` 模板与 CI、pre-push hook 实现；Codex、Claude、Devin、Kiro 等任何 agent 都通过 `wiki.py gh` 遵守，不依赖 Kiro 或宿主配置。
 - **写入前先开任务分支**：`main`、`project/*`、`ingest/*` 上 `save` 与网页写入都被拒；先 `gh start-batch`（每批一次）再 `gh start-task <批次> <阶段> <主题> --title … [--worktree]`（需设 `RWIKI_AGENT`）。网页编辑用 `--worktree`，按输出设置 `RWIKI_WIKI_ROOT` 后运行 launcher。
 - **一次任务**：`start-task` → `save`/普通提交 → `finish-task [--local-report <文件>]` → CI → `review` → `merge` → 批次收尾 `close-batch`。
 - **分工**：评审须由非编码 agent（Codex 角色）执行并以 `wiki.py gh review <pr> --verdict pass|changes --findings <文件>` 回帖；编码 agent 不评审自己的 PR。
-- **合并只经 `wiki.py gh merge`**：免费私有仓库无远端分支保护（保护 API 403 → 本地门禁模式）时这是唯一合并入口，不在网页上点合并，也不直接运行 `gh pr merge`；门禁要求 CI 全部 pass 且最新 codex-review 为 pass、sha 等于 PR 当前 head。
+- **合并只经 `wiki.py gh merge`**：两仓库都是免费私有仓库、无远端分支保护（保护 API 403），已处于本地门禁模式（`protection: local`），这是唯一合并入口，不在网页上点合并，也不直接运行 `gh pr merge`；门禁要求 CI 全部 pass 且最新 codex-review 为 pass、sha 等于 PR 当前 head。
 - **hook 不入库**：新克隆或新机器运行 `wiki.py gh install-hook --repo dev|vault` 重新安装 pre-push hook。`gh guard`、`gh protect-baseline` 不需要 gh。
 - **不要在主检出检出 `legacy/master`**：会把画廊、维护记录等未进 `main` 的文件从磁盘删除。
 

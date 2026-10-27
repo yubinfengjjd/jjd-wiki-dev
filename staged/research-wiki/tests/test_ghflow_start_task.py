@@ -17,7 +17,7 @@ BATCH = "scp-wave3"
 
 
 def vault_issues(gh_repos) -> list[dict]:
-    return gh_repos.gh.state()["repos"]["tester/research-wiki-vault"]["issues"]
+    return gh_repos.gh.state()["repos"]["tester/jjd-wiki"]["issues"]
 
 
 def add_gpl_method(gh_repos):

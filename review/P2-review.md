@@ -1,3 +1,6 @@
+<!-- rwiki-migrated: issue=https://github.com/yubinfengjjd/jjd-wiki-dev/issues/12 -->
+> 已迁移，停止维护：https://github.com/yubinfengjjd/jjd-wiki-dev/issues/12
+
 # P2 审查
 
 结论：**退回返工**（结果正确，代码结构需整理）。

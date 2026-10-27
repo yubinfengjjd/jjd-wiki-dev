@@ -1,3 +1,6 @@
+<!-- rwiki-migrated: issue=https://github.com/yubinfengjjd/jjd-wiki-dev/issues/15 -->
+> 已迁移，停止维护：https://github.com/yubinfengjjd/jjd-wiki-dev/issues/15
+
 # M3 前端增量 · 实现记录（Claude）
 
 日期：2026-10-21。数据：`test-wiki-m3`（作者账户副本），`codex/m3-config.json`。截图：`qa/shots/m3/`。
