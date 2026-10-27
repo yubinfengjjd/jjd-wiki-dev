@@ -5,7 +5,6 @@ import pytest
 
 from conftest import DEV_ROOT, SKILL_ROOT
 
-VAULT_ROOT = DEV_ROOT.parent
 PR_SECTIONS = ("关联 Issue", "改动摘要", "测试结果（CI）", "本地专属验证", "受保护字节核验", "未完成项")
 ISSUE_SECTIONS = ("目标", "验收标准", "本地证据", "验收结论")
 
@@ -38,8 +37,8 @@ def test_dev_repo_files():
 
 
 @pytest.mark.local
-def test_vault_repo_files():
-    check_repo_files(VAULT_ROOT)
-    ci = (VAULT_ROOT / ".github/workflows/ci.yml").read_text(encoding="utf-8")
+def test_vault_repo_files(vault_root):
+    check_repo_files(vault_root)
+    ci = (vault_root / ".github/workflows/ci.yml").read_text(encoding="utf-8")
     for needle in ("secrets.DEV_DEPLOY_KEY", "lint --ci", "gh protect-baseline --check", "tools/tests"):
         assert needle in ci
