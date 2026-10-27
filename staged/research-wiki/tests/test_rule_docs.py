@@ -2,10 +2,9 @@ import argparse
 
 import pytest
 
-from conftest import DEV_ROOT, SKILL_ROOT
+from conftest import SKILL_ROOT
 from rwiki.cli import parser
 
-VAULT_ROOT = DEV_ROOT.parent
 # v2（2026-10-27）规则文档的要点：每份文档必须写到的短语。
 REQUIRED = {
     "assets/AGENTS.md": (
@@ -86,10 +85,10 @@ def test_rule_doc_has_no_superseded_rules(name):
 
 
 @pytest.mark.local
-def test_vault_rule_docs():
-    readme = read(VAULT_ROOT / "README.md")
+def test_vault_rule_docs(vault_root):
+    readme = read(vault_root / "README.md")
     assert stale(readme) == []
     assert missing(readme, README_REQUIRED) == []
-    assert "RWIKI_WIKI_ROOT" in read(VAULT_ROOT / "tools/launcher.ps1")
+    assert "RWIKI_WIKI_ROOT" in read(vault_root / "tools/launcher.ps1")
     # 知识库里的规则由 `wiki.py init` 从 assets 同步，必须逐字节相同。
-    assert (VAULT_ROOT / "知识库/AGENTS.md").read_bytes() == (SKILL_ROOT / "assets/AGENTS.md").read_bytes()
+    assert (vault_root / "知识库/AGENTS.md").read_bytes() == (SKILL_ROOT / "assets/AGENTS.md").read_bytes()
