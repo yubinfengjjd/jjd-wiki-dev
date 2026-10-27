@@ -34,6 +34,10 @@
     }
   },
   "single_panel_only": true,
+  "sources_root": "<env>\\sources",
+  "work_root": "<env>\\work\\rwiki",
+  "r_libs": ["<env>\\R-lib\\figureya", "<env>\\R-lib-scp\\4.5"],
+  "cran_mirror": "https://cloud.r-project.org/",
   "push_guard": {"max_file_mb": 5, "gpl_globs": ["**/SCP-local/**"]},
   "github": {
     "owner": "<login>",

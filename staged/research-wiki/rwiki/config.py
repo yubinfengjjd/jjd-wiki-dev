@@ -18,6 +18,11 @@ class Config:
     single_panel_only: bool = False
     push_guard: dict = field(default_factory=dict)
     github: dict = field(default_factory=dict)
+    # v2: upstream snapshots, run work dirs and the Wiki-only R libraries live outside the Wiki.
+    sources_root: Path | None = None
+    work_root: Path | None = None
+    r_libs: tuple[Path, ...] = ()
+    cran_mirror: str = "https://cloud.r-project.org/"
 
 
 def read_json(path: Path) -> dict:
@@ -51,9 +56,15 @@ def load_config(path: Path, wiki_root: Path | None = None) -> Config:
             defaults = {"sizing": validate_policy(defaults.get("sizing"))}
         except ValueError as error:
             raise WikiError(str(error)) from error
+    libs = values.get("r_libs", [])
+    if not isinstance(libs, list) or any(not isinstance(item, str) or not item for item in libs):
+        raise WikiError("r_libs 必须是路径字符串列表")
+    optional = {key: Path(values[key]).resolve() for key in ("sources_root", "work_root") if values.get(key)}
     return Config(*(Path(values[key]).resolve() for key in required), port=values["port"],
                   function_defaults=defaults, single_panel_only=single_only,
-                  push_guard=values.get("push_guard", {}), github=values.get("github", {}))
+                  push_guard=values.get("push_guard", {}), github=values.get("github", {}),
+                  r_libs=tuple(Path(item).resolve() for item in libs),
+                  cran_mirror=values.get("cran_mirror", "https://cloud.r-project.org/"), **optional)
 
 
 def load_taxonomy(path: Path) -> dict:

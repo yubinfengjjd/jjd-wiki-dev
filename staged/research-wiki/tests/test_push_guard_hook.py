@@ -73,33 +73,20 @@ def test_hook_refuses_legacy_branches(git_pair, tmp_path):
     assert git_run(work, "ls-remote", "origin", "refs/heads/legacy/master") == ""
 
 
-def test_local_gate_blocks_main_and_allows_new_long_branch(git_pair, tmp_path, monkeypatch):
+def test_local_gate_no_longer_blocks_main_or_long_branches(git_pair, tmp_path):
+    """v2（2026-10-27）：本地门禁模式下 main / 长期分支也直接推送；内容扫描照常（见其他用例）。"""
     work = git_pair.work
     config_path = write_config(tmp_path / "c.json", tmp_path / "no-wiki")
     rules = load_rules(load_config(config_path), work)
     write_meta(work, {"protection": "local"})
     base = git_run(work, "rev-parse", "origin/main").strip()
-    git_run(work, "checkout", "-q", "-b", "ingest/scp-wave3")
-    assert pre_push(work, "origin", f"refs/heads/ingest/scp-wave3 {base} refs/heads/ingest/scp-wave3 {ZERO}\n",
-                    rules) == 0
     newer = commit_file(work, "notes.md", "x\n")
-    assert pre_push(work, "origin", f"refs/heads/main {newer} refs/heads/main {base}\n", rules) == 1
-    assert pre_push(work, "origin", f"refs/heads/ingest/other {newer} refs/heads/ingest/other {ZERO}\n",
-                    rules) == 1
-    monkeypatch.setenv("RWIKI_BOOTSTRAP", "1")
     assert pre_push(work, "origin", f"refs/heads/main {newer} refs/heads/main {base}\n", rules) == 0
-    monkeypatch.delenv("RWIKI_BOOTSTRAP")
+    assert pre_push(work, "origin", f"refs/heads/ingest/other {newer} refs/heads/ingest/other {ZERO}\n",
+                    rules) == 0
     install_test_hook(work, config_path)
-    git_run(work, "checkout", "-q", "main")
-    git_run(work, "merge", "-q", "--ff-only", "ingest/scp-wave3")
-    result = push(work, "main")
-    assert result.returncode != 0 and "gh merge" in result.stderr
-    assert git_run(work, "rev-parse", "origin/main").strip() == base
-    git_run(work, "branch", "project/new", base)
-    assert push(work, "project/new").returncode == 0
-    # 未进入门禁模式（无元数据）的仓库照常推送 main。
-    (work / ".git" / "rwiki-branches.json").unlink()
     assert push(work, "main").returncode == 0
+    assert git_run(work, "rev-parse", "origin/main").strip() == newer
 
 
 def test_project_dir_files_are_blocked(git_pair, tmp_path):

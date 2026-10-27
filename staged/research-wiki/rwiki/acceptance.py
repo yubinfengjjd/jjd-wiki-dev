@@ -12,6 +12,7 @@ HEADINGS = {
     'method': ('用途', '适用', '不适用', '输入', '怎么做', '代码', '输出', '知识关联检查'),
     'template': ('适用', '不适用', '知识关联检查'),
     'layout': ('适用', '不适用', '知识关联检查'),
+    'recipe': ('用途', '适用', '不适用', '输入', '怎么用', '输出', '知识关联检查'),
 }
 
 # A section whose first meaningful line is a placeholder is still unfinished,
@@ -53,6 +54,9 @@ def entry_errors(config, path, *, replay=True) -> list[str]:
             load_spec(path.with_suffix(''))
             if replay and not replay_available(path.with_suffix('')):
                 errors.append('缺少当前版本的完整成功回放，请 verify-template')
+        if meta.get('type') == 'recipe':
+            from .recipes import integrity_errors, recipe_errors
+            errors.extend(recipe_errors(config, path, meta) if replay else integrity_errors(path))
         return errors
     except (WikiError, OSError, ValueError, KeyError, TypeError) as error:
         return [str(error)]

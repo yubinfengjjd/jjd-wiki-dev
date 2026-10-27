@@ -50,6 +50,18 @@ def workflow_snapshot(config) -> dict[str, dict]:
                 else:
                     put(path, 'method_implementation', 'agent', '待验证实现' if states else '待实现',
                         '笔记已确认；实现尚无当前有效验证，不作为可执行分析推荐。')
+        elif kind == 'recipe' and status in ('draft', 'ready'):
+            errors = entry_errors(config, root / path)
+            if not errors and status == 'ready' and not acceptance_stale(root / path):
+                put(path, 'complete', None, '可原样运行', '已确认；当前原字节有通过的原样运行收据。')
+            elif not errors and status == 'draft':
+                put(path, 'recipe_confirm', 'confirm', '待你确认',
+                    '原样运行已通过；可与同批配方一起 mark-ready。运行通过不等于科学有效。')
+            else:
+                waiting = any(message.startswith('最近运行为 not_run') for message in errors)
+                reason = '；'.join(errors) or '验收记录与当前内容不同，请 check-entry --record'
+                put(path, 'recipe_work', 'agent', '待装包' if waiting else '待补齐',
+                    reason + ('（装包须作者按批次批准一次）' if waiting else ''))
         elif status == 'ready' and kind != 'layout':
             put(path, 'complete', None, '可用', '已确认可用。')
 

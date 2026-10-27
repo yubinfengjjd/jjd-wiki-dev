@@ -187,4 +187,4 @@ def test_lint_reports_bad_layout_json_alongside_other_findings(layout_workspace)
     assert result.returncode == 1
     assert "layout.json: layout.panels[0].letter" in result.stdout
     # An emptied source list is a template of unknown origin (D044), not just a back-link gap.
-    assert f"{ENTRY_ID}--bar.md: 模板必须记录至少一个来源版式" in result.stdout
+    assert f"{ENTRY_ID}--bar.md: 模板必须记录来源" in result.stdout

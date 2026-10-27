@@ -35,6 +35,8 @@ export function CodeBranchList({ branches }: { branches: ImplementationBranch[] 
 /** An independent action, never nested inside a card's navigation link or flip button. */
 export function CodeButton({ meta, className = '' }: { meta: ItemMeta; className?: string }) {
   const [open, setOpen] = useState(false);
+  // The code endpoints serve methods, layouts and templates only; a recipe's bytes are listed in its facts.
+  if (meta.type === 'recipe') return null;
   return <>
     <button type="button" className={`ghost small ${className}`} onClick={(e) => { e.stopPropagation(); setOpen(true); }} aria-haspopup="dialog">查看代码</button>
     {open && createPortal(<CodeDialog key={`${meta.type}/${meta.id}`} meta={meta} onClose={() => setOpen(false)} />, document.body)}

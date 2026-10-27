@@ -8,7 +8,7 @@ import { HAS_STATUS } from '../palette';
 import { COMPATIBILITY_LABEL, verificationLabel } from '../relations';
 import { pageTypeLabel } from '../methods';
 
-const TYPES: PageType[] = ['chart-type', 'layout', 'template', 'method', 'interface', 'project'];
+const TYPES: PageType[] = ['chart-type', 'scenario', 'layout', 'template', 'recipe', 'method', 'interface', 'source', 'project'];
 const STATUSES: [Status, string][] = [
   ['pending_signoff', '待你签核 / 确认'],
   ['pending_template', '等 agent 处理'],
@@ -132,7 +132,7 @@ export function GraphView({ data }: { data: AppData }) {
           ))}
         </ul>
 
-        <h3>外圈颜色（图、模板、方法）</h3>
+        <h3>外圈颜色（图、模板、方法、配方）</h3>
         <ul className="legend-list">
           {STATUSES.map(([s, label]) => (
             <li key={s}>

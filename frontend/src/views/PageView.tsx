@@ -1,5 +1,5 @@
 import { useCallback, useEffect, useState } from 'react';
-import { api, imageOf, isItem, LayoutMeta, PageDetail, pageCache, PageSummary, safeUrl, wikiFile } from '../api';
+import { api, imageOf, isFigure, isItem, LayoutMeta, PageDetail, pageCache, PageSummary, PageType, safeUrl, wikiFile } from '../api';
 import type { AppData } from '../App';
 import { FigureImage, TypeMark } from '../components';
 import { figureLabel, isWholeSource, methodFigures, templateSourceNote } from '../figureModels';
@@ -13,6 +13,14 @@ import { adaptableTemplateRelations } from '../relations';
 import { MethodOverview } from './MethodOverview';
 import { allPackages, conditionFacts, entryKindLabel, pageTypeLabel, portabilityLabel, runtimeModeLabel } from '../methods';
 
+/** The list a page belongs to, for the breadcrumb; figures and hubs fall back to the gallery. */
+const SECTION: Partial<Record<PageType, [string, string]>> = {
+  method: ['#/methods', '方法库'],
+  interface: ['#/methods', '方法库'],
+  recipe: ['#/recipes', '配方'],
+  source: ['#/recipes', '配方'],
+  scenario: ['#/scenarios', '场景'],
+};
 
 export function PageView({ path, data }: { path: string; data: AppData }) {
   // A page opened from a card was prefetched, so it paints in the transition's first frame.
@@ -85,14 +93,22 @@ export function PageView({ path, data }: { path: string; data: AppData }) {
     return titles.length ? `读取：${titles.join('、')}` : '';
   };
 
+  const [sectionHref, sectionLabel] = SECTION[meta.type] ?? ['#/gallery', '图库'];
+  // A recipe's crumb names its source library (linked when registered) and upstream item.
+  const recipeSource = meta.type === 'recipe' ? `sources/${meta.source?.id}.md` : '';
+
   return (
     <article className={item ? 'page with-side' : 'page'}>
       <div className="page-main sheet">
         <p className="crumb">
-          <a href={meta.type === 'method' || meta.type === 'interface' ? '#/methods' : '#/gallery'}>
-            {meta.type === 'method' || meta.type === 'interface' ? '方法库' : '图库'}
-          </a>{' '}
-          / {meta.type === 'template' ? '单 panel 图样 / 可调用模板' : meta.type === 'layout' ? figureLabel(meta) : pageTypeLabel(meta)}
+          <a href={sectionHref}>{sectionLabel}</a>{' '}
+          / {meta.type === 'template' ? '单 panel 图样 / 可调用模板'
+            : meta.type === 'layout' ? figureLabel(meta)
+            : meta.type === 'recipe' ? <>
+              {data.env.titles.has(recipeSource) ? <a {...pageLink(recipeSource)}>{data.env.titles.get(recipeSource)}</a> : meta.source?.id ?? '来源未记录'}
+              {meta.source?.item && ` · ${meta.source.item}`}
+            </>
+            : pageTypeLabel(meta)}
         </p>
         <div className="page-title-row"><h1>{meta.title}</h1>{item && <CodeButton meta={item} />}</div>
         {error && <p className="notice error" role="alert">{error}</p>}
@@ -142,7 +158,7 @@ export function PageView({ path, data }: { path: string; data: AppData }) {
           )}
           <RelationList relations={page.relations ?? []} self={path} pages={data.pages} />
         </details>}
-        {item && meta.type !== 'method' && <RelationList relations={page.relations ?? []} self={path} pages={data.pages} />}
+        {isFigure(meta) && <RelationList relations={page.relations ?? []} self={path} pages={data.pages} />}
         {meta.type === 'template' && (
           <details className="method-details template-inputs">
             <summary>数据输入与绑定</summary>

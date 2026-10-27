@@ -122,12 +122,12 @@ def test_confirm_builds_main_pushes_and_enters_local_gate_on_403(fresh, fake_gh)
     again = bootstrap(fresh.config, True, fresh.config_path)
     assert again["deploy_key"] == "existing" and remote_writes(fake_gh.calls()[before:]) == []
     assert {key: git_run(repo, "rev-parse", "main") for key, repo in fresh.repos.items()} == heads
-    # 本地门禁：直接推送 main 被 hook 拒绝。
-    commit_file(vault, "知识库/notes.md", "x\n", "docs: 直接改 main")
+    # v2（2026-10-27）：本地门禁不再拒绝直接推送 main；hook 只做内容扫描。
+    newer = commit_file(vault, "知识库/notes.md", "x\n", "docs: 直接改 main")
     pushed = subprocess.run(["git", "-C", str(vault), "push", "origin", "main"], capture_output=True, text=True,
                             encoding="utf-8")
-    assert pushed.returncode != 0 and "gh merge" in pushed.stderr
-    assert git_run(vault, "ls-remote", "origin", "refs/heads/main").split()[0] == heads["vault"].strip()
+    assert pushed.returncode == 0, pushed.stderr
+    assert git_run(vault, "ls-remote", "origin", "refs/heads/main").split()[0] == newer
 
 
 def test_confirm_configures_remote_protection_when_supported(fresh, fake_gh):

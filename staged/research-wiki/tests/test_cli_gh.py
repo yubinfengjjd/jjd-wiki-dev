@@ -103,21 +103,17 @@ def test_guard_and_protect_baseline_run_without_gh(wiki_repo, tmp_path):
     assert synced.returncode == 0, synced.stderr
 
 
-def test_server_writes_on_main_and_long_branches_are_refused(ingested):
+def test_server_writes_commit_on_main_and_long_branches(ingested):
+    """v2（2026-10-27）：网页写入在 main 与批次分支上直接提交（不再要求先 start-task）。"""
     config, _ = ingested
     root = config.wiki_root
-    page = root / f"layouts/{ENTRY_ID}.md"
     git_run(root, "branch", "-m", "main")
     with TestClient(create_app(config)) as client:
-        for branch in ("main", "ingest/scp-wave3", "project/glaucoma"):
+        for index, branch in enumerate(("main", "ingest/scp-wave3", "project/glaucoma")):
             if branch != "main":
                 git_run(root, "checkout", "-q", "-B", branch)
-            before, count = page.read_bytes(), commit_count(root)
-            response = client.post(f"/api/layouts/{ENTRY_ID}/favorite", json={"value": True})
-            assert response.status_code == 500
-            assert "请先 start-task" in response.json()["detail"]
-            assert page.read_bytes() == before
-            assert commit_count(root) == count
+            count = commit_count(root)
+            response = client.post(f"/api/layouts/{ENTRY_ID}/favorite", json={"value": index % 2 == 0})
+            assert response.status_code == 200, response.text
+            assert commit_count(root) == count + 1
             assert git_run(root, "status", "--porcelain").strip() == ""
-        git_run(root, "checkout", "-q", "-b", "feature/plain")
-        assert client.post(f"/api/layouts/{ENTRY_ID}/favorite", json={"value": True}).status_code == 200

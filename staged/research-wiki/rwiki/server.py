@@ -146,6 +146,11 @@ def create_app(config: Config) -> FastAPI:
                 "kind": "source", "label": label}
 
     def preview(meta: dict) -> dict | None:
+        if meta["type"] == "recipe":
+            path = root / "recipes" / meta["id"] / "preview.png"
+            return ({"url": "/files/wiki/" + quote(path.relative_to(root).as_posix()), "kind": "replay",
+                     "label": "原样运行图（最近一次通过）"} if path.is_file()
+                    else {"url": None, "kind": "none", "label": "暂无运行图"})
         if meta["type"] not in ("layout", "template"):
             return None
         candidates = []
@@ -156,6 +161,10 @@ def create_app(config: Config) -> FastAPI:
                 candidates.append((target / "preview.png", "replay", "模板回放"))
             else:
                 candidates.append((target / "preview.png", "stale", "旧回放 · 当前版本尚未重新回放"))
+            for value in meta.get("sources") or []:
+                if str(value).startswith("recipes/"):
+                    candidates.append((root / str(value).removesuffix(".md") / "preview.png", "source",
+                                       "来源配方的原样运行图 · 模板尚无回放"))
             for lid in meta.get("layouts") or []:
                 origin = root / "layouts" / f"{lid}.md"
                 try:
@@ -237,7 +246,7 @@ def create_app(config: Config) -> FastAPI:
                 "relations": relations_for(config, path.relative_to(root).as_posix())}
 
     def visual(kind: str, entry_id: str) -> tuple[Path, dict, str]:
-        if kind not in ("layouts", "templates", "methods"):
+        if kind not in ("layouts", "templates", "methods", "recipes"):
             raise HTTPException(404, "页面类型不存在")
         path = page_file(f"{kind}/{entry_id}.md")
         meta, body = read_page(path)
@@ -408,6 +417,16 @@ def create_app(config: Config) -> FastAPI:
             except WikiError as error:
                 raise HTTPException(409, str(error)) from error
             save(config, f"confirm {entry_id}")
+        return response(path)
+
+    @app.post("/api/recipes/{entry_id}/confirm")
+    def confirm_recipe(entry_id: str):
+        """v2: author confirmation of an L1 recipe; same gate as `wiki.py mark-ready`."""
+        path, meta, _ = visual("recipes", entry_id)
+        if meta["status"] != "draft":
+            raise HTTPException(409, "配方不是 draft")
+        from .templates import mark_ready
+        mark_ready(config, entry_id)
         return response(path)
 
     @app.post("/api/methods/{entry_id}/return")

@@ -1,7 +1,8 @@
 export type Status = 'pending_signoff' | 'pending_template' | 'draft' | 'ready' | 'archived';
-export type PageType = 'layout' | 'template' | 'method' | 'interface' | 'chart-type' | 'project';
+export type PageType = 'layout' | 'template' | 'method' | 'interface' | 'chart-type' | 'project'
+  | 'recipe' | 'source' | 'scenario';
 /** Page types the author acts on; each has its own status machine and the shared favorite/note/tags/archive endpoints. */
-export type Kind = 'layouts' | 'templates' | 'methods';
+export type Kind = 'layouts' | 'templates' | 'methods' | 'recipes';
 
 export type Compatibility = 'direct' | 'adaptable' | 'candidate';
 export interface Verification {
@@ -141,9 +142,62 @@ export interface LayoutMeta extends ItemBase {
 export interface TemplateMeta extends ItemBase {
   type: 'template';
   language: string;
-  layouts: string[];
+  /** Legacy provenance; v2 templates may have none and record `sources` instead. */
+  layouts?: string[];
+  /** v2 provenance as Wiki pages, e.g. `recipes/<id>`. */
+  sources?: string[];
+  /** May be empty for v2 templates derived from a recipe. */
   panels: string[];
   chart_types: string[];
+}
+
+/** v2 L1 recipe: a whole upstream module kept byte-for-byte and run as-is in the Wiki environment. */
+export interface RecipeMeta extends ItemBase {
+  type: 'recipe';
+  source: { id: string; item: string; commit: string; url?: string };
+  license: string;
+  cite?: string[];
+  language: string;
+  runner?: string;
+  entry?: string;
+  inputs?: { file: string; note?: string }[];
+  outputs?: string[];
+  packages?: { cran?: string[]; bioc?: string[]; github?: string[]; library?: string[] };
+  keywords?: string[];
+  chart_types: string[];
+  summary?: string;
+}
+
+/** v2 upstream library registration; no status of its own. */
+export interface SourceMeta {
+  type: 'source';
+  id: string;
+  title: string;
+  url: string;
+  commit?: string | null;
+  license: string;
+  license_notice?: string;
+  cite?: string[];
+  adapter: string;
+  trusted: boolean;
+  snapshot?: string;
+  tags?: string[];
+  keywords?: string[];
+  summary?: string;
+}
+
+/** A pick names a page path, a bare page id or an L0 catalog item `<source>:<item>`. */
+export interface ScenarioPick { id: string; note?: string }
+
+/** v2 research scenario: preferred entries for one research question; no status of its own. */
+export interface ScenarioMeta {
+  type: 'scenario';
+  id: string;
+  title: string;
+  picks: (ScenarioPick | string)[];
+  tags?: string[];
+  keywords?: string[];
+  summary?: string;
 }
 
 export type MethodKind = 'analysis' | 'workflow' | 'technical';
@@ -233,8 +287,8 @@ export interface HubMeta {
   title: string;
 }
 
-export type ItemMeta = LayoutMeta | TemplateMeta | MethodMeta;
-export type PageMeta = ItemMeta | InterfaceMeta | HubMeta;
+export type ItemMeta = LayoutMeta | TemplateMeta | MethodMeta | RecipeMeta;
+export type PageMeta = ItemMeta | InterfaceMeta | HubMeta | SourceMeta | ScenarioMeta;
 
 export interface PageSummary<M extends PageMeta = PageMeta> {
   path: string;
@@ -348,6 +402,9 @@ export const TYPE_LABEL: Record<PageType, string> = {
   interface: '数据接口',
   'chart-type': '图型',
   project: '课题',
+  recipe: '配方',
+  source: '来源库',
+  scenario: '研究场景',
 };
 
 async function request<T>(url: string, init?: RequestInit): Promise<T> {
@@ -400,6 +457,8 @@ export const api = {
   signoff: (id: string) => post(act('layouts', id, 'signoff')),
   reject: (id: string, reason: string) => post(act('layouts', id, 'reject'), { reason }),
   confirm: (id: string) => post(act('methods', id, 'confirm')),
+  /** Author confirmation of a recipe (draft → ready); the backend re-checks the as-is run receipt. */
+  confirmRecipe: (id: string) => post(act('recipes', id, 'confirm')),
   returnMethod: (id: string, reason: string) => post(act('methods', id, 'return'), { reason }),
   tags: (kind: Kind, id: string, tags: string[]) => post(act(kind, id, 'tags'), { tags }),
   favorite: (kind: Kind, id: string, value: boolean) => post(act(kind, id, 'favorite'), { value }),
@@ -418,7 +477,7 @@ export const api = {
 
 const encodePath = (path: string) => path.split('/').map(encodeURIComponent).join('/');
 
-export const KIND_OF: Record<ItemMeta['type'], Kind> = { layout: 'layouts', template: 'templates', method: 'methods' };
+export const KIND_OF: Record<ItemMeta['type'], Kind> = { layout: 'layouts', template: 'templates', method: 'methods', recipe: 'recipes' };
 export const codeDownload = (kind: Kind, id: string, file: Pick<CodeFile, 'variant' | 'path'>) =>
   `${act(kind, id, 'code-download')}?${new URLSearchParams({ variant: file.variant, path: file.path })}`;
 export const wikiFile = (path: string) => `/files/wiki/${encodePath(path)}`;
@@ -461,6 +520,7 @@ const STAGE_STATUS: Record<string, Status> = {
   template_confirm: 'draft', method_confirm: 'draft',
   template_work: 'pending_template', method_work: 'pending_template',
   layout_work: 'pending_template', template_missing: 'pending_template',
+  recipe_confirm: 'draft', recipe_work: 'pending_template',
 };
 
 export const stageStatus = (stage: string): Status | undefined => STAGE_STATUS[stage];
@@ -474,5 +534,6 @@ export function effectiveStatus(meta: ItemMeta, workflow: Workflow | null = work
 export const safeUrl = (url: string | null | undefined): string | null =>
   url && /^https?:\/\//i.test(url.trim()) ? url.trim() : null;
 
-export const isItem = (meta: PageMeta): meta is ItemMeta => meta.type === 'layout' || meta.type === 'template' || meta.type === 'method';
+export const isItem = (meta: PageMeta): meta is ItemMeta =>
+  meta.type === 'layout' || meta.type === 'template' || meta.type === 'method' || meta.type === 'recipe';
 export const isFigure = (meta: PageMeta): meta is LayoutMeta | TemplateMeta => meta.type === 'layout' || meta.type === 'template';

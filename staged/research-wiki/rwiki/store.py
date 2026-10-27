@@ -39,11 +39,7 @@ PAGES_SHOWN = 20
 
 
 def save_policy(branch: str) -> str:
-    """main 与长期分支拒绝写入；task/* 需要写入锁；其他分支（未迁移仓库、测试仓库）保持原行为。"""
-    if branch == "main":
-        return "refuse-main"
-    if branch.startswith(("project/", "ingest/")):
-        return "refuse-long"
+    """v2（2026-10-27）：main 与批次分支直接提交；task/* 仍需写入锁与分支元数据。"""
     if branch.startswith("task/"):
         return "task"
     return "plain"
@@ -67,11 +63,6 @@ def save(config: Config, message: str) -> None:
     root = config.wiki_root
     branch = git(root, "branch", "--show-current").strip()
     policy = save_policy(branch)
-    # 拒绝发生在刷新 facts、写 log.md 与 git add 之前；调用方已写的页面由 guarded() 还原。
-    if policy.startswith("refuse"):
-        kind = "主分支" if policy == "refuse-main" else "长期分支"
-        raise WikiError(f"{branch} 是{kind}，不直接写入知识库：请先 start-task"
-                        "（wiki.py gh start-task <批次> <阶段> <主题> --title …）创建任务分支")
     agent = os.environ.get("RWIKI_AGENT")
     issue = None
     if policy == "task":
@@ -83,6 +74,8 @@ def save(config: Config, message: str) -> None:
         issue = task["issue"]
     refresh_facts(config)
     (root / "index.md").write_text(build_index(root), encoding="utf-8", newline="\n")
+    from .finder import write_catalog
+    write_catalog(config)
     # Every git mutation is pathspec-scoped to ``.`` — the working dir is
     # wiki_root, so ``.`` means the wiki subtree only. When the wiki lives
     # inside a larger repository, unrelated staged/index changes and untracked
@@ -115,6 +108,7 @@ def init(config: Config) -> None:
             shutil.copyfile(assets / filename, root / filename)
         save(config, "update rules")
         return
+    # v2 directories (sources/, recipes/, scenarios/) are created when their first page is written.
     for directory in ("layouts", "templates", "methods", "interfaces", "chart-types", "projects"):
         (root / directory).mkdir(parents=True, exist_ok=True)
     for filename in ("AGENTS.md", "CLAUDE.md"):
