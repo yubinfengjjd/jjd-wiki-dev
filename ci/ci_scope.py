@@ -6,7 +6,7 @@ job 本身始终运行并上报检查结果，只用 step 级 if 跳过重步骤
 - schedule / workflow_dispatch：全量。
 - push（合入 main）：PR 上已跑过全量，只跑轻量检查。
 - pull_request：改到 .github/workflows/ 或 ci/ 时全量；diff 为空或取不到时全量（失败即保守）；
-  否则只有改到文档（review/、根目录 *.md、PR/Issue 模板）与 frontend/ 之外的文件才跑 pytest，
+  否则只有改到文档（review/、根目录 *.md）与 frontend/ 之外的文件才跑 pytest，
   改到 frontend/ 才跑前端测试。
 """
 import os
@@ -17,13 +17,13 @@ from pathlib import Path
 FULL = {"pytest": True, "frontend": True}
 LIGHT = {"pytest": False, "frontend": False}
 ALWAYS_FULL = (".github/workflows/", "ci/")
-DOC_PREFIXES = ("review/", ".github/ISSUE_TEMPLATE/")
-DOC_FILES = (".github/pull_request_template.md",)
+# PR/Issue 模板不算文档：test_repo_files 校验它们的小节，与 ghflow 生成的正文对应。
+DOC_PREFIXES = ("review/",)
 FRONTEND = "frontend/"
 
 
 def is_doc(path: str) -> bool:
-    return path.startswith(DOC_PREFIXES) or path in DOC_FILES or ("/" not in path and path.endswith(".md"))
+    return path.startswith(DOC_PREFIXES) or ("/" not in path and path.endswith(".md"))
 
 
 def scope(paths: list[str], event: str) -> dict:

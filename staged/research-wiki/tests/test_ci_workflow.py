@@ -59,8 +59,7 @@ def reference(paths, event):
         return {"pytest": False, "frontend": False}
     if not paths or any(p.startswith((".github/workflows/", "ci/")) for p in paths):
         return {"pytest": True, "frontend": True}
-    docs = lambda p: (p.startswith(("review/", ".github/ISSUE_TEMPLATE/")) or p == ".github/pull_request_template.md"
-                      or ("/" not in p and p.endswith(".md")))
+    docs = lambda p: p.startswith("review/") or ("/" not in p and p.endswith(".md"))
     front = lambda p: p.startswith("frontend/")
     return {"pytest": any(not docs(p) and not front(p) for p in paths), "frontend": any(front(p) for p in paths)}
 
@@ -79,6 +78,22 @@ def test_property_scope_matches_reference():
         paths = rng.sample(POOL, rng.randint(0, 5))
         event = rng.choice(["pull_request", "push", "schedule", "workflow_dispatch"])
         assert ci_scope.scope(paths, event) == reference(paths, event), f"seed={seed} {event} {paths}"
+
+
+# 写死期望值，不依赖参考模型（两者一起写错时属性测试测不出来）。
+FIXED = {
+    "staged/research-wiki/SKILL.md": (True, False), "staged/research-wiki/references/x.md": (True, False),
+    "spec/x.yaml": (True, False), "qa/x.mjs": (True, False), ".gitignore": (True, False),
+    ".push-guard-allow": (True, False), "obsidian-neural-view/x.js": (True, False), "docs/x.md": (True, False),
+    ".github/pull_request_template.md": (True, False), ".github/ISSUE_TEMPLATE/task.md": (True, False),
+    "review/x.md": (False, False), "README.md": (False, False), "frontend/src/x.tsx": (False, True),
+    ".github/workflows/ci.yml": (True, True), "ci/config.ci.json": (True, True),
+}
+
+
+def test_fixed_expectations():
+    for path, (pytest_, frontend) in FIXED.items():
+        assert ci_scope.scope([path], "pull_request") == {"pytest": pytest_, "frontend": frontend}, path
 
 
 def test_docs_only_pr_skips_heavy_steps():
