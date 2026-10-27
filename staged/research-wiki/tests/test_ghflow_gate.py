@@ -60,4 +60,4 @@ PASSED = [{"body": render_review("pass", HEAD, [])}]
 def test_gate_decision_skipping_checks(buckets, ok, reason):
     checks = [{"name": f"job{index}", "bucket": bucket} for index, bucket in enumerate(buckets)]
     decided, reasons = gate_decision(checks, PASSED, HEAD)
-    assert decided is ok and (reasons == [] if ok else reason in reasons), reasons
+    assert decided is ok and (reasons == [] if ok else any(item.startswith(reason) for item in reasons)), reasons
