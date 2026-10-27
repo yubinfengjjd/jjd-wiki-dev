@@ -32,9 +32,17 @@ v2（2026-10-27）起，Issue / PR / 他人评审是可选流程：知识库可�
 - **评审 agent（Codex 角色）**：由非编码 agent 读 PR diff 与 CI 结果，把问题逐行写进文件，用 `wiki.py gh review <pr> --verdict pass|changes --findings <文件>` 回帖。编码 agent 不评审自己的 PR。
 - **合并**：`wiki.py gh merge <pr>`。门禁通过才合并，并负责关闭 Issue、释放写入锁、清理联接与 worktree；在网页上点合并或直接 `gh pr merge` 会跳过这些收尾，需要手工补。
 
+## GitHub Flow：任务分支直接合入 main
+
+- 批次只是一个 Milestone（标题 `project/<课题>` 或 `ingest/<批次>`），用来归组 Issue；不建、不推送长期分支。元数据记 `"flow": "github"`。
+- 任务分支从 `origin/main` 切，PR 的 base 是 `main`，`merge` 后直接进 `main`。
+- 批次内 Issue 全部关闭后，`close-batch` 关闭 Milestone，不开 PR。
+- 旧批次（元数据有 `branch`、没有 `flow: github`，即本流程之前建的）照旧：任务从 `origin/<长期分支>` 切、PR 合入长期分支，`close-batch` 开长期分支 → `main` 的 PR，合并后关闭 Milestone 并删除长期分支。
+- 批次名在两个仓库间唯一：`start-batch` 在另一仓库已有同名批次时拒绝（请换名）。早先已在两个仓库都建了同名批次时，`start-task` 与 `close-batch` 必须加 `--repo dev|vault`，否则拒绝，不会按顺序猜一个仓库。
+
 ## 命名
 
-- 长期分支：`project/<课题>`、`ingest/<批次>`，与 Milestone 同名。
+- 批次 Milestone：`project/<课题>`、`ingest/<批次>`；旧批次的长期分支与 Milestone 同名。
 - 任务分支：`task/<批次>-<阶段>-<主题>`，阶段为 `P0`–`P5` 或 `T<数字>`，批次与主题为小写 slug（`[a-z0-9]+(-[a-z0-9]+)*`，≤ 40 字符），如 `task/scp-wave3-P2-harmony`。中文名称写进 `--title`。
 - 遗留迁移的 Milestone：`legacy/<来源目录名>`。
 - Label：`type:project|ingest|code|legacy`、`stage:P0`…`stage:P5`、`stage:T1`…`stage:T9`、`stage:legacy`、`status:进行中|待评审|需修改|已验收`、`blocked:用户决定|本地验证|外部依赖|CI`、`risk:low|normal|high`（`finish-task` 写入，只供查看）、`owner-approved`（只由作者在网页上添加）。
@@ -48,12 +56,12 @@ v2（2026-10-27）起，Issue / PR / 他人评审是可选流程：知识库可�
 | `preflight` | — | 只读输出 JSON：gh 路径/版本、账号、owner、两仓库存在性与可见性、分支保护探测（403 → `local`）、本地分支与未提交数、待推送范围、guard 干跑、`DEV_DEPLOY_KEY` 是否已设；有阻断项退出 1 | gh 可用 |
 | `bootstrap` | `[--confirm]` | 首推。无 `--confirm` 只输出授权摘要、不做网络写；`--confirm` 时 `master` 改名 `legacy/master`、构造 `main`（dev 过滤重放、vault 快照）、只移动 HEAD 与索引切到 `main`、安装 hook、建私有仓库并推送、建 Label、deploy key 与 secret、探测/配置分支保护 | preflight 无阻断；`--confirm` 需用户一次性明确授权 |
 | `install-hook` | `[--repo dev\|vault]` | 写 pre-push hook（调用 `gh guard --pre-push`）：优先调用部署副本 `~/.agents/skills/research-wiki/` 的 `wiki.py` 与 `config.json`，不随主检出切分支或改坏而变；副本缺失时退回当前检出并警告（先运行 `tools/deploy.py`）；输出含所用 `wiki_py` 与 `source`；缺省为当前目录所在仓库；已有非本工具 hook 时拒绝覆盖 | 无（不需要 gh） |
-| `start-batch` | `<project\|ingest> <名称> --title <中文标题> --repo dev\|vault` | 从 `origin/main` 建长期分支、同名 Milestone，经 guard 推送 | 已 bootstrap |
-| `start-task` | `<批次> <阶段> <主题> --title <Issue 标题> [--worktree]` | 建 Issue（`rwiki-task` 标记、Milestone、`type:*`/`stage:*`/`status:进行中`），创建任务分支并取得写入锁；`--worktree` 在 `worktree_root` 下建独立检出并输出 `RWIKI_WIKI_ROOT` | 批次存在；已设 `RWIKI_AGENT` |
-| `finish-task` | `[--local-report <文件>]` | 经 guard 推送任务分支，开 PR 到所属长期分支，正文按 PR 模板填 `Refs #n`、本地专属验证、受保护字节核验；按 base 上的规则算风险档，打 `risk:low\|normal\|high` 标签（移除另两个），“改动摘要”首行写 `风险档：<档>（前 3 条命中原因）`；重跑时更新标签与该行；Issue 改 `status:待评审` | 在 task 分支；无未提交的已跟踪改动 |
+| `start-batch` | `<project\|ingest> <名称> --title <中文标题> --repo dev\|vault` | 只建 Milestone `<kind>/<名称>`（按标题查重）并记元数据 `flow: github`；不建、不推送长期分支 | 已 bootstrap；另一仓库没有同名批次 |
+| `start-task` | `<批次> <阶段> <主题> --title <Issue 标题> [--worktree] [--repo dev\|vault]` | 建 Issue（`rwiki-task` 标记、归入批次 Milestone、`type:*`/`stage:*`/`status:进行中`），从 `origin/main`（旧批次为 `origin/<长期分支>`）创建任务分支并取得写入锁；`--worktree` 在 `worktree_root` 下建独立检出并输出 `RWIKI_WIKI_ROOT` | 批次存在；已设 `RWIKI_AGENT`；两个仓库都有同名批次时须给 `--repo` |
+| `finish-task` | `[--local-report <文件>]` | 经 guard 推送任务分支，开 PR 到 `main`（旧批次为所属长期分支），正文按 PR 模板填 `Refs #n`、本地专属验证、受保护字节核验；按 base 上的规则算风险档，打 `risk:low\|normal\|high` 标签（移除另两个），“改动摘要”首行写 `风险档：<档>（前 3 条命中原因）`；重跑时更新标签与该行；Issue 改 `status:待评审` | 在 task 分支；无未提交的已跟踪改动 |
 | `review` | `<pr> --verdict pass\|changes --findings <文件>` | 针对 PR 当前 head 以 COMMENT 类型 review 回帖 codex-review 标记，更新状态标签 | PR 存在；由非编码 agent 执行 |
-| `merge` | `<pr> [--plan <文本>]` | 按风险档做 Merge_Gate 判定（档位在合并时重算，不信 `risk:*` 标签；见下文）；输出 JSON 含 `tier`；通过则 `--match-head-commit` 合并并收尾，不通过则回帖阻断原因与计划并退出 1；PR 已合并时只做收尾 | — |
-| `close-batch` | `<批次>` | Milestone 内 Issue 全部关闭后开长期分支到 `main` 的 PR（再经 `review`/`merge`）；有未关闭 Issue 时拒绝并列出 | Milestone 内 Issue 全部关闭 |
+| `merge` | `<pr> [--plan <文本>]` | 按风险档做 Merge_Gate 判定（档位在合并时重算，不信 `risk:*` 标签；base 为 `main` 时还要求 PR 已包含最新 main；见下文）；输出 JSON 含 `tier`；通过则 `--match-head-commit` 合并并收尾，不通过则回帖阻断原因与计划并退出 1；PR 已合并时只做收尾 | — |
+| `close-batch` | `<批次> [--repo dev\|vault]` | Milestone 内 Issue 全部关闭后关闭 Milestone，不开 PR；旧批次改为开长期分支到 `main` 的 PR（再经 `review`/`merge`）；有未关闭 Issue 时拒绝并列出 | Milestone 内 Issue 全部关闭；两个仓库都有同名批次时须给 `--repo` |
 | `migrate-legacy` | `--map <legacy-map.json> [--dry-run]` | 按映射把旧任务书与 `remaining-gaps.md` 缺口迁为 Issue（`rwiki-legacy` 标记去重），非 dry-run 时在原文件顶部加迁移标记 | 首次推送完成 |
 | `guard` | `[--range <rev-range>] [--pre-push <remote> <url>] [--sync-ignore]` | 推送防泄漏扫描：画廊、限制性许可源码（路径与 GPL 文件头）、课题数据 `wiki-use/_project/`、超限文件、本机绝对路径；`--sync-ignore` 重写 `知识库/.gitignore` 的托管块；不带 `--range` 时扫描尚未推送的提交 | 无（纯本地，不需要 gh） |
 | `protect-baseline` | `[--check]` | 生成或核验 `知识库/.protected-hashes.json`（每个 user 块的 SHA-256，含行尾）；`--check` 输出为空表示通过 | 无（纯本地，不需要 gh） |
@@ -65,16 +73,18 @@ v2（2026-10-27）起，Issue / PR / 他人评审是可选流程：知识库可�
 
 ```powershell
 $env:RWIKI_AGENT = 'codex'                         # 执行写入的 agent 名
-& $rw -X utf8 $wiki gh start-batch ingest scp-wave3 --title 'SCP 第三批' --repo vault   # 每批一次
-& $rw -X utf8 $wiki gh start-task scp-wave3 P2 harmony --title 'Harmony 整合入库' --worktree
+& $rw -X utf8 $wiki gh start-batch ingest scp-wave3 --title 'SCP 第三批' --repo vault   # 每批一次，只建 Milestone
+& $rw -X utf8 $wiki gh start-task scp-wave3 P2 harmony --title 'Harmony 整合入库' --worktree   # 从 origin/main 切
 # 按输出设置 RWIKI_WIKI_ROOT，在该检出中工作；知识库写入用 save，文档/tools 用普通 git 提交
 & $rw -X utf8 $wiki save 'ingest harmony'
-& $rw -X utf8 $wiki gh finish-task --local-report <报告文件>
+& $rw -X utf8 $wiki gh finish-task --local-report <报告文件>   # PR base 为 main
 # 评审 agent（非编码 agent）：
 & $rw -X utf8 $wiki gh review 52 --verdict pass --findings <问题文件>
-& $rw -X utf8 $wiki gh merge 52
-& $rw -X utf8 $wiki gh close-batch scp-wave3      # 批次全部 Issue 关闭后
+& $rw -X utf8 $wiki gh merge 52                   # main 已前进时被阻断：先 git merge origin/main，再 finish-task
+& $rw -X utf8 $wiki gh close-batch scp-wave3      # 批次全部 Issue 关闭后关闭 Milestone
 ```
+
+- 两个仓库都有同名批次时，`start-task` 与 `close-batch` 加 `--repo dev|vault`，如 `gh start-task scp-wave3 P3 scvi --title … --worktree --repo vault`。
 
 - 主检出模式（不带 `--worktree`）用 `git switch -c`，只允许 `知识库/` 内的未提交改动随行；`知识库/` 之外有已跟踪改动时拒绝并列出。并行任务或作者正在用 Obsidian 时用 `--worktree`。
 - 写入锁按检出：`<git-dir>/rwiki-writer.lock`，由 `start-task` 取得、task PR 合并后由 `merge` 释放。他人持有时 save 报出持有者与分支；遗留锁由用户手工删除。
@@ -128,9 +138,10 @@ CI 运行 `pytest -m "not r and not compose and not local"`、前端 `npm test`�
 - `low`：CI 通过即可合并，不需要 codex-review。
 - `normal`：CI 通过，且 reviews 与 comments 中按时间最新的 codex-review 标记为 `pass`、sha 等于 PR 当前 head。PR 之后再有提交，旧评审失效，需要重新评审。
 - `high`：`normal` 的全部要求；base 规则的 `high_requires_owner` 为 true（缺省）时还要作者确认：PR 上有 `owner-approved` 标签，且它最近一次 labeled 事件（PR timeline）晚于当前 head 的推送时间。推送时间取 timeline 中 `head_ref_force_pushed` 与 `committed` 事件时间的最晚值，timeline 没有 head 的 committed 事件时用 head 提交的 committer date（近似）。标签早于最新提交即失效，需作者移除后重新添加。
+- 最新 main（三档相同，只对 base 为 `main` 的 PR，含旧批次长期分支 → `main` 的 PR）：当前 `origin/main`（merge 前先 fetch）必须是 PR head 的祖先，即 PR 已包含最新 main。push 到 `main` 的 CI 只跑轻量检查，这条保证合入 `main` 的组合已在 PR 上全量测过。不满足时阻断，原因为“PR 未包含最新 main（<sha>）”：在任务分支上 `git merge origin/main`，重新 `finish-task`，等 CI 与针对新 head 的评审后再 `merge`。
 - 开发仓库 `.github/risk-tiers.json` 设为 `"high_requires_owner": false`：作者 2026-10-28 明确放弃逐个确认高风险 PR；high 仍需独立评审与 CI。
 - 不通过：回帖 `<!-- rwiki-gate: blocked sha=<head> -->`、原因列表（第一条为档位与前 3 条命中规则）与 `### 修复计划`（`--plan`，缺省“待补”），PR 保持未合并，退出 1。
-- 通过：`gh pr merge --merge --match-head-commit <head> --delete-branch`；task PR 合并后关闭 Issue（附 PR 与合并 SHA）、标 `status:已验收`、释放锁、清理联接与 worktree、删本地分支，主检出模式切回 `main` 并 `pull --ff-only`；长期分支 PR 合并后关闭 Milestone 并删除长期分支。
+- 通过：`gh pr merge --merge --match-head-commit <head> --delete-branch`；task PR 合并后关闭 Issue（附 PR 与合并 SHA）、标 `status:已验收`、释放锁、清理联接与 worktree、删本地分支，主检出模式切回 `main` 并快进到 `origin/main`；旧批次的长期分支 PR 合并后关闭 Milestone 并删除长期分支（GitHub Flow 批次的 Milestone 由 `close-batch` 关闭）。
 
 ## 推送边界与部署来源
 

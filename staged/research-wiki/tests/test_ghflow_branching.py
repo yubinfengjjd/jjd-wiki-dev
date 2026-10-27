@@ -32,8 +32,12 @@ def test_illegal_names_create_no_branch_or_github_object(gh_repos, monkeypatch):
                 ("vault", "dev"))
             result = start_batch(config, kind, name, f"批次 {iteration}", repo_key)
             titles = [m["title"] for m in fake.state()["repos"][f"tester/{FAKE_REPO_NAMES[repo_key]}"]["milestones"]]
-            assert result["branch"] == result["milestone"] == f"{kind}/{name}", info
+            assert result["milestone"] == f"{kind}/{name}" and result["base"] == "main", info
             assert titles.count(f"{kind}/{name}") == 1, info
+            # GitHub Flow：start-batch 只建 Milestone，不建、不推送长期分支。
+            repo = gh_repos.vault if repo_key == "vault" else gh_repos.dev
+            assert git_run(repo, "ls-remote", "origin", f"refs/heads/{kind}/{name}") == "", info
+            assert git_run(repo, "branch", "--list", f"{kind}/{name}") == "", info
             continue
         case = rng.choice(("kind", "batch-name", "task-batch", "task-stage", "task-topic"))
         if case == "kind":

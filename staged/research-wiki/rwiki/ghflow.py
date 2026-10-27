@@ -247,9 +247,12 @@ def tier_summary(tier: str, reasons: list[str], limit: int = 3) -> str:
 
 
 def gate_decision(checks: list[dict], entries: list[dict], head: str, tier: str = "normal",
-                  tier_reasons: list[str] = (), owner: tuple[bool, str] | None = None) -> tuple[bool, list[str]]:
+                  tier_reasons: list[str] = (), owner: tuple[bool, str] | None = None,
+                  base_current: bool | None = None, base_sha: str = "") -> tuple[bool, list[str]]:
     """CI 全部 pass 或 skipping（至少一个 pass）；normal/high 还要按时间最新的 codex-review 标记为 pass 并针对
     当前 head；high 在规则要求作者确认时，owner 为 owner_approval() 的结果（None 表示不需要）。
+    base 为 main 的 PR 传 base_current（origin/main 是否为 head 的祖先）与 base_sha（origin/main 的提交）：
+    push 到 main 的 CI 只跑轻量检查，三档都要求合入 main 的组合已在 PR 上测过；None 表示不检查。
     不通过时第一条原因写档位与命中规则。旧的三参数调用等价于 normal。"""
     if tier not in risk.TIERS:
         raise ValueError(f"风险档只能是 {'|'.join(risk.TIERS)}: {tier!r}")
@@ -262,6 +265,9 @@ def gate_decision(checks: list[dict], entries: list[dict], head: str, tier: str 
                if check["bucket"] not in ("pass", "skipping")]
     if failing:
         reasons.append("CI 检查未全部通过: " + ", ".join(failing))
+    if base_current is False:
+        reasons.append(f"PR 未包含最新 main（{base_sha}）：在任务分支上 merge origin/main 后重新 finish-task，"
+                       "等 CI 与评审")
     markers = [marker for marker in (parse_review_marker(entry.get("body") or "") for entry in entries) if marker]
     if tier == "low":
         pass
@@ -387,12 +393,31 @@ def current_branch(repo: Path) -> str:
     return git(repo, "branch", "--show-current").strip()
 
 
-def find_batch(cfg, batch: str) -> tuple[str, Path, dict]:
-    for key, repo in configured_repos(cfg):
-        info = read_meta(repo).get("batches", {}).get(batch)
-        if info:
-            return key, repo, info
-    raise WikiError(f"批次 {batch} 不存在：先运行 wiki.py gh start-batch <project|ingest> {batch} --title … --repo …")
+def find_batch(cfg, batch: str, repo_key: str | None = None) -> tuple[str, Path, dict]:
+    """按仓库找批次元数据；未给 repo_key 且两个仓库都有同名批次时拒绝（不按顺序取第一个）。"""
+    found = [(key, repo, info) for key, repo in configured_repos(cfg) if repo_key in (None, key)
+             for info in [read_meta(repo).get("batches", {}).get(batch)] if info]
+    if len(found) > 1:
+        raise WikiError(f"批次 {batch} 在 {'、'.join(key for key, _, _ in found)} 两个仓库都存在：请加 --repo dev|vault 指定")
+    if not found:
+        where = f"在 {repo_key} 仓库" if repo_key else ""
+        raise WikiError(f"批次 {batch} {where}不存在：先运行 wiki.py gh start-batch <project|ingest> {batch} "
+                        "--title … --repo …")
+    return found[0]
+
+
+def legacy_batch(info: dict) -> bool:
+    """旧批次：元数据有长期分支且没有 flow=github（T6 之前建的），继续走长期分支流程。"""
+    return bool(info.get("branch")) and info.get("flow") != "github"
+
+
+def batch_base(info: dict) -> str:
+    """任务 PR 的 base：GitHub Flow 为 main，旧批次为长期分支。"""
+    return info["branch"] if legacy_batch(info) else "main"
+
+
+def batch_milestone(batch: str, info: dict) -> str:
+    return info.get("branch") or long_branch(info["kind"], batch)
 
 
 def milestones(repo: Path) -> list[dict]:
@@ -555,20 +580,25 @@ def merged_into(repo: Path, branch: str, sha: str) -> bool:
 # ---- 子命令 ----
 
 def start_batch(cfg, kind: str, name: str, title: str, repo_key: str) -> dict:
-    """从 origin/main 建长期分支 → 同名 Milestone → 推送（经 guard）→ 元数据。"""
-    branch = long_branch(kind, name)
+    """GitHub Flow：只建 Milestone（标题 <kind>/<名称>）与元数据，不建、不推送长期分支。
+    另一仓库已有同名批次时拒绝（start-task / close-batch 要能按名称唯一找到批次）。"""
+    milestone_title = long_branch(kind, name)
     repo = repo_root(cfg, repo_key)
+    others = [key for key, other in configured_repos(cfg)
+              if key != repo_key and read_meta(other).get("batches", {}).get(name)]
+    if others:
+        raise WikiError(f"批次 {name} 已在 {'、'.join(others)} 仓库存在，不能在 {repo_key} 再建同名批次；请换名")
+    existing = read_meta(repo).get("batches", {}).get(name, {})
+    if legacy_batch(existing):
+        raise WikiError(f"批次 {name} 是旧流程批次（长期分支 {existing['branch']}），不能改为 GitHub Flow；"
+                        "按旧流程用 close-batch 收尾，新批次请换名")
     require_gh(repo)
-    git(repo, "fetch", "origin")
-    if not branch_exists(repo, branch):
-        git(repo, "branch", "--no-track", branch, "origin/main")
-    milestone = ensure_milestone(repo, branch, title)
-    push(repo, branch, checkout_rules(cfg, repo))
+    milestone = ensure_milestone(repo, milestone_title, title)
     meta = read_meta(repo)
-    meta.setdefault("batches", {})[name] = {**meta.get("batches", {}).get(name, {}), "kind": kind, "branch": branch,
-                                            "milestone": milestone["number"], "title": title, "repo": repo_key}
+    meta.setdefault("batches", {})[name] = {**existing, "kind": kind, "milestone": milestone["number"],
+                                            "title": title, "repo": repo_key, "flow": "github"}
     write_meta(repo, meta)
-    return {"batch": name, "branch": branch, "milestone": milestone["title"], "repo": repo_key}
+    return {"batch": name, "milestone": milestone["title"], "repo": repo_key, "flow": "github", "base": "main"}
 
 
 def ensure_task_issue(repo: Path, branch: str, batch: str, stage: str, title: str, milestone: str,
@@ -583,13 +613,15 @@ def ensure_task_issue(repo: Path, branch: str, batch: str, stage: str, title: st
     return {"number": number_of(url), "url": url.strip()}
 
 
-def start_task(cfg, batch: str, stage: str, topic: str, title: str, worktree: bool) -> dict:
-    """建 Issue → 主检出 git switch -c（仅知识库改动随行）或 --worktree → 元数据与写入锁。"""
+def start_task(cfg, batch: str, stage: str, topic: str, title: str, worktree: bool,
+               repo_key: str | None = None) -> dict:
+    """建 Issue（归入批次 Milestone）→ 从 origin/main（旧批次为 origin/<长期分支>）切任务分支：
+    主检出 git switch -c（仅知识库改动随行）或 --worktree → 元数据与写入锁。"""
     branch = task_branch(batch, stage, topic)
     agent = os.environ.get("RWIKI_AGENT")
     if not agent:
         raise WikiError("start-task 需要环境变量 RWIKI_AGENT（执行写入的 Agent 名）")
-    repo_key, repo, info = find_batch(cfg, batch)
+    repo_key, repo, info = find_batch(cfg, batch, repo_key)
     require_gh(repo)
     prefix = wiki_prefix(cfg, repo)
     on_branch = not worktree and current_branch(repo) == branch
@@ -602,9 +634,9 @@ def start_task(cfg, batch: str, stage: str, topic: str, title: str, worktree: bo
     if not worktree:
         writer_lock.acquire(repo, agent, branch)
     labels = ["type:code" if repo_key == "dev" else f"type:{info['kind']}", f"stage:{stage}", "status:进行中"]
-    issue = ensure_task_issue(repo, branch, batch, stage, title, info["branch"], labels)
+    issue = ensure_task_issue(repo, branch, batch, stage, title, batch_milestone(batch, info), labels)
     git(repo, "fetch", "origin")
-    base = f"origin/{info['branch']}"
+    base = f"origin/{batch_base(info)}"
     junctions = []
     if worktree:
         if not cfg.github.get("worktree_root"):
@@ -704,14 +736,15 @@ def pr_owner_approval(repo: Path, pr: int, view: dict) -> tuple[bool, str]:
 
 
 def finish_task(cfg, checkout: Path, local_report: Path | None) -> dict:
-    """拒绝未提交的已跟踪改动 → 推送（经 guard）→ PR（base 为长期分支）→ 风险档标签与正文行 → status:待评审。"""
+    """拒绝未提交的已跟踪改动 → 推送（经 guard）→ PR（base 为 main，旧批次为长期分支）→ 风险档标签与正文行
+    → status:待评审。"""
     branch = current_branch(checkout)
     parse_task_branch(branch)
     meta = read_meta(checkout)
     task = meta.get("tasks", {}).get(branch)
     if task is None:
         raise WikiError(f"任务分支 {branch} 没有分支元数据，请用 wiki.py gh start-task 创建")
-    long = meta["batches"][task["batch"]]["branch"]
+    long = batch_base(meta["batches"][task["batch"]])
     require_gh(checkout)
     changes = tracked_changes(checkout)
     if changes:
@@ -797,11 +830,15 @@ def after_task_merge(main: Path, meta: dict, branch: str, pr: int, sha: str) -> 
     task.update(state="merged", pr=pr, merge_sha=sha)
 
 
-def after_batch_merge(main: Path, meta: dict, branch: str) -> None:
-    for milestone in milestones(main):
-        if milestone["title"] == branch and milestone["state"] == "open":
+def close_milestone(repo: Path, title: str) -> None:
+    for milestone in milestones(repo):
+        if milestone["title"] == title and milestone["state"] == "open":
             gh(["api", "-X", "PATCH", f"repos/{{owner}}/{{repo}}/milestones/{milestone['number']}",
-                "-f", "state=closed"], main)
+                "-f", "state=closed"], repo)
+
+
+def after_batch_merge(main: Path, meta: dict, branch: str) -> None:
+    close_milestone(main, branch)
     if current_branch(main) == branch:
         git(main, "switch", "main")
     if branch_exists(main, branch):
@@ -809,13 +846,13 @@ def after_batch_merge(main: Path, meta: dict, branch: str) -> None:
     if current_branch(main) == "main":
         fast_forward_main(main)
     for info in meta.get("batches", {}).values():
-        if info["branch"] == branch:
+        if info.get("branch") == branch:
             info["state"] = "merged"
 
 
 def merge(cfg, checkout: Path, pr: int, plan: str | None) -> dict:
     """按风险档判门禁：low 只要 CI；normal 再要最新 codex-review 针对当前 head 且为 pass；high 再按规则要作者确认。
-    通过才合并；已合并时只做合并后步骤（tier 为 None）。"""
+    base 为 main 的 PR 另要求 head 已包含当前 origin/main。通过才合并；已合并时只做合并后步骤（tier 为 None）。"""
     main = main_checkout(checkout)
     require_gh(main)
     view = gh_json(["pr", "view", str(pr), "--json", PR_FIELDS], main)
@@ -830,7 +867,12 @@ def merge(cfg, checkout: Path, pr: int, plan: str | None) -> dict:
         owner = pr_owner_approval(main, pr, view) if tier == "high" and rules["high_requires_owner"] else None
         entries = sorted(view["reviews"] + view["comments"],
                          key=lambda entry: entry.get("submittedAt") or entry.get("createdAt") or "")
-        passed, reasons = gate_decision(pr_checks(main, pr), entries, head, tier, tier_reasons, owner)
+        base_current, base_sha = None, ""
+        if view["baseRefName"] == "main":
+            base_sha = git(main, "rev-parse", "origin/main").strip()
+            base_current = merged_into(main, base_sha, head)
+        passed, reasons = gate_decision(pr_checks(main, pr), entries, head, tier, tier_reasons, owner,
+                                        base_current, base_sha)
         if not passed:
             body = render_gate_block(head, reasons, plan)
             if not view["comments"] or view["comments"][-1]["body"] != body:
@@ -852,16 +894,26 @@ def merge(cfg, checkout: Path, pr: int, plan: str | None) -> dict:
     return {"pr": pr, "merged": True, "merge_sha": sha, "branch": branch, "base": view["baseRefName"], "tier": tier}
 
 
-def close_batch(cfg, batch: str) -> dict:
-    """Milestone 内 Issue 全部关闭才建长期分支 → main 的 PR，正文列出全部 Issue。"""
-    _, repo, info = find_batch(cfg, batch)
+def close_batch(cfg, batch: str, repo_key: str | None = None) -> dict:
+    """Milestone 内 Issue 全部关闭才收尾：GitHub Flow 批次关闭 Milestone（任务已逐个合入 main，不开 PR）；
+    旧批次建长期分支 → main 的 PR，正文列出全部 Issue。"""
+    _, repo, info = find_batch(cfg, batch, repo_key)
     require_gh(repo)
-    issues = gh_json(["issue", "list", "--milestone", info["branch"], "--state", "all", "--limit", "1000",
+    title = batch_milestone(batch, info)
+    issues = gh_json(["issue", "list", "--milestone", title, "--state", "all", "--limit", "1000",
                       "--json", "number,title,state"], repo)
     blocking = open_issues_blocking(issues)
     if blocking:
-        raise WikiError(f"Milestone {info['branch']} 仍有未关闭 Issue，拒绝创建到 main 的 PR：\n"
+        action = "拒绝创建到 main 的 PR" if legacy_batch(info) else "拒绝关闭 Milestone"
+        raise WikiError(f"Milestone {title} 仍有未关闭 Issue，{action}：\n"
                         + "\n".join(f"#{issue['number']} {issue['title']}" for issue in blocking))
+    numbers = sorted(issue["number"] for issue in issues)
+    if not legacy_batch(info):
+        close_milestone(repo, title)
+        meta = read_meta(repo)
+        meta["batches"][batch]["state"] = "closed"
+        write_meta(repo, meta)
+        return {"batch": batch, "milestone": title, "state": "closed", "issues": numbers}
     existing = gh_json(["pr", "list", "--head", info["branch"], "--base", "main", "--state", "open",
                         "--json", "number,url"], repo)
     if existing:
@@ -874,7 +926,7 @@ def close_batch(cfg, batch: str) -> dict:
         url = gh_body(["pr", "create", "--base", "main", "--head", info["branch"],
                        "--title", f"{info['branch']}：{info['title']}"], body, repo)
         pr = {"number": number_of(url), "url": url.strip()}
-    return {"batch": batch, "pr": pr["number"], "url": pr["url"], "issues": sorted(i["number"] for i in issues)}
+    return {"batch": batch, "pr": pr["number"], "url": pr["url"], "issues": numbers}
 
 
 def migrate_legacy(cfg, mapping: Path, dry_run: bool) -> dict:
