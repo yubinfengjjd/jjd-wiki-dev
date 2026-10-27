@@ -17,7 +17,7 @@
     "staged/research-wiki/references/github-workflow.md"
   ],
   "low": [
-    "review/**",
+    "review/**/*.md",
     "*.md"
   ]
 }

@@ -95,7 +95,9 @@
 ## Git
 
 - 知识库写操作的最后一步是 `save "<说明>"`（多数命令自带）：重建 facts、`index.md`、`catalog.jsonl`，追加 `log.md`，只提交 Wiki 子树。本地 `main` 与批次分支可直接 save；`task/*` 分支需要写入锁（`gh start-task` 建）。
-- Issue / PR / 他人评审是可选流程，开发代码大改时用，见 `references/github-workflow.md`。推送由作者决定。
+- 本地日常不需要 Issue / PR；推送由作者决定。要推送 GitHub 或开发代码大改时走 GitHub Flow：`gh start-task … --worktree`（从 `origin/main` 切）→ 提交 → `gh finish-task`（PR 到 `main`）→ 非编码 agent `gh review` → 只经 `gh merge` 合并。批次只是 Milestone（`gh start-batch` / `gh close-batch`）。细节与全部 `gh` 子命令见 `references/github-workflow.md`。
+- 风险档按 base 上的 `.github/risk-tiers.json` 算，可先 `gh tier --range origin/main...HEAD` 自查：`risk:low` CI 通过即合；`risk:normal` 再要针对当前 head 的 pass 评审；`risk:high` 同 normal，`high_requires_owner` 为 true 时再要 `owner-approved`（当前为 false）。三档都要求 PR 已包含最新 main。
+- `owner-approved` 只由作者在网页上添加，agent 禁止添加；单账号下 GitHub 分不出是谁加的，这是约定。
 - pre-push 只拒绝 `legacy/*`，并扫描画廊、课题数据、限制性许可源码、超限文件与本机绝对路径。
 - 限制性许可源码由 `.gitignore` 的托管块排除（save 自动维护）；新检出里用 `restore <配方…>` 按记录的 commit 取回配方原字节。
 - 不要在主检出检出 `legacy/master`：它跟踪过画廊与维护记录，切过去再切回会把这些文件从磁盘删除，远端没有副本。看旧历史用 `git log legacy/master` 或另建 worktree。
@@ -117,4 +119,4 @@
 | `code-assets.md` | 原生代码与网页“查看代码” |
 | `project-reuse.md`、`project-state.md` | 在课题里选方法/图、适配、课题状态层 |
 | `llm-wiki-mode.md` | 三层与 ingest/query/lint、网页删除与预览、Obsidian |
-| `github-workflow.md` | 可选的 Issue/PR/评审流程与全部 `gh` 子命令 |
+| `github-workflow.md` | GitHub Flow、全部 `gh` 子命令、风险档与门禁、`config.json` 的 env 段、CI 跳过范围 |
