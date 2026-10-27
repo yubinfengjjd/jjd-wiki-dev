@@ -216,14 +216,24 @@ def head_pushed_at(timeline: list[dict], head: str, head_commit_date: str | None
 
 
 def owner_approval(labels: list[str], timeline: list[dict], head: str,
-                   head_commit_date: str | None) -> tuple[bool, str]:
-    """作者确认：PR 上有 owner-approved 标签，且它最近一次 labeled 事件晚于当前 head 的推送时间。"""
+                   head_commit_date: str | None, head_review_times: list[str]) -> tuple[bool, str]:
+    """作者确认：PR 上有 owner-approved 标签，且它最近一次 labeled 事件晚于当前 head 的推送时间。
+
+    提交者时间可以早于真实推送（甚至由 GIT_COMMITTER_DATE 任意设定），只靠它会偏向放行。
+    因此再取一个确定不早于推送的下界：针对当前 head 的 codex-review 标记中最早一条的时间
+    （评审只能在推送之后发出，high 档本来就必须有这条评审）；没有这样的评审时判不通过。
+    """
     if OWNER_LABEL not in labels:
         return False, f"high 档需要作者确认：PR 上没有 {OWNER_LABEL} 标签（只由作者在网页上添加）"
+    if not head_review_times:
+        return False, ("high 档需要作者确认：还没有针对当前 head 的 Codex 评审，无法确定当前 head 的推送时间；"
+                       f"评审回帖之后由作者重新添加 {OWNER_LABEL}")
     labeled = [_when(event["created_at"]) for event in timeline
                if event.get("event") == "labeled" and (event.get("label") or {}).get("name") == OWNER_LABEL]
-    pushed = head_pushed_at(timeline, head, head_commit_date)
-    if not labeled or pushed is None:
+    estimate = head_pushed_at(timeline, head, head_commit_date)
+    floor = min(_when(item) for item in head_review_times)
+    pushed = max(estimate, floor) if estimate is not None else floor
+    if not labeled:
         return False, f"high 档需要作者确认：取不到 {OWNER_LABEL} 标签或当前 head 的时间，无法判断确认是否针对当前 head"
     if max(labeled) <= pushed:
         return False, (f"high 档需要作者确认：{OWNER_LABEL} 标签（{max(labeled).isoformat()}）不晚于当前 head 推送时间"
@@ -686,7 +696,11 @@ def pr_owner_approval(repo: Path, pr: int, view: dict) -> tuple[bool, str]:
     timeline = [event for page in pages for event in page]
     head = view["headRefOid"]
     labels = [label["name"] for label in view.get("labels") or []]
-    return owner_approval(labels, timeline, head, git(repo, "show", "-s", "--format=%cI", head).strip())
+    reviewed = [entry.get("submittedAt") or entry.get("createdAt")
+                for entry in view.get("reviews", []) + view.get("comments", [])
+                if (marker := parse_review_marker(entry.get("body") or "")) and marker[1] == head
+                and (entry.get("submittedAt") or entry.get("createdAt"))]
+    return owner_approval(labels, timeline, head, git(repo, "show", "-s", "--format=%cI", head).strip(), reviewed)
 
 
 def finish_task(cfg, checkout: Path, local_report: Path | None) -> dict:
