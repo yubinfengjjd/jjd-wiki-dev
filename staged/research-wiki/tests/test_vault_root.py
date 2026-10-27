@@ -50,6 +50,26 @@ def test_dev_parent_fallback(isolated):
     assert find_vault_root() == isolated
 
 
+def test_config_beats_dev_parent(isolated):
+    make_vault(isolated)
+    cfg_vault = make_vault(isolated / "cfg-vault")
+    (isolated / "config.json").write_text(json.dumps({"github": {"vault_root": str(cfg_vault)}}), encoding="utf-8")
+    assert find_vault_root() == cfg_vault
+
+
+def test_config_pointing_nowhere_falls_back(isolated):
+    make_vault(isolated)
+    (isolated / "config.json").write_text(json.dumps({"github": {"vault_root": str(isolated / "nope")}}),
+                                          encoding="utf-8")
+    assert find_vault_root() == isolated
+
+
+def test_fixture_skips_when_no_vault(monkeypatch):
+    monkeypatch.setattr(conftest, "find_vault_root", lambda: None)
+    with pytest.raises(pytest.skip.Exception):
+        conftest.vault_root.__wrapped__()
+
+
 def test_none_found_returns_none(isolated):
     (isolated / "config.json").write_text("{not json", encoding="utf-8")
     assert find_vault_root() is None
