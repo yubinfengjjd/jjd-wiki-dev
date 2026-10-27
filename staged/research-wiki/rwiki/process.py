@@ -7,10 +7,10 @@ from .errors import WikiError
 TIMEOUT_SECONDS = 1800
 
 
-def run(command: list[str], cwd: Path) -> subprocess.CompletedProcess:
+def run(command: list[str], cwd: Path, env: dict | None = None) -> subprocess.CompletedProcess:
     try:
         # Rscript on a Chinese Windows locale may print GBK; never fail on decoding the log.
-        result = subprocess.run(command, cwd=cwd, capture_output=True, text=True,
+        result = subprocess.run(command, cwd=cwd, capture_output=True, text=True, env=env,
                                 encoding="utf-8", errors="replace", timeout=TIMEOUT_SECONDS)
     except subprocess.TimeoutExpired as error:
         raise WikiError(f"命令超过 {TIMEOUT_SECONDS} 秒未结束: {subprocess.list2cmdline(command)}") from error

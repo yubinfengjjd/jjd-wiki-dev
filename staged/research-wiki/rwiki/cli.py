@@ -92,17 +92,68 @@ def parser() -> argparse.ArgumentParser:
     gh_sub.add_parser("install-hook", help="为仓库写 pre-push hook（调用 gh guard --pre-push；不需要 gh，可重复运行）"
                       ).add_argument("--repo", choices=("dev", "vault"),
                                      help="按 config.json 的 github.dev_root / vault_root 选仓库；缺省为当前目录所在仓库")
+    # ---- v2（2026-10-27）：检索与调用、来源、配方
+    finding = commands.add_parser("find", help="按场景/图型/关键词检索 L0–L2 条目（读 catalog.jsonl）")
+    finding.add_argument("query", nargs="+")
+    finding.add_argument("--kind", choices=("scenario", "template", "recipe", "method", "item"))
+    finding.add_argument("--level", choices=("L0", "L1", "L2"))
+    finding.add_argument("--runnable", action="store_true", help="只列可用模板与原样运行通过的配方")
+    finding.add_argument("--limit", type=int, default=8)
+    finding.add_argument("--json", action="store_true")
+    showing = commands.add_parser("show", help="一个条目的用途、输入、许可、最近运行与下一步")
+    showing.add_argument("entry_id", help="页面 id，或 L0 目录项 <来源>:<条目>")
+    showing.add_argument("--json", action="store_true")
+    using = commands.add_parser("use", help="把条目代码复制进课题 wiki-use/<名>/（不改 Wiki）")
+    using.add_argument("entry_id")
+    using.add_argument("--project", type=Path, required=True)
+    using.add_argument("--name")
+    source = commands.add_parser("source", help="来源登记：add / fetch / scan")
+    source_sub = source.add_subparsers(dest="source_command", required=True)
+    s_add = source_sub.add_parser("add")
+    s_add.add_argument("source_id")
+    s_add.add_argument("--title", required=True)
+    s_add.add_argument("--url", required=True)
+    s_add.add_argument("--license", required=True, help="SPDX 标识，如 CC-BY-NC-SA-4.0、MIT、GPL-3.0")
+    s_add.add_argument("--adapter", required=True)
+    s_add.add_argument("--trusted", action="store_true", help="白名单：按需获取不再逐次询问")
+    s_add.add_argument("--cite", action="append", default=[])
+    s_add.add_argument("--notice", default="", help="页面顶部的许可提示（缺省按许可证生成）")
+    s_fetch = source_sub.add_parser("fetch")
+    s_fetch.add_argument("source_id")
+    s_fetch.add_argument("items", nargs="*")
+    s_fetch.add_argument("--update", action="store_true", help="快照 commit 与来源页记录不同时，确认更新记录")
+    source_sub.add_parser("scan").add_argument("source_id")
+    promoting = commands.add_parser("promote", help="L0 → L1：上游条目原字节建为配方页（draft）")
+    promoting.add_argument("source_id")
+    promoting.add_argument("items", nargs="+")
+    promoting.add_argument("--curation", type=Path,
+                           help="JSON：{条目: {title, chart_types, tags}}，作者/agent 整理的中文名与分类")
+    running = commands.add_parser("run", help="原样运行配方（Wiki 专用环境）或 use 生成的课题副本")
+    running.add_argument("recipe_ids", nargs="*")
+    running.add_argument("--dir", type=Path, help="use 生成的副本目录（收据写在副本 rwiki-runs/）")
+    running.add_argument("--timeout", type=int, default=1200)
+    running.add_argument("--jobs", type=int, default=1)
+    restoring = commands.add_parser("restore", help="从来源快照按记录的 commit 取回配方原字节（source/ 不进 Git）")
+    restoring.add_argument("recipe_ids", nargs="+")
+    depending = commands.add_parser("deps", help="依赖检查；--install 只装进 config.r_libs[0]（作者按批次批准后）")
+    depending.add_argument("ids", nargs="+", help="配方 id 或 <来源>:<条目>")
+    depending.add_argument("--install", action="store_true")
+    depending.add_argument("--github", action="store_true", help="同时安装声明的 GitHub 包")
     commands.add_parser("pending").add_argument('--json', action='store_true')
     checking = commands.add_parser('check-entry')
     checking.add_argument('entry_id')
     checking.add_argument('--record', action='store_true')
     commands.add_parser("serve").add_argument("--no-browser", action="store_true")
-    for name in ("verify-template", "verify-layout", "mark-ready"):
+    for name in ("verify-template", "verify-layout"):
         commands.add_parser(name).add_argument("entry_id")
+    commands.add_parser("mark-ready", help="作者确认；多个 id 时先全部核对，任一不通过则全部不改").add_argument(
+        "entry_ids", nargs="+")
     scaffold = commands.add_parser("scaffold-template")
-    scaffold.add_argument("entry_id")
+    scaffold.add_argument("entry_id", help="版式 id；--from-recipe 时为配方 id")
     scaffold.add_argument("--chart-type", required=True)
-    scaffold.add_argument("--panels", required=True)
+    scaffold.add_argument("--panels", help="版式 panel 字母（从版式拆出时必填）")
+    scaffold.add_argument("--from-recipe", action="store_true", help="v2：从 L1 配方开 L2 模板")
+    scaffold.add_argument("--language", choices=("python", "r"))
     scaffold.add_argument("--title", help="concise panel name; defaults to the chart type")
     interface = commands.add_parser("add-interface")
     interface.add_argument("slug")
@@ -539,6 +590,61 @@ def _gh_dispatch(args, config) -> int:
     return 0
 
 
+def _print(value) -> None:
+    print(json.dumps(value, ensure_ascii=False, indent=2))
+
+
+def _v2_dispatch(args, config) -> int:
+    from . import finder, recipes, sources
+
+    if args.command == "find":
+        results = finder.find(config, " ".join(args.query), args.kind, args.level, args.runnable, args.limit)
+        if args.json:
+            _print(results)
+        else:
+            print(finder.format_find(results))
+    elif args.command == "show":
+        detail = finder.show(config, args.entry_id)
+        if args.json:
+            _print(detail)
+        else:
+            print(finder.format_show(detail))
+    elif args.command == "use":
+        _print(finder.use(config, args.entry_id, args.project, args.name))
+    elif args.command == "source":
+        if args.source_command == "add":
+            page = sources.add_source(config, args.source_id, title=args.title, url=args.url,
+                                      license=args.license, adapter=args.adapter, trusted=args.trusted,
+                                      cite=args.cite, notice=args.notice)
+            print(page.relative_to(config.wiki_root).as_posix())
+        elif args.source_command == "fetch":
+            _print(sources.fetch_source(config, args.source_id, args.items, args.update))
+        else:
+            _print(sources.scan_source(config, args.source_id))
+    elif args.command == "promote":
+        curation = json.loads(args.curation.read_text(encoding="utf-8")) if args.curation else {}
+        _print(recipes.promote(config, args.source_id, args.items, curation))
+    elif args.command == "run":
+        if args.dir:
+            if args.recipe_ids:
+                raise WikiError("--dir 与配方 id 二选一")
+            receipt = recipes.run_dir(config, args.dir, args.timeout)
+            _print({key: receipt.get(key) for key in ("state", "scope", "duration_s", "missing_packages",
+                                                       "error", "figures", "changed_inputs")})
+            return 0 if receipt["state"] == "pass" else 1
+        if not args.recipe_ids:
+            raise WikiError("给出配方 id，或 --dir <use 副本>")
+        results = recipes.run_recipes(config, args.recipe_ids, args.timeout, args.jobs)
+        _print([{key: item.get(key) for key in ("id", "state", "duration_s", "missing_packages", "error")}
+                for item in results])
+        return 0 if all(item["state"] == "pass" for item in results) else 1
+    elif args.command == "restore":
+        _print([recipes.restore_source(config, recipe_id) for recipe_id in args.recipe_ids])
+    elif args.command == "deps":
+        _print(recipes.deps(config, args.ids, args.install, args.github))
+    return 0
+
+
 def main(argv: list[str] | None = None) -> int:
     args = parser().parse_args(argv)
     try:
@@ -603,8 +709,16 @@ def main(argv: list[str] | None = None) -> int:
             if errors and not (args.record and not content_errors and not runtime_errors):
                 return 1
         elif args.command == "scaffold-template":
-            scaffold_template(config, args.entry_id, args.chart_type,
-                              args.panels.split(","), title=args.title)
+            if args.from_recipe:
+                from .templates import scaffold_from_recipe
+                scaffold_from_recipe(config, args.entry_id, args.chart_type, args.title, args.language)
+            elif not args.panels:
+                raise WikiError("从版式拆模板需要 --panels；从配方开模板用 --from-recipe")
+            else:
+                scaffold_template(config, args.entry_id, args.chart_type,
+                                  args.panels.split(","), title=args.title)
+        elif args.command in ("find", "show", "use", "source", "promote", "run", "restore", "deps"):
+            return _v2_dispatch(args, config)
         elif args.command == "add-interface":
             add_interface(config, args.slug, args.title, args.columns)
         elif args.command == "scaffold-method":
@@ -621,7 +735,8 @@ def main(argv: list[str] | None = None) -> int:
         elif args.command == "render-layout":
             render_layout(config, args.entry_id, args.data, args.out, args.style)
         elif args.command == "mark-ready":
-            mark_ready(config, args.entry_id)
+            from .templates import mark_ready_many
+            mark_ready_many(config, args.entry_ids)
         elif args.command == "suggest":
             print(json.dumps(suggest(config, args.chart_type, args.columns,
                                      args.q, args.limit), ensure_ascii=False, indent=2))

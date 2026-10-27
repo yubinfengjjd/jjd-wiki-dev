@@ -90,16 +90,27 @@ def parse_allow(text: str, source: str = ALLOW_FILE) -> tuple[tuple[str, str], .
     return tuple(entries)
 
 
-def gpl_method_dirs(wiki_root: Path) -> list[str]:
-    """GPL 方法页对应的源码目录（相对 wiki_root，带结尾 `/`）。"""
+def restricted_dirs(wiki_root: Path) -> list[str]:
+    """限制性许可页的源码目录（相对 wiki_root，带结尾 `/`），不进 Git、不推送。
+
+    方法页：GPL 系的 code/ 与 source/；v2 配方页：GPL/CC-NC/SA/ND 的 source/；
+    派生模板（frontmatter `license` 为上述许可）：code/ 与 example/。
+    """
     from .pages import parse_page
+    from .sources import restricted_license
 
     dirs = []
-    for page in sorted((wiki_root / "methods").glob("*.md")):
-        meta, _, error = parse_page(page.read_text(encoding="utf-8"))
-        if not error and isinstance(meta.get("license"), str) and GPL_LICENSE.match(meta["license"]):
-            dirs += [f"methods/{page.stem}/code/", f"methods/{page.stem}/source/"]
+    for kind, folders, test in (("methods", ("code", "source"), lambda value: bool(GPL_LICENSE.match(value))),
+                                ("recipes", ("source",), restricted_license),
+                                ("templates", ("code", "example"), restricted_license)):
+        for page in sorted((wiki_root / kind).glob("*.md")):
+            meta, _, error = parse_page(page.read_text(encoding="utf-8"))
+            if not error and isinstance(meta.get("license"), str) and test(meta["license"]):
+                dirs += [f"{kind}/{page.stem}/{folder}/" for folder in folders]
     return dirs
+
+
+gpl_method_dirs = restricted_dirs
 
 
 def load_rules(cfg, repo: Path) -> Rules:
@@ -109,7 +120,7 @@ def load_rules(cfg, repo: Path) -> Rules:
     if root.is_relative_to(repo):
         relative = root.relative_to(repo).as_posix()
         prefix = "" if relative == "." else relative + "/"
-        gpl_dirs = tuple(prefix + d for d in gpl_method_dirs(root))
+        gpl_dirs = tuple(prefix + d for d in restricted_dirs(root))
     allow_path = repo / ALLOW_FILE
     allow = parse_allow(allow_path.read_text(encoding="utf-8"), str(allow_path)) if allow_path.is_file() else ()
     return Rules(max_file_bytes=int(settings.get("max_file_mb", DEFAULT_MAX_MB) * 2 ** 20),
@@ -246,20 +257,13 @@ def format_finding(finding: dict) -> str:
 
 
 def pre_push(repo: Path, remote: str, stdin: str, rules: Rules) -> int:
-    """pre-push hook 入口：legacy/* 永不推送；本地门禁下长期分支与 main 只经 gh merge 更新。"""
-    from .ghflow import read_meta
-
+    """pre-push hook 入口：legacy/* 永不推送；其余分支（v2 起含 main）只做内容扫描。"""
     updates = [tuple(line.split()) for line in stdin.splitlines() if line.strip()]
-    gated = bool(read_meta(repo).get("protection")) and os.environ.get("RWIKI_BOOTSTRAP") != "1"
-    origin_main = git(repo, "for-each-ref", "--format=%(objectname)", f"refs/remotes/{remote}/main").strip()
     refused = []
     for local_ref, local_sha, remote_ref, remote_sha in updates:
         name = remote_ref.removeprefix("refs/heads/")
         if name.startswith("legacy/") or local_ref.removeprefix("refs/heads/").startswith("legacy/"):
             refused.append(f"拒绝推送 {name}：legacy/* 只保留在本地")
-        elif gated and (name == "main" or name.startswith(("project/", "ingest/"))):
-            if not (name != "main" and is_zero(remote_sha) and local_sha == origin_main):
-                refused.append(f"拒绝直接推送 {name}：本地门禁模式下只能经 wiki.py gh merge 合并")
     for message in refused:
         print(message, file=sys.stderr)
     if refused:
@@ -275,7 +279,7 @@ def sync_ignore(wiki_root: Path) -> bool:
     """重写知识库 .gitignore 的 GPL 托管块；块外字节不动；内容变化时返回 True。"""
     path = wiki_root / ".gitignore"
     data = path.read_bytes() if path.is_file() else b""
-    dirs = gpl_method_dirs(wiki_root)
+    dirs = restricted_dirs(wiki_root)
     block = (IGNORE_BEGIN + "\n" + "".join(f"/{d}\n" for d in dirs) + IGNORE_END + "\n").encode("utf-8")
     match = IGNORE_BLOCK.search(data)
     if match:

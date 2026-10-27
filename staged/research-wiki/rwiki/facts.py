@@ -67,10 +67,20 @@ def relationship_facts(config: Config, path: str) -> str:
     return "\n".join(lines) + "\n"
 
 
+def source_links(root, values) -> list[str]:
+    """v2 template provenance: `recipes/<id>` (or other page paths) instead of a gallery layout."""
+    links = []
+    for value in values or []:
+        path = root / f"{str(value).removesuffix('.md')}.md"
+        title = read_page(path)[0]["title"] if path.is_file() else value
+        links.append(f"[[{str(value).removesuffix('.md')}|{title}]]")
+    return links
+
+
 def template_facts(config: Config, meta: dict) -> str:
     root = config.wiki_root
     layouts = [page_link("layouts", read_page(root / "layouts" / f"{lid}.md")[0])
-               for lid in meta["layouts"]]
+               for lid in meta.get("layouts") or []] + source_links(root, meta.get("sources"))
     charts = " · ".join(f"[[chart-types/{slug}]]" for slug in meta["chart_types"])
     spec_path = root / "templates" / meta["id"] / "spec.json"
     interfaces, compatible = [], []
@@ -82,8 +92,10 @@ def template_facts(config: Config, meta: dict) -> str:
         if required and all(table["interface"] for table in spec["tables"].values()):
             compatible = [page_link("methods", mm, True) for mm, method in declarations(root, "methods").values()
                           if mm["status"] != "archived" and required <= set(method["outputs"])]
-    return (f"\n- 来源版式：{' · '.join(layouts)}\n"
-            f"- 面板（来源版式）：{'、'.join(meta['panels'])}\n- 语言：{meta['language']}\n"
+    panels = f"- 面板（来源版式）：{'、'.join(meta['panels'])}\n" if meta.get("layouts") else ""
+    license_line = f"- 许可证：{meta['license']}\n" if meta.get("license") else ""
+    return (f"\n- 来源：{' · '.join(layouts)}\n"
+            f"{panels}- 语言：{meta['language']}\n{license_line}"
             f"- 标签：{'、'.join(meta['tags'])}\n- 图型：{charts}\n"
             f"- 输入接口：{' · '.join(interfaces) or '未声明'}\n"
             f"- 接口结构匹配的分析方法（仅结构候选，未核实语义）：{' · '.join(compatible) or '暂无'}\n"
@@ -171,6 +183,51 @@ def interface_facts(config: Config, meta: dict) -> str:
     return "\n".join(lines) + "\n"
 
 
+def source_facts(config: Config, meta: dict) -> str:
+    from .sources import read_items
+    items = read_items(config, meta["id"])
+    recipes = []
+    for path in sorted((config.wiki_root / "recipes").glob("*.md")):
+        try:
+            other = read_page(path)[0]
+        except WikiError:
+            continue
+        if (other.get("source") or {}).get("id") == meta["id"]:
+            recipes.append(f"[[recipes/{other['id']}|{other['title']}]]（{other.get('status')}）")
+    tags = {}
+    for item in items:
+        for tag in item.get("tags") or []:
+            tags[tag] = tags.get(tag, 0) + 1
+    return (f"\n- 上游：{meta['url']} · commit `{str(meta.get('commit') or '未获取')[:12]}`\n"
+            f"- 许可证：{meta['license']}；白名单：{'是（按需获取不再询问）' if meta.get('trusted') else '否（获取前先问作者）'}\n"
+            f"- 适配器：{meta['adapter']}；快照：`<sources_root>/{meta['snapshot']}`（不进 Wiki）\n"
+            f"- L0 目录：{len(items)} 项（`sources/{meta['id']}/items.jsonl`）；"
+            f"自动领域分布：{'、'.join(f'{tag} {count}' for tag, count in sorted(tags.items(), key=lambda kv: -kv[1]))}\n"
+            f"- L1 配方：{len(recipes)} 个{'：' + ' · '.join(recipes) if recipes else ''}\n")
+
+
+def scenario_facts(config: Config, meta: dict) -> str:
+    from .finder import record_for
+    lines = ["\n| 条目 | 级别 | 状态 | 说明 |", "|---|---|---|---|"]
+    for pick in meta.get("picks") or []:
+        value = pick.get("id") if isinstance(pick, dict) else pick
+        note = pick.get("note", "") if isinstance(pick, dict) else ""
+        key = str(value) if ":" in str(value) else str(value).split("/", 1)[-1].removesuffix(".md")
+        record = record_for(config, key)
+        if record is None:
+            lines.append(f"| {value} | — | 不存在或已归档 | {note} |")
+            continue
+        link = f"[[{record['page'].removesuffix('.md')}|{record['title']}]]" if record["kind"] != "item" \
+            else f"`{record['id']}`"
+        state = record.get("status") or "-"
+        if record["kind"] == "recipe":
+            state += f" · 运行 {record['run']}"
+        elif record.get("usable"):
+            state += " · 可用"
+        lines.append(f"| {link} | {record['level']} | {state} | {note} |")
+    return "\n".join(lines) + "\n"
+
+
 def page_facts(config: Config, meta: dict) -> str:
     if meta["type"] == "layout":
         from .ingest import layout_facts
@@ -180,7 +237,17 @@ def page_facts(config: Config, meta: dict) -> str:
         return interface_facts(config, meta)
     if meta["type"] == "method":
         return method_facts(config, meta)
+    if meta["type"] == "recipe":
+        from .recipes import recipe_facts
+        return recipe_facts(config, meta)
+    if meta["type"] == "source":
+        return source_facts(config, meta)
+    if meta["type"] == "scenario":
+        return scenario_facts(config, meta)
     return template_facts(config, meta)
+
+
+FACT_DIRS = ("layouts", "templates", "methods", "interfaces", "recipes", "sources", "scenarios")
 
 
 def refresh_facts(config: Config) -> None:
@@ -188,7 +255,7 @@ def refresh_facts(config: Config) -> None:
     # A page that cannot be read or rendered is skipped here and reported by lint,
     # instead of blocking every save in the Wiki.
     updates = []
-    for kind in ("layouts", "templates", "methods", "interfaces"):
+    for kind in FACT_DIRS:
         for path in sorted((config.wiki_root / kind).glob("*.md")):
             try:
                 meta, body = read_page(path)

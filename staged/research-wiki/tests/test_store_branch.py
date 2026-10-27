@@ -15,8 +15,9 @@ BRANCHES = ("main", "project/glaucoma", "ingest/scp-wave3", "task/scp-wave3-P2-h
 
 
 def test_save_policy_examples():
+    # v2（2026-10-27）：main 与批次分支直接提交；只有 task/* 需要写入锁。
     assert [save_policy(b) for b in BRANCHES] == [
-        "refuse-main", "refuse-long", "refuse-long", "task", "task", "plain", "plain", "plain"]
+        "plain", "plain", "plain", "task", "task", "plain", "plain", "plain"]
     assert save_policy("") == "plain"
 
 

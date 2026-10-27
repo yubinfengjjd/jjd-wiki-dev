@@ -109,6 +109,59 @@ def scaffold_template(config: Config, entry_id: str, chart_type: str, panels: li
     save(config, f"scaffold template {tid}")
 
 
+def scaffold_from_recipe(config: Config, recipe_id: str, chart_type: str, title: str | None = None,
+                         language: str | None = None) -> str:
+    """v2: start an L2 template from an L1 recipe (no gallery layout needed).
+
+    Copies nothing executable: the agent writes code/ (functionized from the recipe's
+    source/) and example/ in the template's own interface format, then verify-template.
+    """
+    from .recipes import load_recipe
+
+    page, recipe, _ = load_recipe(config, recipe_id)
+    tid = f"{recipe_id}--{chart_type}"
+    target = config.wiki_root / "templates" / tid
+    template_page = target.with_suffix(".md")
+    if target.exists() or template_page.exists():
+        raise WikiError(f"模板页或目录已存在: {tid}")
+    language = language or recipe.get("language", "r")
+    if language not in ("python", "r"):
+        raise WikiError("language 只能是 python 或 r")
+    (target / "code").mkdir(parents=True)
+    (target / "example").mkdir()
+    entry = "code/render.py" if language == "python" else "code/render.R"
+    spec = {"entry": entry, "language": language, "tables": {}, "style": {}}
+    todo = f"模板尚未实现：把 recipes/{recipe_id}/source/ 的绘图代码函数化后替换本文件"
+    if language == "python":
+        (target / "code/__init__.py").write_text("", encoding="utf-8")
+        (target / "code/panel.py").write_text(
+            f"def draw(fig, rect, tables, style):\n    raise NotImplementedError({todo!r})\n", encoding="utf-8")
+        (target / entry).write_text(f"raise SystemExit({todo!r})\n", encoding="utf-8")
+        spec["panel"] = "code/panel.py"
+    else:
+        (target / entry).write_text(f"# scaffold-template --from-recipe 生成的占位入口\nstop({json.dumps(todo)})\n",
+                                    encoding="utf-8", newline="\n")
+    (target / "spec.json").write_text(json.dumps(spec, ensure_ascii=False, indent=2) + "\n",
+                                      encoding="utf-8", newline="\n")
+    title = (title or chart_type).strip()
+    meta = {"type": "template", "id": tid, "title": title, "status": "draft", "layouts": [],
+            "sources": [f"recipes/{recipe_id}"], "panels": [], "language": language,
+            "license": recipe.get("license", ""), "tags": recipe.get("tags") or [],
+            "chart_types": [chart_type], "keywords": recipe.get("keywords") or [], "favorite": False}
+    body = (f"# {title}\n\n<!-- facts:start -->\n<!-- facts:end -->\n\n"
+            "## 适用\n\n## 不适用\n\n## 知识关联检查\n\n## 数据要求\n\n模板化后生成。\n\n"
+            "## 使用记录\n\n<!-- user:start -->\n<!-- user:end -->\n")
+    ensure_hubs(config, meta)
+    with guarded(config, template_page):
+        write_page(template_page, meta, body)
+        save(config, f"scaffold template {tid} from recipe")
+    print(json.dumps({"template": tid, "next": [
+        f"写 templates/{tid}/code/（函数化自 recipes/{recipe_id}/source/，保留原语言；改统计逻辑先问作者）",
+        f"写 example/<接口>.csv 与 spec.json 的 tables（先找已有接口，确需新建用 add-interface）",
+        f"wiki.py verify-template {tid}"]}, ensure_ascii=False, indent=2))
+    return tid
+
+
 def check_panels(meta: dict, chart_type: str, panels: list[str]) -> None:
     if not panels or len(set(panels)) != len(panels):
         raise WikiError("panels 必须非空且字母不重复")
@@ -216,7 +269,9 @@ def render(config: Config, entry_id: str, data_dir: Path, out_dir: Path,
         # A previous run's files must not satisfy this run's output check.
         for extension in ("png", "pdf", "svg"):
             (out_dir / f"figure.{extension}").unlink(missing_ok=True)
-        run(command, target)
+        from .recipes import _r_env
+        # R templates see the Wiki-only libraries (config.r_libs) ahead of the system library.
+        run(command, target, env=_r_env(config) if spec["language"] == "r" else None)
         missing = [f"figure.{ext}" for ext in ("png", "pdf", "svg")
                    if not (out_dir / f"figure.{ext}").is_file()]
         if missing:
@@ -238,6 +293,56 @@ def verify_template(config: Config, entry_id: str) -> None:
     save(config, f"verify {entry_id}")
 
 
+def mark_ready_many(config: Config, entry_ids: list[str]) -> list[str]:
+    """Batch confirmation (v2): check every id first; any failure leaves all pages unchanged; one save."""
+    from .acceptance import entry_errors, record_acceptance
+
+    entry_ids = list(dict.fromkeys(entry_ids))
+    if len(entry_ids) == 1:
+        mark_ready(config, entry_ids[0])
+        return entry_ids
+    pages, problems = [], []
+    for entry_id in entry_ids:
+        try:
+            page = visual_path(config.wiki_root, entry_id)
+            meta, _ = read_page(page)
+        except WikiError as error:
+            problems.append(f"{entry_id}: {error}")
+            continue
+        if page.parent.name not in ("recipes", "methods", "templates"):
+            problems.append(f"{entry_id}: 批量确认只用于配方、模板与方法；版式逐个 mark-ready")
+        elif meta.get("status") != "draft":
+            problems.append(f"{entry_id}: 必须为 draft（当前 {meta.get('status')}）")
+        elif page.parent.name == "templates" and not replay_available(page.with_suffix("")):
+            problems.append(f"{entry_id}: 缺少当前版本的完整成功回放，请 verify-template")
+        else:
+            errors = entry_errors(config, page)
+            if errors:
+                problems.append(f"{entry_id}: {'；'.join(errors)}")
+            else:
+                pages.append((entry_id, page))
+    if problems:
+        raise WikiError("批量确认未执行（全部未改动）：\n" + "\n".join(problems))
+    watched = [path for _, page in pages for path in (page, page.with_suffix("") / "acceptance.json")]
+    with guarded(config, *watched):
+        for entry_id, page in pages:
+            meta, body = read_page(page)
+            if page.parent.name == "templates":
+                spec = load_spec(page.with_suffix(""))
+                start, end = section_bounds(body, "数据要求")
+                body = body[:start] + "\n" + requirements_markdown(spec) + "\n" + body[end:]
+                embed = f"![[templates/{entry_id}/preview.png]]"
+                if embed not in body:
+                    heading_end = body.index("\n") + 1
+                    body = body[:heading_end] + f"\n{embed}\n" + body[heading_end:]
+                write_page(page, meta, body)
+            record_acceptance(config, page)
+            meta["status"] = "ready"
+            write_page(page, meta, body)
+        save(config, f"ready {len(pages)}: {', '.join(entry_ids)}"[:300])
+    return entry_ids
+
+
 def mark_ready(config: Config, entry_id: str) -> None:
     page = visual_path(config.wiki_root, entry_id)
     if page.parent.name == "methods":
@@ -250,6 +355,18 @@ def mark_ready(config: Config, entry_id: str) -> None:
     meta, body = read_page(page)
     target = page.with_suffix("")
     from .acceptance import entry_errors, record_acceptance
+    if page.parent.name == "recipes":
+        if meta["status"] != "draft":
+            raise WikiError(f"配方必须为 draft: {entry_id} ({meta['status']})")
+        errors = entry_errors(config, page)
+        if errors:
+            raise WikiError('入库验收未通过：' + '；'.join(errors))
+        with guarded(config, page, target / "acceptance.json"):
+            record_acceptance(config, page)
+            meta["status"] = "ready"
+            write_page(page, meta, body)
+            save(config, f"ready {entry_id}")
+        return
     if page.parent.name == "layouts":
         require_pending(meta)
         errors = layout_ready_errors(config, meta)

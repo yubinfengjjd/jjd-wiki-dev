@@ -2,7 +2,7 @@ import re
 import subprocess
 from pathlib import Path
 
-from .catalog import LAYOUT_STATUSES, TEMPLATE_STATUSES, METHOD_STATUSES, page_paths, render_index
+from .catalog import LAYOUT_STATUSES, METHOD_STATUSES, STATUSES, TEMPLATE_STATUSES, page_paths, render_index
 from .config import Config, read_json
 from .errors import WikiError
 from .links import extract_links, resolve
@@ -17,13 +17,22 @@ from .relations import relation_errors
 REQUIRED = {
     "layout": ("type", "id", "title", "status", "gallery_entry", "gallery_version",
                "language", "tags", "chart_types", "favorite", "panels", "templates", "template_panels"),
-    "template": ("type", "id", "title", "status", "layouts", "panels",
+    "template": ("type", "id", "title", "status", "panels",
                  "language", "tags", "chart_types", "favorite"),
     "chart-type": ("type", "slug", "title"),
     "project": ("type", "slug", "title", "templates"),
     "method": ("type", "id", "title", "status", "tags", "inputs", "outputs", "source", "license", "cite", "favorite"),
     "interface": ("type", "slug", "title", "columns"),
+    # v2 (2026-10-27)
+    "source": ("type", "id", "title", "url", "commit", "license", "adapter", "trusted", "snapshot"),
+    "recipe": ("type", "id", "title", "status", "source", "license", "language", "runner", "entry",
+               "tags", "chart_types", "favorite"),
+    "scenario": ("type", "id", "title", "picks"),
 }
+
+
+def _string_list(value) -> bool:
+    return isinstance(value, list) and all(isinstance(item, str) and item.strip() for item in value)
 
 
 def metadata_errors(meta: dict) -> list[str]:
@@ -31,19 +40,41 @@ def metadata_errors(meta: dict) -> list[str]:
     if page_type not in REQUIRED:
         return ["type 缺失或未知"]
     errors = [f"缺少必需键 {key}" for key in REQUIRED[page_type] if key not in meta]
-    if page_type not in ("layout", "template", "method"):
+    if page_type == "source":
+        from .adapters import ADAPTERS
+        if meta.get("adapter") not in ADAPTERS:
+            errors.append(f"未知适配器: {meta.get('adapter')}")
+        if not isinstance(meta.get("trusted"), bool):
+            errors.append("trusted 必须为布尔值")
+        return errors
+    if page_type == "scenario":
+        if not isinstance(meta.get("picks"), list):
+            errors.append("picks 必须为列表")
+        return errors
+    if page_type not in ("layout", "template", "method", "recipe"):
         return errors
     status = meta.get("status")
-    statuses = {"layout": LAYOUT_STATUSES, "template": TEMPLATE_STATUSES, "method": METHOD_STATUSES}[page_type]
+    statuses = {"layout": LAYOUT_STATUSES, "template": TEMPLATE_STATUSES, "method": METHOD_STATUSES,
+                "recipe": STATUSES}[page_type]
     if status not in statuses:
         errors.append(f"status 非法: {status}")
     if status == "archived" and "archived_from" not in meta:
         errors.append("缺少必需键 archived_from")
-    if page_type == "template" and "layouts" in meta and (
-            not isinstance(meta["layouts"], list) or not meta["layouts"]
-            or any(not isinstance(item, str) or not item.strip() for item in meta["layouts"])):
-        # Templates only come from a replicated source (scaffold-template / attach-template).
-        errors.append("模板必须记录至少一个来源版式 layouts；不能手工新建无来源模板")
+    if page_type == "recipe":
+        source = meta.get("source")
+        if not isinstance(source, dict) or any(not isinstance(source.get(key), str) or not source[key].strip()
+                                               for key in ("id", "item", "commit")):
+            errors.append("source 必须含 id、item、commit")
+        if not _string_list(meta.get("chart_types", [])):
+            errors.append("chart_types 必须为字符串列表")
+        if not isinstance(meta.get("license"), str) or not re.fullmatch(r"[A-Za-z0-9][A-Za-z0-9.+-]*", meta["license"]):
+            errors.append("license 必须为 SPDX 标识或 none")
+    if page_type == "template":
+        layouts, sources = meta.get("layouts", []), meta.get("sources", [])
+        valid = isinstance(layouts, list) and isinstance(sources, list) and _string_list(layouts + sources)
+        if not valid or not (layouts or sources):
+            # v2: provenance is a gallery layout or another Wiki page (e.g. recipes/<id>).
+            errors.append("模板必须记录来源：layouts（历史版式）或 sources（如 recipes/<id>）；不能新建无来源模板")
     if page_type == "method":
         from .method_implementations import implementation_metadata_errors
         from .method_taxonomy import purpose_errors
@@ -184,7 +215,11 @@ def visual_diagnostics(config: Config, path, meta: dict, body: str,
             diagnostics.append(("ERROR", f"layout.json: {error}"))
     own_list, other_list, directory = (("templates", "layouts", "templates") if meta["type"] == "layout"
                                        else ("layouts", "templates", "layouts"))
-    for entry_id in meta[own_list]:
+    if meta["type"] == "template":
+        for value in meta.get("sources") or []:
+            if not (config.wiki_root / f"{str(value).removesuffix('.md')}.md").is_file():
+                diagnostics.append(("ERROR", f"引用的来源页不存在: {value}"))
+    for entry_id in meta.get(own_list) or []:
         other_path = config.wiki_root / directory / f"{entry_id}.md"
         if not other_path.is_file():
             diagnostics.append(("ERROR", f"引用的{'模板' if directory == 'templates' else '版式'}不存在: {entry_id}"))
@@ -210,8 +245,8 @@ def lint(config: Config, ci: bool = False) -> list[str]:
     parsed_pages = []
     gpl_missing = []
     if ci:
-        from .push_guard import gpl_method_dirs
-        gpl_missing = [root / d for d in gpl_method_dirs(root) if not (root / d).exists()]
+        from .push_guard import restricted_dirs
+        gpl_missing = [root / d for d in restricted_dirs(root) if not (root / d).exists()]
 
     def local_only(missing) -> bool:
         # 目录以 `/` 结尾传给 check-ignore，目录型忽略规则才会匹配不存在的路径。
@@ -281,7 +316,7 @@ def lint(config: Config, ci: bool = False) -> list[str]:
                 for level, message in (adaptable_interface_diagnostics(config, path, meta, body)
                                        + figureless_method_diagnostics(config, meta, body)):
                     report(level, path, message)
-            if meta["type"] in ("layout", "template", "method", "interface"):
+            if meta["type"] in ("layout", "template", "method", "interface", "recipe", "source", "scenario"):
                 findings = asset_diagnostics(config, path, meta)
                 for level, message in findings:
                     report(level, path, message)
@@ -303,7 +338,14 @@ def lint(config: Config, ci: bool = False) -> list[str]:
                 for method_id in meta.get("methods", []):
                     if not (root / "methods" / f"{method_id}.md").is_file():
                         report("ERROR", path, f"引用的方法页不存在: {method_id}")
-            if (meta['type'] in ('method', 'template', 'layout')
+            if meta["type"] == "scenario":
+                from .finder import record_for
+                for pick in meta.get("picks") or []:
+                    value = str(pick.get("id") if isinstance(pick, dict) else pick)
+                    key = value if ":" in value else value.split("/", 1)[-1].removesuffix(".md")
+                    if record_for(config, key) is None:
+                        report("ERROR", path, f"场景首选条目不存在或已归档: {value}")
+            if (meta['type'] in ('method', 'template', 'layout', 'recipe')
                     and meta.get('status') not in ('archived', 'pending_signoff')):
                 from .acceptance import entry_errors, acceptance_stale
                 for message in entry_errors(config, path):
@@ -313,7 +355,8 @@ def lint(config: Config, ci: bool = False) -> list[str]:
                     report('ERROR', path, '入库验收记录已过期，请核对后 check-entry --record',
                            method_missing(path))
         for name in ("user", "facts"):
-            if meta.get("type") in ("layout", "template", "method", "interface") or f"<!-- {name}:" in body:
+            if meta.get("type") in ("layout", "template", "method", "interface", "recipe", "source", "scenario") \
+                    or f"<!-- {name}:" in body:
                 error = block_error(body, name)
                 if error:
                     report("ERROR", path, error)
@@ -335,4 +378,8 @@ def lint(config: Config, ci: bool = False) -> list[str]:
     from .catalog import readable_pages
     if actual_index != render_index(root, readable_pages(root)):
         report("WARN", index, "index.md 与页面不一致，请运行 save")
+    from .finder import CATALOG, render_catalog
+    catalog = root / CATALOG
+    if (catalog.read_text(encoding="utf-8") if catalog.is_file() else "") != render_catalog(config):
+        report("WARN", catalog, "catalog.jsonl 与页面不一致，请运行 save")
     return diagnostics

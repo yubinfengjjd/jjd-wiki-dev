@@ -6,7 +6,10 @@ from .pages import read_page
 LAYOUT_STATUSES = ("pending_signoff", "pending_template", "ready", "archived")
 TEMPLATE_STATUSES = ("draft", "ready", "archived")
 METHOD_STATUSES = ("draft", "ready", "archived")
-PAGE_DIRS = ("layouts", "templates", "methods", "interfaces", "chart-types", "projects")
+# v2 types (2026-10-27) share one status machine; layouts keep their legacy statuses read-only.
+STATUSES = ("draft", "ready", "archived")
+PAGE_DIRS = ("layouts", "templates", "methods", "interfaces", "chart-types", "projects",
+             "sources", "recipes", "scenarios")
 
 
 def page_paths(wiki_root: Path) -> list[Path]:
@@ -15,7 +18,8 @@ def page_paths(wiki_root: Path) -> list[Path]:
 
 
 def render_index(wiki_root: Path, pages: list[tuple[Path, dict]]) -> str:
-    lines = ["<!-- 由 wiki.py 生成，不要手改 -->", "", "# 目录", ""]
+    lines = ["<!-- 由 wiki.py 生成，不要手改 -->", "", "# 目录", "",
+             "检索请用 `catalog.jsonl` 或 `wiki.py find`；本页按类型列出全部页面。", ""]
 
     def append_pages(selected: list[tuple[Path, dict]]) -> None:
         for path, meta in sorted(selected, key=lambda item: item[1]["title"]):
@@ -24,13 +28,17 @@ def render_index(wiki_root: Path, pages: list[tuple[Path, dict]]) -> str:
             lines.append(f"- [[{target}|{meta['title']}]]" + (f" — {summary}" if summary else ''))
         lines.append("")
 
-    for title, kind, statuses in (("版式", "layout", LAYOUT_STATUSES),
-                                  ("模板", "template", TEMPLATE_STATUSES)):
+    def by_status(title: str, kind: str, statuses: tuple[str, ...]) -> None:
         lines.extend([f"## {title}", ""])
         for status in statuses:
             lines.extend([f"### {status}", ""])
             append_pages([(path, meta) for path, meta in pages
                           if meta.get("type") == kind and meta.get("status") == status])
+
+    lines.extend(["## 场景", ""])
+    append_pages([(path, meta) for path, meta in pages if meta.get("type") == "scenario"])
+    by_status("配方", "recipe", STATUSES)
+    by_status("模板", "template", TEMPLATE_STATUSES)
     for title, method_kind in (("分析家族", "analysis"), ("组合流程", "workflow"),
                                ("技术资料", "technical"), ("待分类方法", None)):
         lines.extend([f"## {title}", ""])
@@ -42,9 +50,11 @@ def render_index(wiki_root: Path, pages: list[tuple[Path, dict]]) -> str:
             if selected:
                 lines.extend([f"### {status or '状态待核对'}", ""])
                 append_pages(selected)
-    for title, page_type in (("接口", "interface"), ("图型", "chart-type"), ("课题", "project")):
+    for title, page_type in (("来源", "source"), ("接口", "interface"), ("图型", "chart-type"),
+                             ("课题", "project")):
         lines.extend([f"## {title}", ""])
         append_pages([(path, meta) for path, meta in pages if meta.get("type") == page_type])
+    by_status("版式", "layout", LAYOUT_STATUSES)
     return "\n".join(lines).rstrip() + "\n"
 
 
