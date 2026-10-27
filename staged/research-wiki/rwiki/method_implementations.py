@@ -4,6 +4,7 @@ import json
 import re
 from pathlib import Path, PurePosixPath, PureWindowsPath
 
+from .confine import confined
 from .pages import read_page
 
 METHOD_KINDS = ('analysis', 'workflow', 'technical')
@@ -25,8 +26,8 @@ def _relative(value):
 
 def _asset_file(asset, relative):
     part = _relative(relative)
-    path = asset.joinpath(*part.parts).resolve()
-    if not path.is_relative_to(asset.resolve()):
+    path = asset.joinpath(*part.parts)
+    if not confined(path, asset, asset.parent.parent):
         raise ValueError('路径越过方法资产目录')
     if not path.is_file():
         raise FileNotFoundError(relative)
