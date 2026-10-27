@@ -61,8 +61,9 @@ def parser() -> argparse.ArgumentParser:
     guard.add_argument("--sync-ignore", action="store_true", help="重写知识库 .gitignore 的 GPL 托管块")
     gh_sub.add_parser("protect-baseline", help="生成或核验作者块字节基准（纯本地，不需要 gh）").add_argument(
         "--check", action="store_true", help="只核验，不写基准")
-    gh_sub.add_parser("tier", help="按改动路径与 .github/risk-tiers.json 计算风险档（纯本地，不需要 gh）").add_argument(
-        "--range", dest="rev_range", required=True, help="比较范围，如 origin/main..HEAD")
+    tier = gh_sub.add_parser("tier", help="按改动路径与 .github/risk-tiers.json 计算风险档（纯本地，不需要 gh）")
+    tier.add_argument("--range", dest="rev_range", required=True, help="比较范围，如 origin/main..HEAD")
+    tier.add_argument("--rules-ref", help="从哪个提交读规则（缺省为范围左端/merge-base，即 base 上的规则）")
     gh_sub.add_parser("preflight", help="只读检查 gh、账号、远端仓库、分支保护与待推送范围；有阻断项时退出 1")
     batch = gh_sub.add_parser("start-batch", help="从 origin/main 建长期分支与同名 Milestone")
     batch.add_argument("kind", help="project 或 ingest")
@@ -545,7 +546,7 @@ def _gh_dispatch(args, config) -> int:
     if verb == "tier":
         from . import risk
         print(json.dumps(risk.tier_report(Path(git(Path.cwd(), "rev-parse", "--show-toplevel").strip()),
-                                          args.rev_range), ensure_ascii=False, indent=2))
+                                          args.rev_range, args.rules_ref), ensure_ascii=False, indent=2))
         return 0
     if verb not in ("guard", "protect-baseline"):
         # finish-task、review、merge 作用于当前目录所在的检出（主检出或 worktree）。

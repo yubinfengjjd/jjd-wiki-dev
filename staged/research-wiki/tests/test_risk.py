@@ -5,6 +5,7 @@ from fnmatch import fnmatchcase
 import pytest
 
 from conftest import DEV_ROOT, commit_file, git_run, run_wiki, write_config
+from rwiki.errors import WikiError
 from rwiki.risk import changed_paths, glob_match, load_rules, risk_tier
 
 SEED = 20261102
@@ -106,6 +107,52 @@ def test_glob_double_star_semantics():
 def test_load_rules_missing_file_is_empty(tmp_path):
     assert load_rules(tmp_path) == {"high": [], "low": []}
     assert risk_tier(["README.md"], load_rules(tmp_path))[0] == "normal"
+
+
+def tier_of(work, config, rev_range="origin/main..HEAD"):
+    result = run_wiki(work, "--config", str(config), "gh", "tier", "--range", rev_range)
+    assert result.returncode == 0, result.stderr
+    return json.loads(result.stdout)
+
+
+@pytest.fixture
+def ruled_repo(git_pair, tmp_path):
+    """main 上已有规则：ghflow.py 为 high，review/** 为 low。"""
+    work = git_pair.work
+    rules = {"high": ["src/ghflow.py", ".github/**"], "low": ["review/**"]}
+    commit_file(work, ".github/risk-tiers.json", json.dumps(rules), "rules")
+    commit_file(work, "src/ghflow.py", "x = 1\n", "high file")
+    git_run(work, "push", "-q", "origin", "main")
+    return work, write_config(tmp_path / "c.json", tmp_path / "wiki")
+
+
+def test_rename_of_high_file_stays_high(ruled_repo):
+    work, config = ruled_repo
+    (work / "review").mkdir(exist_ok=True)
+    git_run(work, "mv", "src/ghflow.py", "review/ghflow.md")
+    git_run(work, "commit", "-q", "-m", "move away")
+    assert "src/ghflow.py" in changed_paths(work, "origin/main..HEAD")
+    assert tier_of(work, config)["tier"] == "high"
+
+
+def test_pr_cannot_lower_tier_by_editing_or_deleting_rules(ruled_repo):
+    work, config = ruled_repo
+    commit_file(work, ".github/risk-tiers.json", json.dumps({"high": [], "low": ["**"]}), "lower rules")
+    commit_file(work, "src/ghflow.py", "x = 2\n", "change high file")
+    report = tier_of(work, config)
+    assert report["tier"] == "high" and report["rules_ref"] == "origin/main"
+    git_run(work, "rm", "-q", ".github/risk-tiers.json")
+    git_run(work, "commit", "-q", "-m", "drop rules")
+    assert tier_of(work, config)["tier"] == "high"
+    assert tier_of(work, config, "origin/main...HEAD")["tier"] == "high"
+
+
+def test_rules_ref_missing_file_is_empty_and_bad_ref_is_error(ruled_repo):
+    work, _ = ruled_repo
+    first = git_run(work, "rev-list", "--max-parents=0", "HEAD").strip()
+    assert load_rules(work, first) == {"high": [], "low": []}
+    with pytest.raises(WikiError, match="不是有效提交"):
+        load_rules(work, "no-such-ref")
 
 
 def test_gh_tier_end_to_end(git_pair, tmp_path):
