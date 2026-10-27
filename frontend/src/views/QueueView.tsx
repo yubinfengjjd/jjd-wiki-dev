@@ -1,8 +1,9 @@
 import { isItem, ItemMeta, PageSummary, Status } from '../api';
 import { methodFigures } from '../figureModels';
 import type { AppData } from '../App';
-import { MethodCard, PlateCard } from '../components';
+import { MethodCard, PlateCard, RecipeCard } from '../components';
 import { DeleteArchived } from '../DeleteArchived';
+import { recipeOrigin } from '../recipes';
 import { queueOf } from '../workflow';
 
 const SECTIONS: { key: string; title: string; hint: string; dot: Status }[] = [
@@ -15,13 +16,13 @@ const SECTIONS: { key: string; title: string; hint: string; dot: Status }[] = [
   {
     key: 'confirm',
     title: '待你确认',
-    hint: '方法笔记或已完成回放的模板待你确认。模板请核对回放及数据来源，再在对话中确认，由 agent 标为可用。',
+    hint: '方法笔记、已完成回放的模板或原样运行已通过的配方待你确认。模板请核对回放及数据来源，再在对话中确认，由 agent 标为可用；配方读完用途、适用与许可后可在详情页确认。',
     dot: 'draft',
   },
   {
     key: 'agent',
     title: '等 agent 处理',
-    hint: '只列仍需制作、补齐关联或完成回放的工作。已有模板继续处理；来源与模板不重复计数，等待你确认的内容列在上一栏。',
+    hint: '只列仍需制作、补齐关联或完成回放的工作，以及待装包或待补齐的配方。已有模板继续处理；来源与模板不重复计数，等待你确认的内容列在上一栏。',
     dot: 'pending_template',
   },
   { key: 'archived', title: '已归档', hint: '不再被推荐。可打开详情恢复，或查看删除范围后永久删除 Wiki 条目；原始画廊保留。', dot: 'archived' },
@@ -41,6 +42,8 @@ export function QueueView({ data }: { data: AppData }) {
         outputs={data.flow.outputs(path).map((p) => ({ path: p, title: byPath.get(p)?.meta.title ?? p }))}
         figures={methodFigures(path, data.pages, data.graph, data.flow)}
       />
+    ) : meta.type === 'recipe' ? (
+      <RecipeCard key={path} path={path} meta={meta} number={i + 1} origin={recipeOrigin(meta, data.env.titles)} />
     ) : (
       <PlateCard key={path} path={path} meta={meta} number={i + 1} />
     );

@@ -36,7 +36,7 @@ export function methodFigureStatusLabel(figure: MethodFigure): string {
 
 function coversSource(template: TemplateMeta, source: LayoutMeta): boolean {
   const letters = source.template_panels[template.id] ?? [];
-  return template.layouts.includes(source.id) && source.templates.includes(template.id)
+  return (template.layouts ?? []).includes(source.id) && source.templates.includes(template.id)
     && source.templates.length === 1 && Object.keys(source.template_panels).length === 1
     && Object.keys(source.panels).length > 0 && letters.length === Object.keys(source.panels).length
     && template.chart_types.length === 1
@@ -89,11 +89,14 @@ export function methodDisplayFigures(figures: MethodFigure[]): MethodFigure[] {
 }
 
 export function templateSourceNote(meta: TemplateMeta, pages: PageSummary[], hiddenSources: Set<string> = new Set()): string {
-  const sources = meta.layouts.map((id) => `layouts/${id}.md`);
+  // v2 templates may carry no layouts at all; their provenance is a Wiki page in `sources`.
+  const sources = (meta.layouts ?? []).map((id) => `layouts/${id}.md`);
   if (sources.some((path) => pages.some((p) => p.path === path && p.meta.type === 'layout' && !isWholeSource(p.meta)))) {
     return '来源：已收录单 panel 图样';
   }
   if (sources.some((path) => hiddenSources.has(path))) return '历史单 panel 模板 · 整图来源已归档';
+  const recipes = (meta.sources ?? []).filter((s) => s.startsWith('recipes/')).map((s) => (s.endsWith('.md') ? s : `${s}.md`));
+  if (recipes.some((path) => pages.some((p) => p.path === path && p.meta.type === 'recipe'))) return '来源：已收录配方';
   return '来源记录待核查';
 }
 

@@ -6,7 +6,8 @@ export function DeleteArchived({ meta, onDeleted }: { meta: ItemMeta; onDeleted:
   const [busy, setBusy] = useState(false);
   const [checked, setChecked] = useState(false);
   const [error, setError] = useState('');
-  if (meta.status !== 'archived') return null;
+  // Backend deletion covers layouts, templates and methods only; an archived recipe stays restorable.
+  if (meta.status !== 'archived' || meta.type === 'recipe') return null;
   const inspect = async () => {
     setBusy(true); setError(''); setChecked(false);
     try { setPlan(await api.deletePlan(KIND_OF[meta.type], meta.id)); }

@@ -10,6 +10,8 @@ import { LogView } from './views/LogView';
 import { MethodsView } from './views/MethodsView';
 import { PageView } from './views/PageView';
 import { QueueView } from './views/QueueView';
+import { RecipesView } from './views/RecipesView';
+import { ScenariosView } from './views/ScenariosView';
 import { pendingCount as countPending } from './workflow';
 
 // The force-graph engine is the heaviest module; load it only when the network is opened.
@@ -50,6 +52,8 @@ function withEffectiveStatus(graph: GraphData, pages: PageSummary[]): GraphData 
 
 const NAV = [
   ['gallery', '图库'],
+  ['recipes', '配方'],
+  ['scenarios', '场景'],
   ['methods', '方法库'],
   ['graph', '知识网络'],
   ['queue', '待办'],
@@ -92,6 +96,8 @@ export function App() {
     const data: AppData = { pages, hiddenPages, graph, flow, env, taxonomy, reload };
     if (route.view === 'page') content = <PageView key={route.arg} path={route.arg} data={data} />;
     else if (route.view === 'methods') content = <MethodsView data={data} query={route.query} />;
+    else if (route.view === 'recipes') content = <RecipesView data={data} />;
+    else if (route.view === 'scenarios') content = <ScenariosView data={data} />;
     else if (route.view === 'graph') content = <Suspense fallback={null}><GraphView data={data} /></Suspense>;
     else if (route.view === 'queue') content = <QueueView data={data} />;
     else if (route.view === 'log') content = <LogView />;

@@ -116,6 +116,17 @@ export function ItemActions({ meta, run, busy, onDeleted, workflow }: ActionProp
               <button className="ghost" disabled={busy} onClick={() => setReasoning(true)}>退回修改</button>
             </div>
           )}
+          {meta.type === 'recipe' && meta.status !== 'archived' && (
+            <>
+              {workflow?.reason && <p className="muted">{workflow.reason}</p>}
+              {/* The backend re-checks the as-is run receipt; a refusal arrives as the page error. */}
+              {workflow?.queue === 'confirm' && (
+                <div className="panel-row">
+                  <button className="primary" disabled={busy} onClick={() => run(() => api.confirmRecipe(meta.id))}>确认</button>
+                </div>
+              )}
+            </>
+          )}
         </>
       )}
 

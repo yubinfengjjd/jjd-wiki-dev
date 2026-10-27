@@ -27,7 +27,8 @@ md.inline.ruler.before('link', 'wikilink', (state, silent) => {
   const inner = src.slice(open + 2, close);
   if (!inner || inner.includes('\n')) return false;
   if (!silent) {
-    const [target, label] = inner.split('|');
+    // `[[target\|label]]` is Obsidian's table-safe spelling of the alias pipe.
+    const [target, label] = inner.split(/\\?\|/);
     const token = state.push(embed ? 'wiki_embed' : 'wiki_link', '', 0);
     token.meta = { target: normalizeTarget(target), label: label?.trim() };
   }
@@ -56,6 +57,25 @@ md.renderer.rules.wiki_embed = (tokens, idx, _opts, env: RenderEnv) => {
   return md.renderer.rules.wiki_link!(tokens, idx, _opts, env, md.renderer);
 };
 
+/**
+ * A table row splits on every unescaped `|`, so a wikilink alias in a cell must be written
+ * `[[target\|label]]` (as Obsidian requires). Generated facts tables (scenario picks) write
+ * `[[target|label]]`; escape those pipes in table rows outside fenced code before rendering.
+ */
+export function escapeTableWikilinks(src: string): string {
+  let fence = '';
+  return src.split('\n').map((line) => {
+    const marker = /^[ \t]{0,3}(`{3,}|~{3,})/.exec(line)?.[1][0];
+    if (marker) {
+      if (!fence) fence = marker;
+      else if (marker === fence) fence = '';
+      return line;
+    }
+    if (fence || !/^[ \t]*\|/.test(line)) return line;
+    return line.replace(/\[\[([^\]\n]+?)\]\]/g, (_, inner: string) => `[[${inner.replace(/(?<!\\)\|/g, '\\|')}]]`);
+  }).join('\n');
+}
+
 const USER_BLOCK = /<!-- user:start -->\n?([\s\S]*?)<!-- user:end -->\n?/;
 const MARKERS = /<!-- (facts|user):(start|end) -->\n?/g;
 
@@ -73,7 +93,7 @@ export function renderBody(body: string, env: RenderEnv, {
   foldMethodDetails = false,
   dropSections = [] as string[],
 } = {}): string {
-  let src = body.replace(/^# .*\r?\n/, '');
+  let src = escapeTableWikilinks(body.replace(/^# .*\r?\n/, ''));
   if (dropUser) src = src.replace(USER_BLOCK, '');
   const facts = src.match(/<!-- facts:start -->([\s\S]*?)<!-- facts:end -->\r?\n?/);
   if (dropFacts) src = src.replace(/<!-- facts:start -->[\s\S]*?<!-- facts:end -->\r?\n?/, '');
@@ -102,7 +122,7 @@ export function renderBody(body: string, env: RenderEnv, {
 }
 
 export function renderMarkdown(src: string, env: RenderEnv): string {
-  return md.render(src, env);
+  return md.render(escapeTableWikilinks(src), env);
 }
 
 function methodSectionText(body: string, title: string): string {

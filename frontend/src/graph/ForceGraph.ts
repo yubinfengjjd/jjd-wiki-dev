@@ -40,8 +40,9 @@ const FIT_MIN = 280;
 
 function radiusOf(type: PageType, degree: number) {
   if (IS_HUB(type)) return 6 + Math.sqrt(degree) * 1.6;
-  if (type === 'layout') return 4 + Math.sqrt(degree) * 0.5;
-  if (type === 'template' || type === 'method') return 3.4 + Math.sqrt(degree) * 0.5;
+  // A source library or scenario links to many recipes/picks; size it by degree like a layout.
+  if (type === 'layout' || type === 'source' || type === 'scenario') return 4 + Math.sqrt(degree) * 0.5;
+  if (type === 'template' || type === 'method' || type === 'recipe') return 3.4 + Math.sqrt(degree) * 0.5;
   if (type === 'interface' || type === 'project') return 3.6;
   return 2.6;
 }

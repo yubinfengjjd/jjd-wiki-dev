@@ -1,10 +1,11 @@
 import { PointerEvent, ReactNode, useRef, useState } from 'react';
-import { imageOf, previewOf, workflowOf, displayStatus, effectiveStatus, ImplementationStatus, ItemMeta, LayoutMeta, MethodMeta, PageMeta, PageType, STATUS_LABEL, Status, TemplateMeta } from './api';
+import { imageOf, previewOf, workflowOf, displayStatus, effectiveStatus, ImplementationStatus, ItemMeta, LayoutMeta, MethodMeta, PageMeta, PageType, RecipeMeta, STATUS_LABEL, Status, TemplateMeta } from './api';
 import { pageLink } from './nav';
 import { figureLabel, MethodFigure, methodFigureStatusLabel, methodPlateFigures, SourceLink } from './figureModels';
 import { CodeButton } from './CodeViewer';
 import { COMPATIBILITY_LABEL } from './relations';
 import { verifiedImplementations } from './methods';
+import { isNonCommercial, licenseLabel } from './recipes';
 
 export function StatusBadge({ status, label }: { status: Status; label?: string }) {
   return <span className={`badge status-${status}`}>{label ?? STATUS_LABEL[status]}</span>;
@@ -32,6 +33,11 @@ const HINT: Record<ItemMeta['type'], Partial<Record<Status, string>>> = {
   method: {
     draft: '笔记待完成或待你确认。',
     ready: '笔记已确认，具体实现按各自验证记录判断。',
+    archived: '已归档，不会被推荐。',
+  },
+  recipe: {
+    draft: '已入库，原样运行通过后待你确认。',
+    ready: '已确认，可原样运行；运行通过不等于科学有效。',
     archived: '已归档，不会被推荐。',
   },
 };
@@ -64,10 +70,12 @@ interface CardShell {
   note?: string;
   sourceLinks?: SourceLink[];
   execution?: string;
+  /** Extra marks beside the status badge, e.g. a recipe's licence. */
+  badges?: ReactNode;
 }
 
 /** Card stock with a figure plate on the front and a summary on the back. */
-function Card({ path, meta, number, label, plate, back, note, sourceLinks, execution }: CardShell) {
+function Card({ path, meta, number, label, plate, back, note, sourceLinks, execution, badges }: CardShell) {
   const [flipped, setFlipped] = useState(false);
   const plateRef = useRef<HTMLDivElement>(null);
   const link = pageLink(path, () => plateRef.current);
@@ -88,6 +96,7 @@ function Card({ path, meta, number, label, plate, back, note, sourceLinks, execu
             {note && <p className="caption-note muted small">{note}</p>}
             <div className="caption-foot">
               <StatusBadge status={effectiveStatus(meta)} label={displayStatus(meta)} />
+              {badges}
               {execution && <span className="method-execution small">{execution}</span>}
               {'language' in meta && <span className="lang">{LANGUAGE[meta.language] ?? meta.language}</span>}
             </div>
@@ -127,7 +136,8 @@ export function FigureImage({ meta }: { meta: PageMeta }) {
   const src = imageOf(meta);
   const [failed, setFailed] = useState(false);
   const preview = previewOf(meta);
-  if (!src || failed) return <span className="preview-empty">暂无预览图</span>;
+  // A recipe's picture is only ever its latest passing as-is run; there is no stand-in.
+  if (!src || failed) return <span className="preview-empty">{meta.type === 'recipe' ? '暂无运行图' : '暂无预览图'}</span>;
   return <>
     <img key={src} src={src} alt={preview?.label ?? '图样预览'} loading="lazy" onError={() => setFailed(true)} />
     {meta.type === 'template' && (preview?.kind === 'source' || preview?.kind === 'stale') && <span className="preview-label">{preview.label}</span>}
@@ -154,13 +164,67 @@ export function PlateCard({ path, meta, number, note, asStyle = false, sourceLin
               <dd>{Object.keys(meta.panels).length} 个逻辑 panel；{meta.templates.length ? `已有 ${meta.templates.length} 个可调用模板` : '可调用模板尚待制作'}</dd>
             </>
           )}
-          {meta.type === 'template' && (
+          {/* v2 templates derived from a recipe have no source panels; their origin is the front note. */}
+          {meta.type === 'template' && !!meta.panels?.length && (
             <>
               <dt>出自</dt>
               <dd>原图面板 {meta.panels.join('、')}</dd>
             </>
           )}
           {meta.tags.length > 0 && (
+            <>
+              <dt>标签</dt>
+              <dd>{meta.tags.join('、')}</dd>
+            </>
+          )}
+        </>
+      }
+    />
+  );
+}
+
+/** Non-commercial licences read as "非商业" at a glance; the SPDX id stays in the tooltip. */
+export function LicenseBadge({ license }: { license: string | null | undefined }) {
+  return (
+    <span className={isNonCommercial(license) ? 'license-badge nc' : 'license-badge'} title={license ? `许可证：${license}` : '许可证未记录'}>
+      {licenseLabel(license)}
+    </span>
+  );
+}
+
+interface RecipeProps {
+  path: string;
+  meta: RecipeMeta;
+  number: number;
+  /** Source library and upstream item, e.g. "FigureYa · FigureYa59volcanoV2". */
+  origin: string;
+}
+
+/** A recipe's plate is its latest passing as-is run; the licence travels with it on the front. */
+export function RecipeCard({ path, meta, number, origin }: RecipeProps) {
+  const commit = meta.source?.commit ? String(meta.source.commit).slice(0, 12) : '';
+  return (
+    <Card
+      path={path}
+      meta={meta}
+      number={number}
+      label="配方"
+      note={origin ? `来源：${origin}` : undefined}
+      badges={<LicenseBadge license={meta.license} />}
+      plate={<FigureImage key={imageOf(meta)} meta={meta} />}
+      back={
+        <>
+          <dt>来源</dt>
+          <dd>{origin || '未记录'}{commit && ` · commit ${commit}`}</dd>
+          <dt>许可证</dt>
+          <dd>{meta.license || '未记录'}{isNonCommercial(meta.license) && '（仅限非商业使用）'}</dd>
+          {!!meta.chart_types?.length && (
+            <>
+              <dt>图型</dt>
+              <dd>{meta.chart_types.join('、')}</dd>
+            </>
+          )}
+          {!!meta.tags?.length && (
             <>
               <dt>标签</dt>
               <dd>{meta.tags.join('、')}</dd>

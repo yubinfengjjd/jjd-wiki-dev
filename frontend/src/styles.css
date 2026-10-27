@@ -19,6 +19,7 @@
   --plum: #7b3f73;
   --slate: #5d7a8c;
   --faint: #c4cad1;
+  --teal: #2a6f77;
   --danger: #b4232f;
   --serif: 'Noto Serif SC', 'Songti SC', 'SimSun', serif;
   --sans: 'Archivo Variable', 'Microsoft YaHei', 'PingFang SC', sans-serif;
@@ -516,6 +517,79 @@ input[type='checkbox'] {
 
 .type-project {
   --c: var(--indigo);
+}
+
+/* v2: recipes teal discs, source libraries muted squares, research scenarios green diamonds */
+
+.type-recipe {
+  --c: var(--teal);
+}
+
+.type-source {
+  --c: var(--muted);
+}
+
+.type-scenario {
+  --c: var(--hub);
+}
+
+.mark.type-source {
+  border-radius: 1px;
+}
+
+.mark.type-scenario {
+  border-radius: 1px;
+  scale: 0.8;
+  rotate: 45deg;
+}
+
+.license-badge {
+  border: 1px solid var(--rule);
+  border-radius: 4px;
+  padding: 0 6px;
+  font-size: 12px;
+  color: var(--muted);
+  white-space: nowrap;
+}
+
+.license-badge.nc {
+  border-color: currentColor;
+  color: var(--ochre);
+}
+
+.scenario-list {
+  list-style: none;
+  margin: 24px 0 0;
+  padding: 0;
+  border-top: 1px solid var(--ink);
+}
+
+.scenario-entry {
+  padding: 18px 0;
+  border-bottom: 1px solid var(--rule);
+}
+
+.scenario-entry h2 {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+}
+
+.scenario-entry > p {
+  margin: 8px 0;
+}
+
+.scenario-picks {
+  margin: 8px 0 10px;
+  padding-left: 20px;
+}
+
+.scenario-picks li {
+  margin: 4px 0;
+}
+
+.scenario-picks .mark {
+  margin-right: 6px;
 }
 
 .badge {
