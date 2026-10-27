@@ -454,7 +454,8 @@ def cmd_pr(state, args):
         if expected and expected != pr["headRefOid"]:
             fail("GraphQL: Head branch was modified. Review and try the merge again. (mergePullRequest)")
         pr["state"] = "MERGED"
-        pr["mergeCommit"] = {"oid": state.get("merge_oid", "f" * 40)}
+        # 默认等同快进合并：合并提交即 head，本地分支是它的祖先（after_task_merge 会核对）。
+        pr["mergeCommit"] = {"oid": state.get("merge_oid", pr["headRefOid"])}
         if options.get("--delete-branch"):
             state.setdefault("deleted_branches", []).append(pr["headRefName"])
         return
