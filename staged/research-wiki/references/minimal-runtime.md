@@ -130,10 +130,10 @@ templates/<template-id>/verify/runtime-portability.json
 - 模块目录取当前被 source 文件（从最内层 frame 的 `ofile` 开始查），不能取外层课题 driver；不支持 `sys.source` 无 `ofile` 时，使用 `chdir=TRUE` 或显式说明限制。
 - 调用前后保存 `search()` 与 `options()`；只 detach 本次新增的包，按依赖逆序重试；不 detach 用户原有包，不 unload namespace。成功和异常路径都验证，diagnostics 写实际 `search_restored/options_restored`。
 
-## 与入库八步的关系
+## 与方法收录四步的关系
 
-- 第 5 步（提炼）产出 `runtime.json` 和复制清单。
-- 第 6 步（验证）同时产出算法对照与独立性收据；缺包保持 `not_run`。
-- 第 8 步（验收）核对算法与独立性两个轴，不能互相代替。
+- 第 3 步（提炼与验证）产出 `runtime.json`、复制清单、算法对照与独立性收据；缺包保持 `not_run`，装包按批次经作者批准。
+- 第 4 步（知识整合与确认）核对算法与独立性两个轴，不能互相代替。
+- L1 配方不写 `runtime.json`：它的依赖记在配方页 `packages`，运行证据是 `runs/` 收据（见 [来源与配方契约](sources-and-recipes.md)）。
 
-细节规则以总库 `AGENTS.md` 为准。
+底线以总库 `AGENTS.md` 为准；`runtime.json` 与独立性证据的细则以本页为准。

@@ -15,6 +15,7 @@ wiki.py render <template-id> --data <project-data-dir> --bindings <project>/bind
 - 不给 `--bindings`：仍读取 `<data>/<interface>.csv` 并按列名检查，旧调用/回放完全兼容。
 - 给 `--bindings`：在输出目录建立本次运行的临时规范表，内层 render 脚本仍读取 `<interface>.csv`；运行结束清理临时表。
 - 标准文件名只是内部约定，不是作者原表的命名要求。
+- `use <模板 id> --project <课题>` 会在副本写 `bindings.draft.json`：每张表 `file` 为 `<接口>.csv`、列为同名映射。把右侧改成课题的文件名与列名，另存为 `bindings.json` 再传给 `--bindings`。
 - 本轮 bindings 只用于单模板 `render`；`render-layout` 组合入口仍按 `layout.json` 读取全部面板表，不支持 bindings 或省略可选表。
 
 ## bindings 格式
