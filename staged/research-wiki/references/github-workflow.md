@@ -47,7 +47,7 @@ v2（2026-10-27）起，Issue / PR / 他人评审是可选流程：知识库可�
 |---|---|---|---|
 | `preflight` | — | 只读输出 JSON：gh 路径/版本、账号、owner、两仓库存在性与可见性、分支保护探测（403 → `local`）、本地分支与未提交数、待推送范围、guard 干跑、`DEV_DEPLOY_KEY` 是否已设；有阻断项退出 1 | gh 可用 |
 | `bootstrap` | `[--confirm]` | 首推。无 `--confirm` 只输出授权摘要、不做网络写；`--confirm` 时 `master` 改名 `legacy/master`、构造 `main`（dev 过滤重放、vault 快照）、只移动 HEAD 与索引切到 `main`、安装 hook、建私有仓库并推送、建 Label、deploy key 与 secret、探测/配置分支保护 | preflight 无阻断；`--confirm` 需用户一次性明确授权 |
-| `install-hook` | `[--repo dev\|vault]` | 写 pre-push hook（调用 `gh guard --pre-push`）；缺省为当前目录所在仓库；已有非本工具 hook 时拒绝覆盖 | 无（不需要 gh） |
+| `install-hook` | `[--repo dev\|vault]` | 写 pre-push hook（调用 `gh guard --pre-push`）：优先调用部署副本 `~/.agents/skills/research-wiki/` 的 `wiki.py` 与 `config.json`，不随主检出切分支或改坏而变；副本缺失时退回当前检出并警告（先运行 `tools/deploy.py`）；输出含所用 `wiki_py` 与 `source`；缺省为当前目录所在仓库；已有非本工具 hook 时拒绝覆盖 | 无（不需要 gh） |
 | `start-batch` | `<project\|ingest> <名称> --title <中文标题> --repo dev\|vault` | 从 `origin/main` 建长期分支、同名 Milestone，经 guard 推送 | 已 bootstrap |
 | `start-task` | `<批次> <阶段> <主题> --title <Issue 标题> [--worktree]` | 建 Issue（`rwiki-task` 标记、Milestone、`type:*`/`stage:*`/`status:进行中`），创建任务分支并取得写入锁；`--worktree` 在 `worktree_root` 下建独立检出并输出 `RWIKI_WIKI_ROOT` | 批次存在；已设 `RWIKI_AGENT` |
 | `finish-task` | `[--local-report <文件>]` | 经 guard 推送任务分支，开 PR 到所属长期分支，正文按 PR 模板填 `Refs #n`、本地专属验证、受保护字节核验；Issue 改 `status:待评审` | 在 task 分支；无未提交的已跟踪改动 |

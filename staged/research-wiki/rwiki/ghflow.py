@@ -45,6 +45,9 @@ PR_FIELDS = "number,state,url,headRefName,baseRefName,headRefOid,reviews,comment
 NO_LOCAL_REPORT = "未运行：本 PR 不涉及仅本地运行的检查。"
 WIKI_PY = Path(__file__).resolve().parents[1] / "wiki.py"
 HOOK_MARK = "# rwiki pre-push hook：由 wiki.py gh install-hook / bootstrap 写入，不入库"
+# hook 优先调用部署副本（tools/deploy.py 写入），不随主检出切分支或改坏而变。
+DEPLOYED_SKILL = Path.home() / ".agents" / "skills" / "research-wiki"
+DEPLOYED_ENV = "RWIKI_DEPLOYED_SKILL"
 LEGACY_BRANCH = "legacy/master"
 REPO_FILES = (".gitignore", ".gitattributes", ".push-guard-allow")
 DEPLOY_KEY_TITLE = "rwiki-vault-ci"
@@ -905,17 +908,41 @@ def switch_to_main(repo: Path) -> int:
     return len(after)
 
 
-def install_hook(repo: Path, config_path: Path) -> Path:
-    """写 <git-common-dir>/hooks/pre-push：本解释器 + 本 wiki.py 的 gh guard --pre-push（hook 不入库，可重复运行）。"""
+def deployed_skill() -> Path:
+    """部署副本目录（tools/deploy.py 写入）；RWIKI_DEPLOYED_SKILL 可替换，供测试用。"""
+    return Path(os.environ.get(DEPLOYED_ENV) or DEPLOYED_SKILL)
+
+
+def hook_entry(config_path: Path, deployed: Path | None = None) -> dict:
+    """hook 调用的 wiki.py 与 config.json：优先部署副本，缺 wiki.py / config.json 时退回当前检出并警告。"""
+    deployed = deployed_skill() if deployed is None else Path(deployed)
+    if (deployed / "wiki.py").is_file() and (deployed / "config.json").is_file():
+        return {"source": "deployed", "wiki_py": str(deployed / "wiki.py"), "config": str(deployed / "config.json")}
+    print(f"警告：未找到完整的部署副本 {deployed}（需要 wiki.py 与 config.json），pre-push hook 将调用当前检出的"
+          f" {WIKI_PY}；检出切到旧分支或代码改坏时 hook 也跟着失效。建议先运行 tools/deploy.py 再重装 hook。",
+          file=sys.stderr)
+    return {"source": "checkout", "wiki_py": str(WIKI_PY), "config": str(config_path.resolve())}
+
+
+def install_hook(repo: Path, config_path: Path, entry: dict | None = None) -> Path:
+    """写 <git-common-dir>/hooks/pre-push：本解释器 + 部署副本（缺失时当前检出）的 gh guard --pre-push
+    （hook 不入库，可重复运行）。"""
+    entry = entry or hook_entry(config_path)
     hook = Path(git(repo, "rev-parse", "--path-format=absolute", "--git-path", "hooks").strip()) / "pre-push"
     if hook.is_file() and HOOK_MARK not in hook.read_text(encoding="utf-8", errors="replace"):
         raise WikiError(f"{hook} 已存在且不是本工具写入的 hook；请先人工合并或移走它")
     hook.parent.mkdir(parents=True, exist_ok=True)
-    hook.write_text("#!/bin/sh\n" + HOOK_MARK + "\n"
-                    f'exec "{Path(sys.executable).as_posix()}" -X utf8 "{WIKI_PY.as_posix()}" '
-                    f'--config "{config_path.resolve().as_posix()}" gh guard --pre-push "$1" "$2"\n',
+    hook.write_text("#!/bin/sh\n" + HOOK_MARK + "\n" + f"# 来源：{entry['source']}\n"
+                    f'exec "{Path(sys.executable).as_posix()}" -X utf8 "{Path(entry["wiki_py"]).as_posix()}" '
+                    f'--config "{Path(entry["config"]).as_posix()}" gh guard --pre-push "$1" "$2"\n',
                     encoding="utf-8", newline="\n")
     return hook
+
+
+def install_hook_report(repo: Path, config_path: Path) -> dict:
+    """gh install-hook 的输出：hook 路径 + 所用 wiki.py / config.json 及来源。"""
+    entry = hook_entry(config_path)
+    return {"hook": str(install_hook(repo, config_path, entry)), **entry}
 
 
 # ---- bootstrap ----

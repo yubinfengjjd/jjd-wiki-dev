@@ -554,8 +554,8 @@ def _gh_dispatch(args, config) -> int:
             "close-batch": lambda: ghflow.close_batch(config, args.batch),
             "migrate-legacy": lambda: ghflow.migrate_legacy(config, args.mapping, args.dry_run),
             "bootstrap": lambda: ghflow.bootstrap(config, args.confirm, args.config),
-            "install-hook": lambda: {"hook": str(ghflow.install_hook(
-                ghflow.repo_root(config, args.repo) if args.repo else checkout(), args.config))},
+            "install-hook": lambda: ghflow.install_hook_report(
+                ghflow.repo_root(config, args.repo) if args.repo else checkout(), args.config),
         }[verb]()
         print(json.dumps(result, ensure_ascii=False, indent=2))
         return 1 if verb in ("preflight", "bootstrap") and result.get("blockers") else 0

@@ -58,6 +58,12 @@ def vault_root() -> Path:
     return root
 
 
+@pytest.fixture(autouse=True)
+def no_deployed_skill(monkeypatch, tmp_path_factory):
+    """install_hook 默认找 ~/.agents 的部署副本；测试一律指向不存在的目录，免得 hook 调用本机部署副本。"""
+    monkeypatch.setenv("RWIKI_DEPLOYED_SKILL", str(tmp_path_factory.getbasetemp() / "no-deployed-skill"))
+
+
 def pytest_collection_modifyitems(items):
     for item in items:
         if LOCAL_FIXTURES & set(item.fixturenames):
