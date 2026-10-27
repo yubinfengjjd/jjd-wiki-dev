@@ -113,6 +113,9 @@ def test_confirm_builds_main_pushes_and_enters_local_gate_on_403(fresh, fake_gh)
     state = fake_gh.state()
     assert [(key["title"], key["read_only"]) for key in state["repos"][NAMES["dev"]]["deploy_keys"]] == [
         ("rwiki-vault-ci", True)]
+    # gh 2.103：deploy-key add 默认只读，不传已移除的 --read-only，也不传 --allow-write。
+    [added] = [call for call in fake_gh.calls() if call[:3] == ["repo", "deploy-key", "add"]]
+    assert "--read-only" not in added and "--allow-write" not in added
     assert state["repos"][NAMES["vault"]]["secrets"] == ["DEV_DEPLOY_KEY"]
     # 重跑：每步先查后建，不再有远端写操作，分支不变。
     before, heads = len(fake_gh.calls()), {key: git_run(repo, "rev-parse", "main") for key, repo in fresh.repos.items()}

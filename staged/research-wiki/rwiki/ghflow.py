@@ -62,7 +62,9 @@ def gh(args: list[str], cwd: Path) -> str:
 
 
 def gh_json(args: list[str], cwd: Path) -> object:
-    return json.loads(gh(args, cwd))
+    # 真实 gh 在列表为空时（如没有 deploy key）输出空串而不是 []。
+    out = gh(args, cwd)
+    return json.loads(out) if out.strip() else []
 
 
 def gh_body(args: list[str], body: str, cwd: Path) -> str:
@@ -357,7 +359,8 @@ def set_status(repo: Path, issue: int, status: str) -> None:
 
 
 def pr_checks(repo: Path, pr: int) -> list[dict]:
-    """gh pr checks 在有失败或等待中的检查时退出 1/8、没有检查时报错；这里只取它输出的 JSON。"""
+    """gh pr checks --json 只导出 JSON 并退出 0（失败与等待中体现在 bucket，退出码 1/8 只用于表格输出）；
+    没有检查时报错退出 1、stdout 为空，这里得到 []，由门禁判为“没有 CI 检查结果”。"""
     result = subprocess.run([shutil.which("gh"), "pr", "checks", str(pr), "--json", "name,bucket"], cwd=repo,
                             capture_output=True, text=True, encoding="utf-8", errors="replace")
     return json.loads(result.stdout) if result.stdout.strip() else []
@@ -985,7 +988,10 @@ def bootstrap_remote(cfg, repo: Path, key: str, name: str) -> dict:
 
 
 def setup_deploy_key(dev: Path, vault: Path, dev_name: str, vault_name: str) -> str:
-    """只读 deploy key 加到 dev、私钥存为 vault 的 DEV_DEPLOY_KEY；临时密钥写在 TEMP 下并在结束时删除。"""
+    """只读 deploy key 加到 dev、私钥存为 vault 的 DEV_DEPLOY_KEY；临时密钥写在 TEMP 下并在结束时删除。
+
+    gh 2.103 的 deploy-key add 默认只读（没有 --read-only，写权限才需 --allow-write）；deploy-key list --json
+    不按字段筛选、原样输出 REST 形状，没有 key 时输出空串（gh_json 得到 []）。"""
     titles = {item["title"] for item in gh_json(["repo", "deploy-key", "list", "--repo", dev_name, "--json", "title"],
                                                 dev)}
     secrets = {item["name"] for item in gh_json(["secret", "list", "--repo", vault_name, "--json", "name"], vault)}
@@ -997,7 +1003,7 @@ def setup_deploy_key(dev: Path, vault: Path, dev_name: str, vault_name: str) -> 
         key = Path(folder) / "id_ed25519"
         run([shutil.which("ssh-keygen"), "-q", "-t", "ed25519", "-N", "", "-C", DEPLOY_KEY_TITLE, "-f", str(key)], dev)
         gh(["repo", "deploy-key", "add", str(key.with_suffix(".pub")), "--repo", dev_name,
-            "--title", DEPLOY_KEY_TITLE, "--read-only"], dev)
+            "--title", DEPLOY_KEY_TITLE], dev)
         result = subprocess.run([shutil.which("gh"), "secret", "set", DEPLOY_SECRET, "--repo", vault_name],
                                 cwd=vault, input=key.read_bytes(), capture_output=True)
         if result.returncode:
