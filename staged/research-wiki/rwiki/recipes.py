@@ -414,6 +414,42 @@ def _run_in(config: Config, directory: Path, meta: dict, timeout: int, scope: st
     }
 
 
+# One line: on Windows `Rscript -e` drops everything after an embedded newline.
+PDF_PREVIEW_R = (
+    "args <- commandArgs(TRUE); "
+    "if (!requireNamespace('pdftools', quietly = TRUE)) stop('rwiki: missing packages: pdftools', call. = FALSE); "
+    "invisible(pdftools::pdf_convert(args[1], format = 'png', pages = 1, dpi = 150, filenames = args[2],"
+    " verbose = FALSE))")
+
+
+def pdf_preview(config: Config, pdf: Path, out: Path, timeout: int = 120) -> str:
+    """Render page 1 of `pdf` to `out` with pdftools in the Wiki R env; '' on success, else the reason."""
+    out.unlink(missing_ok=True)
+    try:
+        done = subprocess.run([str(config.rscript_exe), "--vanilla", "-e", PDF_PREVIEW_R, str(pdf), str(out)],
+                              capture_output=True, text=True, encoding="utf-8", errors="replace",
+                              env=_r_env(config), timeout=timeout)
+    except (OSError, subprocess.TimeoutExpired) as error:
+        return str(error)[:300]
+    if done.returncode == 0 and out.is_file() and out.stat().st_size > 0:
+        return ""
+    return (done.stderr.strip().splitlines() or [f"exit {done.returncode}"])[-1][:300]
+
+
+def _pdf_fallback(config: Config, work: Path, receipt: dict) -> tuple[Path | None, dict | None]:
+    """Upstream modules that only call pdf(): preview page 1 of the first declared (else new) PDF output."""
+    produced = [name for name in receipt["outputs"] if name.lower().endswith(".pdf")]
+    declared = [name for name in receipt["expected_outputs"] if name in produced]
+    for name in [*declared, *sorted(set(produced) - set(declared))]:
+        out = work / "rwiki-figure" / "_rwiki_pdf_preview.png"
+        out.parent.mkdir(exist_ok=True)
+        reason = pdf_preview(config, work / name, out)
+        if not reason:
+            return out, {"from": name, "page": 1, "kind": "pdf"}
+        receipt["checks"].append(f"{name} 转预览图失败：{reason}")
+    return None, None
+
+
 def run_recipe(config: Config, recipe_id: str, timeout: int = 1200) -> dict:
     page, meta, _ = load_recipe(config, recipe_id)
     errors = integrity_errors(page)
@@ -427,6 +463,13 @@ def run_recipe(config: Config, recipe_id: str, timeout: int = 1200) -> dict:
     work = config.work_root / "runs" / recipe_id / stamp
     shutil.copytree(target / "source", work)
     receipt = _run_in(config, work, meta, timeout, "as-is", original, in_place=False)
+    picture = None
+    if receipt["state"] == "pass":
+        if receipt["figures"]:
+            picture = work / receipt["figures"][-1]
+            receipt["preview"] = {"from": receipt["figures"][-1], "kind": "png"}
+        else:
+            picture, receipt["preview"] = _pdf_fallback(config, work, receipt)
     receipt["workdir"] = f"<work_root>/runs/{recipe_id}/{stamp}"
     receipt = _sanitize(receipt, config, {work: "<workdir>"})
     (target / "runs").mkdir(exist_ok=True)
@@ -434,8 +477,8 @@ def run_recipe(config: Config, recipe_id: str, timeout: int = 1200) -> dict:
         json.dumps(receipt, ensure_ascii=False, indent=2) + "\n", encoding="utf-8", newline="\n")
     for old in sorted((target / "runs").glob("*.json"))[:-KEEP_RECEIPTS]:
         old.unlink()
-    if receipt["state"] == "pass" and receipt["figures"]:
-        shutil.copyfile(work / receipt["figures"][-1], target / "preview.png")
+    if picture is not None:
+        shutil.copyfile(picture, target / "preview.png")
     return receipt
 
 
@@ -634,5 +677,8 @@ def recipe_facts(config: Config, meta: dict) -> str:
              f"- 最近运行：{run}",
              f"- 派生模板（L2）：{' · '.join(derived) or '暂无'}"]
     if (target / "preview.png").is_file():
-        lines.append(f"- 运行预览（最近一次通过的原样运行，自动截取最后一张图）：\n\n![[recipes/{meta['id']}/preview.png]]")
+        source = (receipt or {}).get("preview") or {}
+        how = (f"取自 `{source['from']}` 第 1 页" if source.get("kind") == "pdf"
+               else "自动截取最后一张图")
+        lines.append(f"- 运行预览（最近一次通过的原样运行，{how}）：\n\n![[recipes/{meta['id']}/preview.png]]")
     return "\n".join(lines) + "\n"

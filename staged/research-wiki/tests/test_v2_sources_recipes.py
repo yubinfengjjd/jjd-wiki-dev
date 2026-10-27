@@ -399,3 +399,46 @@ def test_runner_knits_in_global_env(tmp_path):
                             cwd=tmp_path, capture_output=True, text=True, encoding="utf-8", errors="replace")
     assert result.returncode == 0, result.stderr
     assert json.loads((tmp_path / "rwiki-session.json").read_text(encoding="utf-8"))["status"] == "ok"
+
+
+WIKI_R_LIB = Path("E:/research-wiki-env/R-lib/figureya")
+
+
+def _pdf_only_run(tmp_path, r_libs):
+    from types import SimpleNamespace
+
+    work = tmp_path / "work"
+    work.mkdir()
+    subprocess.run([str(RSCRIPT), "--vanilla", "-e", "pdf('only.pdf'); plot(1:3); invisible(dev.off())"],
+                   cwd=work, check=True, capture_output=True)
+    config = SimpleNamespace(rscript_exe=RSCRIPT, r_libs=r_libs, work_root=tmp_path / "wr")
+    receipt = {"outputs": {"only.pdf": "x", "table.csv": "y"}, "expected_outputs": ["only.pdf"], "checks": []}
+    return config, work, receipt
+
+
+@needs_r
+@pytest.mark.skipif(not (WIKI_R_LIB / "pdftools").is_dir(), reason="Wiki 专用库里没有 pdftools")
+def test_pdf_only_module_gets_preview_from_first_page(tmp_path):
+    """Upstream modules that only call pdf() still get a run picture: page 1 of the declared PDF."""
+    from PIL import Image
+    from rwiki.recipes import _pdf_fallback
+
+    config, work, receipt = _pdf_only_run(tmp_path, [WIKI_R_LIB])
+    picture, preview = _pdf_fallback(config, work, receipt)
+    assert preview == {"from": "only.pdf", "page": 1, "kind": "pdf"}
+    with Image.open(picture) as image:
+        assert image.format == "PNG" and min(image.size) > 100
+    assert receipt["checks"] == []
+
+
+@needs_r
+def test_pdf_preview_failure_is_recorded_not_fatal(tmp_path):
+    from rwiki.recipes import _pdf_fallback
+
+    config, work, receipt = _pdf_only_run(tmp_path, [tmp_path / "no-such-lib"])
+    if any((Path(path) / "pdftools").is_dir() for path in subprocess.run(
+            [str(RSCRIPT), "--vanilla", "-e", "cat(.Library, sep='\\n')"],
+            capture_output=True, text=True).stdout.splitlines()):
+        pytest.skip("R 自带库里已有 pdftools")
+    assert _pdf_fallback(config, work, receipt) == (None, None)
+    assert receipt["checks"] and "only.pdf 转预览图失败" in receipt["checks"][0]
