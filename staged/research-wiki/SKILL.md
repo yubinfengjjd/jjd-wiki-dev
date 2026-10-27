@@ -48,7 +48,8 @@ medfig-render、medpaper-pipeline 出图前先 `rwiki find`：有可用模板或
 
 - “处理待办”：`rwiki pending --json` 列出 agent 动作与待作者确认项；继续已有草稿，不重复新建。确认前 `rwiki check-entry <id>` 查缺项。
 - `rwiki lint` 只查结构。写操作最后 `rwiki save "<说明>"`（多数命令自带）；本地 main 可直接 save。
-- GitHub Issue/PR/评审是可选流程；`wiki.py gh` 的全部子命令见 references/github-workflow.md。
+- GitHub Issue/PR/评审是可选流程，推送 GitHub 时用：`gh start-task --worktree`（从 `origin/main` 切）→ `gh finish-task`（PR 到 `main`）→ 非编码 agent `gh review` → `gh merge`；批次只是 Milestone。`gh tier --range origin/main...HEAD` 自查风险档：`risk:low` CI 即合，`risk:normal` 再要 pass 评审，`risk:high` 同 normal，`high_requires_owner` 为 true 时再要 `owner-approved`（只由作者在网页添加，agent 禁止添加）。全部子命令、门禁与 `--repo` 见 references/github-workflow.md。
+- `config.json` 的 `env` 段给出代理与 gh 路径（`vars`、`path_prepend`），`wiki.py` 启动时自动设置；`install-hook` 的 hook 调用已部署副本，guard 改动部署后才生效。
 
 ## 常见错误
 
@@ -72,4 +73,4 @@ medfig-render、medpaper-pipeline 出图前先 `rwiki find`：有可用模板或
 - references/code-assets.md：原生代码与网页查看代码
 - references/project-reuse.md、references/project-state.md：课题推荐、适配与课题状态层
 - references/llm-wiki-mode.md：LLM Wiki 模式、网页删除与预览、Obsidian
-- references/github-workflow.md：可选 GitHub 流程与 gh 子命令
+- references/github-workflow.md：GitHub Flow、gh 子命令、风险档与门禁、env 段、CI 跳过范围
