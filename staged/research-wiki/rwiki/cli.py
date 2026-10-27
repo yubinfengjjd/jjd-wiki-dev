@@ -3,7 +3,7 @@ import json
 import sys
 from pathlib import Path
 
-from .config import load_config
+from .config import load_config, prepare_env
 from .contact_sheet import contact_sheet
 from .errors import WikiError
 from .ingest import ingest_figure
@@ -645,12 +645,23 @@ def _v2_dispatch(args, config) -> int:
     return 0
 
 
+def utf8_streams() -> None:
+    """stdout/stderr 统一 UTF-8 输出（Windows 管道缺省按 GBK 编码），已是 UTF-8 的不动。"""
+    for stream in (sys.stdout, sys.stderr):
+        encoding = (getattr(stream, "encoding", None) or "").replace("-", "").lower()
+        if encoding != "utf8" and hasattr(stream, "reconfigure"):
+            stream.reconfigure(encoding="utf-8", errors="replace")
+
+
 def main(argv: list[str] | None = None) -> int:
+    utf8_streams()
     args = parser().parse_args(argv)
     try:
         # 课题状态命令只依赖课题目录；check 有配置时才核查 Wiki 引用。
         config = (load_config(args.config, args.wiki_root)
                   if args.command != 'project' or args.config.is_file() else None)
+        if config is not None:
+            prepare_env(config)
         if args.command == "project":
             _project_dispatch(args, config)
             return 0
