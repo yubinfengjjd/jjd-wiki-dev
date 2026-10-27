@@ -1,4 +1,4 @@
-# research-wiki-dev CI：依赖只装在 GitHub 运行器上；local/r/compose 测试只在本机运行。
+# jjd-wiki-dev CI：依赖只装在 GitHub 运行器上；local/r/compose 测试只在本机运行。
 name: ci
 
 on:

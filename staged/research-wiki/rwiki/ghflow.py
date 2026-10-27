@@ -32,7 +32,7 @@ VERDICTS = {"pass": "通过", "changes": "需修改"}
 MIGRATED_PREFIX = b"<!-- rwiki-migrated: "
 PENDING_CONCLUSION = "（合并时填写：结论、PR、合并 SHA）"
 LEGACY_MARKER = re.compile(r"<!-- rwiki-legacy: id=(\S+) -->")
-DEFAULT_REPOS = {"dev": "research-wiki-dev", "vault": "research-wiki-vault"}
+DEFAULT_REPOS = {"dev": "jjd-wiki-dev", "vault": "jjd-wiki"}
 LABELS = {"type:project": "1d76db", "type:ingest": "0e8a16", "type:code": "5319e7", "type:legacy": "bfdadc",
           **{f"stage:P{n}": "c5def5" for n in range(6)}, **{f"stage:T{n}": "c5def5" for n in range(1, 10)},
           "stage:legacy": "c5def5",

@@ -7,7 +7,7 @@ from rwiki.ghflow import preflight
 def test_preflight_reports_state_and_blockers_read_only(gh_repos):
     fake = gh_repos.gh
     state = fake.state()
-    state["repos"]["tester/research-wiki-vault"]["secrets"] = ["DEV_DEPLOY_KEY"]
+    state["repos"]["tester/jjd-wiki"]["secrets"] = ["DEV_DEPLOY_KEY"]
     fake.write(state)
     report = preflight(gh_repos.config)
     assert report["gh"]["login"] == "tester" and report["owner"] == "tester"
@@ -17,7 +17,7 @@ def test_preflight_reports_state_and_blockers_read_only(gh_repos):
     assert report["repos"]["dev"]["pending"]["mode"] == "incremental"
     commit_file(gh_repos.dev, "qa/x.md", "见 E:\\research-wiki\\x\n")
     state = fake.state()
-    state["repos"]["tester/research-wiki-vault"]["visibility"] = "PUBLIC"
+    state["repos"]["tester/jjd-wiki"]["visibility"] = "PUBLIC"
     fake.write(state)
     result = run_wiki(gh_repos.vault, "--config", str(gh_repos.config_path), "gh", "preflight")
     assert result.returncode == 1, result.stderr

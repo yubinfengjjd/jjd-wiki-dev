@@ -8,7 +8,7 @@ from rwiki.ghflow import close_batch, start_batch
 
 SEED = 20261109
 ITERATIONS = 100
-BATCH, BRANCH, VAULT = "scp-wave3", "ingest/scp-wave3", "tester/research-wiki-vault"
+BATCH, BRANCH, VAULT = "scp-wave3", "ingest/scp-wave3", "tester/jjd-wiki"
 
 
 def test_close_batch_opens_pr_only_when_all_issues_closed(gh_repos):

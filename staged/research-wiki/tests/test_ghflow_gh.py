@@ -34,7 +34,7 @@ def test_authenticated_gh_reports_login(fake_gh, tmp_path):
 @pytest.mark.parametrize("visibility", ["PUBLIC", "INTERNAL"])
 def test_non_private_remote_refuses_push(fake_gh, git_pair, tmp_path, visibility):
     state = fake_gh.state()
-    state["repos"]["tester/research-wiki-vault"]["visibility"] = visibility
+    state["repos"]["tester/jjd-wiki"]["visibility"] = visibility
     fake_gh.write(state)
     work = git_pair.work
     rules = load_rules(load_config(write_config(tmp_path / "c.json", tmp_path / "no-wiki")), work)

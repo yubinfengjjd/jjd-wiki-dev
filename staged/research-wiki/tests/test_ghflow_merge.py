@@ -11,7 +11,7 @@ from rwiki.store import save
 from rwiki.writer_lock import read_lock
 from test_ghflow_start_task import add_gpl_method
 
-BATCH, LONG, VAULT = "scp-wave3", "ingest/scp-wave3", "tester/research-wiki-vault"
+BATCH, LONG, VAULT = "scp-wave3", "ingest/scp-wave3", "tester/jjd-wiki"
 TASK = "task/scp-wave3-P2-harmony"
 PASSING = [{"name": "pytest", "bucket": "pass"}, {"name": "guard", "bucket": "pass"}]
 

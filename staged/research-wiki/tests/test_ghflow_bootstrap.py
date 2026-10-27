@@ -10,7 +10,7 @@ from rwiki.config import load_config
 from rwiki.errors import WikiError
 from rwiki.ghflow import LABELS, LEGACY_BRANCH, bootstrap, read_meta
 
-NAMES = {"dev": "tester/research-wiki-dev", "vault": "tester/research-wiki-vault"}
+NAMES = {"dev": "tester/jjd-wiki-dev", "vault": "tester/jjd-wiki"}
 
 
 @dataclass
