@@ -31,6 +31,10 @@ def test_dev_repo_files():
     assert "push_guard" not in config
     example = json.loads((SKILL_ROOT / "config.example.json").read_text(encoding="utf-8"))
     assert set(config) <= set(example)
+    # 示例配置与代码默认的仓库名都是改名后的 jjd-wiki-dev / jjd-wiki。
+    from rwiki.ghflow import DEFAULT_REPOS
+    assert {key: example["github"][f"{key}_repo"] for key in DEFAULT_REPOS} == DEFAULT_REPOS == {
+        "dev": "jjd-wiki-dev", "vault": "jjd-wiki"}
 
 
 @pytest.mark.local

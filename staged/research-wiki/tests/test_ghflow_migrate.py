@@ -6,7 +6,7 @@ from rwiki.ghflow import LEGACY_MARKER, MIGRATED_PREFIX, legacy_marker, migrate_
 
 SEED = 20261110
 ITERATIONS = 100
-REPOS = {"dev": "tester/research-wiki-dev", "vault": "tester/research-wiki-vault"}
+REPOS = {"dev": "tester/jjd-wiki-dev", "vault": "tester/jjd-wiki"}
 MILESTONES = ("legacy/SCP持续入库与新规则", "legacy/review")
 
 

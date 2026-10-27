@@ -12,10 +12,14 @@ REQUIRED = {
     "a": ("不依赖 Kiro", "Codex、Claude、Devin、Kiro"),
     "b": ("wiki.py gh install-hook --repo dev|vault", "不入库", "新克隆或新机器"),
     "c": ("非编码 agent", "wiki.py gh review", "编码 agent 不评审自己的 PR"),
-    "d": ("403", "本地门禁模式", "wiki.py gh merge", "不在网页上点合并", "不直接运行 `gh pr merge`"),
+    "d": ("403", "本地门禁模式", "`protection: local`", "wiki.py gh merge", "不在网页上点合并",
+          "不直接运行 `gh pr merge`"),
 }
 WORKFLOW_TOPICS = ("RWIKI_WIKI_ROOT", "LOCAL-ONLY", "legacy/master", "--local-report", "codex-review", "start-task")
-STALE = ("提交到 master", "提交到master", "save 自动提交", "维护文件任务书", "任务书：T1")
+REPO_NAMES = ("`jjd-wiki-dev`", "`jjd-wiki`")
+# 改名前的仓库名（research-wiki-dev / research-wiki-vault）不再出现在规则文档里。
+STALE = ("提交到 master", "提交到master", "save 自动提交", "维护文件任务书", "任务书：T1",
+         "research-wiki-dev", "research-wiki-vault")
 
 
 def subcommands(command: argparse.ArgumentParser) -> dict:
@@ -33,6 +37,7 @@ def read(path):
 def check_rules(text: str) -> None:
     missing = [phrase for phrases in REQUIRED.values() for phrase in phrases if phrase not in text]
     missing += [topic for topic in WORKFLOW_TOPICS if topic not in text]
+    missing += [name for name in REPO_NAMES if name not in text]
     assert not missing
     assert not [phrase for phrase in STALE if phrase in text]
 
@@ -66,7 +71,7 @@ def test_vault_rule_docs():
     check_rules(read(rules))
     readme = read(VAULT_ROOT / "README.md")
     assert not [phrase for phrase in STALE if phrase in readme]
-    assert [phrase for phrase in ("research-wiki-dev", "research-wiki-vault", "`main`", "<待 bootstrap 后填写",
-                                  "本地门禁", "不推送", "wiki.py gh install-hook")
+    assert [phrase for phrase in (*REPO_NAMES, "`main`", "github.com/", "本地门禁", "不推送",
+                                  "wiki.py gh install-hook")
             if phrase not in readme] == []
     assert "RWIKI_WIKI_ROOT" in read(VAULT_ROOT / "tools/launcher.ps1")

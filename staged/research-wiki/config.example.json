@@ -37,8 +37,8 @@
   "push_guard": {"max_file_mb": 5, "gpl_globs": ["**/SCP-local/**"]},
   "github": {
     "owner": "<login>",
-    "dev_repo": "research-wiki-dev",
-    "vault_repo": "research-wiki-vault",
+    "dev_repo": "jjd-wiki-dev",
+    "vault_repo": "jjd-wiki",
     "dev_root": "<vault>\\开发",
     "vault_root": "<vault>",
     "worktree_root": "<env>\\worktrees"

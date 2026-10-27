@@ -12,7 +12,7 @@ def test_migrated_marker_is_idempotent_and_keeps_bytes():
     rng = random.Random(SEED)
     for iteration in range(ITERATIONS):
         data = b"".join(rng.choice(PIECES) for _ in range(rng.randint(0, 12)))
-        url = f"https://github.com/tester/research-wiki-dev/issues/{rng.randint(1, 999)}"
+        url = f"https://github.com/tester/jjd-wiki-dev/issues/{rng.randint(1, 999)}"
         header = add_migrated_marker(b"", url)
         result = data
         for _ in range(rng.randint(1, 4)):

@@ -1,8 +1,9 @@
 """测试用假 gh：从 FAKE_GH_STATE 读场景 JSON，把每次 argv 追加到 FAKE_GH_LOG。
 
-只实现 ghflow 用到的子命令，输出与真实 gh 相同形状的 JSON；不访问网络。
+只实现 ghflow 用到的子命令，输出与真实 gh（2.103）相同形状的 JSON；不访问网络。
+与真实 gh 一样拒绝未知参数（KNOWN_FLAGS，取自各子命令 --help）：报 unknown flag 并退出 1。
 场景结构：
-{"login": "tester", "authenticated": true, "default_repo": "tester/research-wiki-vault",
+{"login": "tester", "authenticated": true, "default_repo": "tester/jjd-wiki",
  "remote_map": {"<origin url>": "owner/name"}, "clock": 0,
  "repos": {"owner/name": {"visibility": "PRIVATE", "protection_status": 403,
            "milestones": [], "issues": [], "prs": [], "labels": [], "secrets": [], "deploy_keys": []}}}
@@ -17,10 +18,63 @@ VALUE_OPTIONS = {"--title", "-t", "--body", "-b", "--body-file", "-F", "--milest
                  "--base", "-B", "--head", "-H", "--state", "-s", "--search", "-S", "--json", "--jq", "-q",
                  "--repo", "-R", "--method", "-X", "--field", "-f", "--raw-field", "--add-label",
                  "--remove-label", "--match-head-commit", "--limit", "-L", "--color", "-c", "--description",
-                 "-d", "--header", "--hostname", "--author"}
+                 "-d", "--header", "--hostname", "--author", "--input"}
 NEVER_VALUE = {"--private", "--public", "--internal", "--force", "--merge", "--squash", "--rebase",
-               "--delete-branch", "--read-only", "--paginate", "--approve", "--request-changes",
+               "--delete-branch", "--allow-write", "--paginate", "--approve", "--request-changes",
                "--draft", "--admin", "--auto"}
+# 各子命令接受的参数（gh 2.103 的 --help）；不在表中的参数与真实 gh 一样报 unknown flag。
+REPO_FLAGS = {"--repo", "-R", "--help"}
+FORMAT_FLAGS = {"--json", "--jq", "-q", "--template", "-t"}
+BODY_FLAGS = {"--body", "-b", "--body-file", "-F"}
+KNOWN_FLAGS = {
+    "auth status": {"--active", "-a", "--hostname", "-h", "--jq", "--json", "--no-refresh", "--show-token", "-t",
+                    "--template", "--help"},
+    "api": {"--allow-escape-sequences", "--cache", "--field", "-F", "--header", "-H", "--hostname", "--include", "-i",
+            "--input", "--jq", "-q", "--method", "-X", "--paginate", "--preview", "-p", "--raw-field", "-f", "--silent",
+            "--slurp", "--template", "-t", "--verbose", "--help"},
+    "repo view": {"--branch", "-b", "--web", "-w", "--help", *FORMAT_FLAGS},
+    "repo create": {"--add-readme", "--clone", "-c", "--description", "-d", "--disable-issues", "--disable-wiki",
+                    "--gitignore", "-g", "--homepage", "-h", "--include-all-branches", "--internal", "--license", "-l",
+                    "--private", "--public", "--push", "--remote", "-r", "--source", "-s", "--team", "-t",
+                    "--template", "-p", "--help"},
+    "repo deploy-key add": {"--allow-write", "-w", "--title", "-t", *REPO_FLAGS},
+    "repo deploy-key list": {*FORMAT_FLAGS, *REPO_FLAGS},
+    "secret set": {"--app", "-a", "--body", "-b", "--env", "-e", "--env-file", "-f", "--no-repos-selected",
+                   "--no-store", "--org", "-o", "--repos", "-r", "--user", "-u", "--visibility", "-v", *REPO_FLAGS},
+    "secret list": {"--app", "-a", "--env", "-e", "--org", "-o", "--user", "-u", *FORMAT_FLAGS, *REPO_FLAGS},
+    "label list": {"--limit", "-L", "--order", "--search", "-S", "--sort", "--web", "-w", *FORMAT_FLAGS, *REPO_FLAGS},
+    "label create": {"--color", "-c", "--description", "-d", "--force", "-f", *REPO_FLAGS},
+    "issue create": {"--assignee", "-a", "--attach", "--blocked-by", "--blocking", "--editor", "-e", "--label", "-l",
+                     "--milestone", "-m", "--parent", "--project", "-p", "--recover", "--template", "-T", "--title",
+                     "-t", "--type", "--web", "-w", *BODY_FLAGS, *REPO_FLAGS},
+    "issue list": {"--app", "--assignee", "-a", "--author", "-A", "--label", "-l", "--limit", "-L", "--mention",
+                   "--milestone", "-m", "--search", "-S", "--state", "-s", "--type", "--web", "-w", *FORMAT_FLAGS,
+                   *REPO_FLAGS},
+    "issue view": {"--comments", "-c", "--web", "-w", *FORMAT_FLAGS, *REPO_FLAGS},
+    "issue edit": {"--add-assignee", "--add-label", "--add-project", "--attach", "--milestone", "-m",
+                   "--remove-assignee", "--remove-label", "--remove-milestone", "--remove-project", "--title", "-t",
+                   "--type", "--remove-type", *BODY_FLAGS, *REPO_FLAGS},
+    "issue close": {"--comment", "-c", "--duplicate-of", "--reason", "-r", *REPO_FLAGS},
+    "issue reopen": {"--comment", "-c", *REPO_FLAGS},
+    "issue comment": {"--attach", "--edit-last", "--editor", "-e", "--web", "-w", *BODY_FLAGS, *REPO_FLAGS},
+    "pr create": {"--assignee", "-a", "--attach", "--base", "-B", "--draft", "-d", "--dry-run", "--editor", "-e",
+                  "--fill", "-f", "--fill-first", "--fill-verbose", "--head", "-H", "--label", "-l", "--milestone",
+                  "-m", "--no-maintainer-edit", "--project", "-p", "--recover", "--reviewer", "-r", "--template",
+                  "-T", "--title", "-t", "--web", "-w", *BODY_FLAGS, *REPO_FLAGS},
+    "pr list": {"--app", "--assignee", "-a", "--author", "-A", "--base", "-B", "--draft", "-d", "--head", "-H",
+                "--label", "-l", "--limit", "-L", "--search", "-S", "--state", "-s", "--web", "-w", *FORMAT_FLAGS,
+                *REPO_FLAGS},
+    "pr view": {"--comments", "-c", "--web", "-w", *FORMAT_FLAGS, *REPO_FLAGS},
+    "pr checks": {"--fail-fast", "--interval", "-i", "--required", "--watch", "--web", "-w", *FORMAT_FLAGS,
+                  *REPO_FLAGS},
+    "pr review": {"--approve", "-a", "--comment", "-c", "--request-changes", "-r", *BODY_FLAGS, *REPO_FLAGS},
+    "pr merge": {"--admin", "--author-email", "-A", "--auto", "--delete-branch", "-d", "--disable-auto",
+                 "--match-head-commit", "--merge", "-m", "--rebase", "-r", "--squash", "-s", "--subject", "-t",
+                 *BODY_FLAGS, *REPO_FLAGS},
+    "pr comment": {"--attach", "--create-if-none", "--delete-last", "--edit-last", "--editor", "-e", "--web", "-w",
+                   "--yes", *BODY_FLAGS, *REPO_FLAGS},
+    "pr edit": {"--add-label", "--remove-label", "--base", "-B", "--title", "-t", *BODY_FLAGS, *REPO_FLAGS},
+}
 LIST_OPTIONS = {"--label", "--add-label", "--remove-label", "--field", "--raw-field", "-f"}
 ALIASES = {"-t": "--title", "-b": "--body", "-m": "--milestone", "-l": "--label", "-B": "--base",
            "-s": "--state", "-S": "--search", "-q": "--jq", "-R": "--repo", "-X": "--method",
@@ -57,6 +111,33 @@ def parse(argv: list[str], flags=()):
             positional.append(item)
         index += 1
     return positional, options
+
+
+def command_path(argv: list[str]) -> str:
+    if argv[0] == "api":
+        return "api"
+    return " ".join(argv[:3] if argv[:2] == ["repo", "deploy-key"] else argv[:2])
+
+
+def check_flags(argv: list[str]) -> None:
+    """与真实 gh（cobra）一样：子命令不认识的参数报错并退出 1，不执行任何操作。"""
+    path = command_path(argv)
+    known = KNOWN_FLAGS.get(path)
+    if known is None:
+        return
+    takes_value = (VALUE_OPTIONS | ({"--comment"} if path != "pr review" else set())) - NEVER_VALUE
+    rest, index = argv[len(path.split()):], 0
+    while index < len(rest):
+        item = rest[index]
+        if item.startswith("-") and len(item) > 1:
+            name, eq, _ = item.partition("=")
+            if name not in known:
+                detail = f"unknown flag: {name}" if name.startswith("--") else \
+                    f"unknown shorthand flag: '{name[1:]}' in {name}"
+                fail(f"{detail}\n\nUsage:  gh {path} [flags]")
+            if not eq and name in takes_value:
+                index += 1
+        index += 1
 
 
 def tick(state: dict) -> str:
@@ -211,12 +292,19 @@ def cmd_repo(state, args):
         print(f"https://github.com/{name}")
         return
     if verb == "deploy-key" and positional[:1] == ["add"]:
-        repo = repo_state(state, current_repo(state, options))
-        repo["deploy_keys"].append({"key": Path(positional[1]).read_text(encoding="utf-8").strip(),
-                                    "title": options.get("--title", ""), "read_only": bool(options.get("--read-only"))})
+        # gh 2.103：默认只读，--allow-write（-w）才给写权限。
+        keys = repo_state(state, current_repo(state, options))["deploy_keys"]
+        keys.append({"id": 1 + max([key.get("id", 0) for key in keys] or [0]),
+                     "key": Path(positional[1]).read_text(encoding="utf-8").strip(),
+                     "title": options.get("--title", ""), "created_at": tick(state),
+                     "read_only": not (options.get("--allow-write") or options.get("-w"))})
         return
     if verb == "deploy-key" and positional[:1] == ["list"]:
-        return emit(repo_state(state, current_repo(state, options))["deploy_keys"], options)
+        # 真实 gh：--json 不按字段筛选，原样输出 REST 形状（snake_case）；没有 key 时什么都不输出。
+        keys = repo_state(state, current_repo(state, options))["deploy_keys"]
+        if keys:
+            print(json.dumps(keys, ensure_ascii=False))
+        return
     fail(f"假 gh 不支持: repo {' '.join(args)}")
 
 
@@ -343,6 +431,8 @@ def cmd_pr(state, args):
         if not checks:
             fail(f"no checks reported on the '{pr['headRefName']}' branch")
         emit(checks, options)
+        if options.get("--json"):
+            return  # 真实 gh：--json 只导出并退出 0，失败与等待中只体现在 bucket
         buckets = {check["bucket"] for check in checks}
         if buckets & {"fail", "cancel"}:
             raise SystemExit(1)
@@ -389,6 +479,7 @@ def main(argv: list[str]) -> int:
         return 0
     if not argv or argv[0] not in COMMANDS:
         fail(f"假 gh 不支持: {' '.join(argv)}")
+    check_flags(argv)
     try:
         COMMANDS[argv[0]](state, argv[1:])
     finally:

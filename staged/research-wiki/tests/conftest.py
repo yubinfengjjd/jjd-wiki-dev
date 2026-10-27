@@ -13,6 +13,7 @@ SKILL_ROOT = Path(__file__).resolve().parents[1]
 DEV_ROOT = SKILL_ROOT.parents[1]
 ENTRY_ID = "2026-08-17-shap-feature-mechanism__fig01-shap-a-f"
 FAKE_GH_DIR = Path(__file__).resolve().parent / "fake_gh"
+FAKE_REPO_NAMES = {"dev": "jjd-wiki-dev", "vault": "jjd-wiki"}
 sys.path.insert(0, str(SKILL_ROOT))
 # 这些夹具复制 DEV_ROOT/test-gallery（受版权的画廊副本，不入库），依赖它的测试只在本机运行。
 LOCAL_FIXTURES = {"workspace"}
@@ -78,10 +79,10 @@ def fake_gh(tmp_path, monkeypatch):
     """假 gh 置于 PATH 最前；场景状态与调用日志都在 tmp_path 下。"""
     state_path, log_path = tmp_path / "fake-gh-state.json", tmp_path / "fake-gh-log.jsonl"
     fake = FakeGh(state_path, log_path)
-    fake.write({"login": "tester", "authenticated": True, "default_repo": "tester/research-wiki-vault",
+    fake.write({"login": "tester", "authenticated": True, "default_repo": "tester/jjd-wiki",
                 "clock": 0, "remote_map": {},
-                "repos": {"tester/research-wiki-vault": fake_repo_entry(),
-                          "tester/research-wiki-dev": fake_repo_entry()}})
+                "repos": {"tester/jjd-wiki": fake_repo_entry(),
+                          "tester/jjd-wiki-dev": fake_repo_entry()}})
     monkeypatch.setenv("PATH", str(FAKE_GH_DIR) + os.pathsep + os.environ["PATH"])
     monkeypatch.setenv("FAKE_GH_STATE", str(state_path))
     monkeypatch.setenv("FAKE_GH_LOG", str(log_path))
@@ -184,7 +185,7 @@ def gh_repos(wiki_repo, fake_gh, tmp_path, monkeypatch):
         subprocess.run(["git", "init", "-q", "--bare", "-b", "main", str(remote)], check=True)
         git_run(repo, "remote", "add", "origin", str(remote))
         git_run(repo, "push", "-q", "-u", "origin", "main")
-        remote_map[str(remote)] = f"tester/research-wiki-{key}"
+        remote_map[str(remote)] = f"tester/{FAKE_REPO_NAMES[key]}"
     fake_gh.update(remote_map=remote_map)
     worktrees = tmp_path / "worktrees"
     write_config(config_path, config.wiki_root, github={

@@ -6,13 +6,13 @@
 
 - 流程是本项目自带的：`wiki.py gh` 子命令、仓库内 `.github/`（PR/Issue 模板、CI）、`.push-guard-allow`、`知识库/.protected-hashes.json` 与 pre-push hook。Codex、Claude、Devin、Kiro 等任何 agent 都通过 `wiki.py gh` 遵守同一套规则，不依赖 Kiro 或任何宿主的私有配置、钩子或权限文件。
 - pre-push hook 写在 `.git/hooks/`，不入库。新克隆或新机器先运行 `wiki.py gh install-hook --repo dev|vault`（每个仓库一次，可重复运行）重新安装。
-- 两个仓库：`research-wiki-dev`（`开发/`）与 `research-wiki-vault`（项目根，含 `知识库/`、`文档/`、`tools/`），默认分支 `main`。仓库名、owner、`dev_root`、`vault_root`、`worktree_root` 写在本机 `config.json` 的 `github` 段（示例见 `config.example.json`，`config.json` 不入库）。
+- 两个仓库：`jjd-wiki-dev`（`开发/`）与 `jjd-wiki`（项目根，含 `知识库/`、`文档/`、`tools/`），默认分支 `main`。仓库名、owner、`dev_root`、`vault_root`、`worktree_root` 写在本机 `config.json` 的 `github` 段（示例见 `config.example.json`，`config.json` 不入库）。
 
 ## 角色分工
 
 - **编码 agent**：`start-task` → 写入（`save` 或普通 git 提交）→ `finish-task`；按评审意见修改后再推送。
 - **评审 agent（Codex 角色）**：必须是非编码 agent。读 PR diff 与 CI 结果，把问题逐行写进文件，用 `wiki.py gh review <pr> --verdict pass|changes --findings <文件>` 回帖。编码 agent 不评审自己的 PR。
-- **合并**：任一 agent 运行 `wiki.py gh merge <pr>`；门禁不通过就不合并。免费私有仓库没有远端分支保护（保护 API 返回 403 → 本地门禁模式）时，合并只能经 `wiki.py gh merge`，不在网页上点合并，也不直接运行 `gh pr merge`，同样不直接推送 `main` 或长期分支。
+- **合并**：任一 agent 运行 `wiki.py gh merge <pr>`；门禁不通过就不合并。`jjd-wiki-dev` 与 `jjd-wiki` 都是免费账号下的私有仓库，没有远端分支保护（保护 API 返回 403），bootstrap 已把两者记为本地门禁模式（`protection: local`），GitHub 本身不拦截合并与推送：合并只能经 `wiki.py gh merge`，不在网页上点合并，也不直接运行 `gh pr merge`，同样不直接推送 `main` 或长期分支。
 
 ## 命名
 
