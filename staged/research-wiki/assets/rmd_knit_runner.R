@@ -10,7 +10,9 @@ for (pkg in c("knitr", "rmarkdown", "jsonlite")) {
   if (!requireNamespace(pkg, quietly = TRUE)) stop("rwiki: runner needs package ", pkg, call. = FALSE)
 }
 front <- tryCatch(rmarkdown::yaml_front_matter(rmd), error = function(e) list())
-env <- new.env(parent = globalenv())
+# Knit in the global environment, as RStudio "Knit"/interactive runs do: survminer::ggsurvplot
+# and rms::datadist look their data up in the global environment.
+env <- globalenv()
 if (!is.null(front$params)) assign("params", front$params, envir = env)
 blocked <- function(...) stop("rwiki: package installation is blocked during runs", call. = FALSE)
 assign("install.packages", blocked, envir = env)

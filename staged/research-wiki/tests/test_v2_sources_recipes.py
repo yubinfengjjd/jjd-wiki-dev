@@ -385,3 +385,17 @@ def test_required_packages_follow_code_not_install_list():
     pkgs = packages(script, rmd)
     assert required_packages(pkgs) == ["ggplot2", "survminer", "limma"]
     assert declared_only(pkgs) == ["blueviolet", "phylum"]
+
+
+@needs_r
+def test_runner_knits_in_global_env(tmp_path):
+    """survminer::ggsurvplot / rms::datadist look data up in the global environment."""
+    runner = Path(__file__).resolve().parents[1] / "assets" / "rmd_knit_runner.R"
+    shutil.copyfile(runner, tmp_path / "_rwiki_knit.R")
+    (tmp_path / "demo.Rmd").write_text(
+        "```{r}\nsv <- data.frame(x = 1:3)\nlook <- function() get('sv', envir = globalenv())\n"
+        "stopifnot(nrow(look()) == 3)\n```\n", encoding="utf-8", newline="\n")
+    result = subprocess.run([str(RSCRIPT), "--vanilla", "_rwiki_knit.R", "demo.Rmd", "out.md"],
+                            cwd=tmp_path, capture_output=True, text=True, encoding="utf-8", errors="replace")
+    assert result.returncode == 0, result.stderr
+    assert json.loads((tmp_path / "rwiki-session.json").read_text(encoding="utf-8"))["status"] == "ok"
