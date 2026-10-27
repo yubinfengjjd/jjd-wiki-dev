@@ -13,6 +13,8 @@ import math
 import re
 from pathlib import Path, PurePosixPath, PureWindowsPath
 
+from .confine import confined
+
 MANIFEST_NAME = 'runtime.json'
 SCHEMA_VERSION = 1
 RUNTIME_MODES = ('standalone', 'bundle', 'unknown')
@@ -42,9 +44,8 @@ def _relative(value, what='路径') -> PurePosixPath:
 
 def _file(asset: Path, value, what='路径') -> Path:
     part = _relative(value, what)
-    root = asset.resolve()
-    path = root.joinpath(*part.parts).resolve()
-    if not path.is_relative_to(root):
+    path = asset.joinpath(*part.parts)
+    if not confined(path, asset, asset.parent.parent):
         raise ValueError(f'{what}越过资产目录')
     if not path.is_file():
         raise FileNotFoundError(f'{what}不存在: {value}')

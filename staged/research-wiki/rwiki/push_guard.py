@@ -97,17 +97,28 @@ def restricted_dirs(wiki_root: Path) -> list[str]:
     派生模板（frontmatter `license` 为上述许可）：code/ 与 example/。
     """
     from .pages import parse_page
-    from .sources import restricted_license
 
     dirs = []
-    for kind, folders, test in (("methods", ("code", "source"), lambda value: bool(GPL_LICENSE.match(value))),
-                                ("recipes", ("source",), restricted_license),
-                                ("templates", ("code", "example"), restricted_license)):
+    for kind in _RESTRICTED_FOLDERS:
         for page in sorted((wiki_root / kind).glob("*.md")):
             meta, _, error = parse_page(page.read_text(encoding="utf-8"))
-            if not error and isinstance(meta.get("license"), str) and test(meta["license"]):
-                dirs += [f"{kind}/{page.stem}/{folder}/" for folder in folders]
+            if not error:
+                dirs += restricted_page_dirs(kind, page.stem, meta)
     return dirs
+
+
+_RESTRICTED_FOLDERS = {"methods": ("code", "source"), "recipes": ("source",), "templates": ("code", "example")}
+
+
+def restricted_page_dirs(kind: str, slug: str, meta: dict) -> list[str]:
+    """单个页面在 restricted_dirs 中的各项（同样相对 wiki_root、带结尾 `/`）。"""
+    from .sources import restricted_license
+
+    test = (lambda value: bool(GPL_LICENSE.match(value))) if kind == "methods" else restricted_license
+    license = meta.get("license")
+    if kind not in _RESTRICTED_FOLDERS or not isinstance(license, str) or not test(license):
+        return []
+    return [f"{kind}/{slug}/{folder}/" for folder in _RESTRICTED_FOLDERS[kind]]
 
 
 gpl_method_dirs = restricted_dirs
