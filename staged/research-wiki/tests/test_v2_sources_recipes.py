@@ -344,6 +344,13 @@ def test_scenario_and_template_from_recipe_lint_clean(v2):
     assert errors == []
     from rwiki.finder import find
     assert find(config, "生存")[0]["id"] in ("figureya-demosurv", "demo:FigureYaDemoNeedy")
+    # GitHub 上的检出没有被许可证忽略的模板 code/：lint --ci 报 LOCAL-ONLY，不报 ERROR。
+    shutil.rmtree(config.wiki_root / f"templates/{tid}/code")
+    plain = [line for line in lint(config) if line.startswith(f"ERROR templates/{tid}.md")]
+    assert plain and all("code/" in line for line in plain)
+    ci = lint(config, ci=True)
+    assert [line for line in ci if line.startswith("ERROR ")] == []
+    assert any(line.startswith(f"LOCAL-ONLY templates/{tid}.md") for line in ci)
 
 
 def test_scenario_pick_must_exist(v2):
