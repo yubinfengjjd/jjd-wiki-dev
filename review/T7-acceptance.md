@@ -1,3 +1,6 @@
+<!-- rwiki-migrated: issue=https://github.com/yubinfengjjd/jjd-wiki-dev/issues/10 -->
+> 已迁移，停止维护：https://github.com/yubinfengjjd/jjd-wiki-dev/issues/10
+
 # T7 真实验收 · 进度
 
 日期：2026-10-21。作者对 V1–V4 回复“确认”；V3 选 ST06 + ST07（表只在开发快照 `supp-table-trim-dev-20261017\T2_candidate_20261017\before\02_figures\out\tables\`，正式课题目录无此表）；V2 帖子作者稍后提供。

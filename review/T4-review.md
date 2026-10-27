@@ -1,3 +1,6 @@
+<!-- rwiki-migrated: issue=https://github.com/yubinfengjjd/jjd-wiki-dev/issues/7 -->
+> 已迁移，停止维护：https://github.com/yubinfengjjd/jjd-wiki-dev/issues/7
+
 # T4 审查
 
 结论：**通过**，审查中由 Claude 直接修了 3 处小问题（都附了测试）。
