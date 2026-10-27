@@ -182,11 +182,14 @@ def parse_review_marker(text: str) -> tuple[str, str] | None:
 
 
 def gate_decision(checks: list[dict], entries: list[dict], head: str) -> tuple[bool, list[str]]:
-    """CI 全部 pass，且按时间最新的 codex-review 标记为 pass 并针对当前 head。"""
+    """CI 全部 pass 或 skipping（至少一个 pass），且按时间最新的 codex-review 标记为 pass 并针对当前 head。"""
     reasons = []
     if not checks:
         reasons.append("没有 CI 检查结果")
-    failing = [f"{check['name']}({check['bucket']})" for check in checks if check["bucket"] != "pass"]
+    elif all(check["bucket"] == "skipping" for check in checks):
+        reasons.append("没有 CI 检查结果（全部检查为 skipping）")
+    failing = [f"{check['name']}({check['bucket']})" for check in checks
+               if check["bucket"] not in ("pass", "skipping")]
     if failing:
         reasons.append("CI 检查未全部通过: " + ", ".join(failing))
     markers = [marker for marker in (parse_review_marker(entry.get("body") or "") for entry in entries) if marker]
