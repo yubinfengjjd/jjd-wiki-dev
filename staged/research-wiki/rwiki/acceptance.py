@@ -4,6 +4,7 @@ import json
 import re
 from datetime import datetime, timezone
 
+from .confine import confined
 from .errors import WikiError
 from .pages import read_page, section_bounds, section_text, set_block
 from .verification import replay_available
@@ -89,10 +90,11 @@ def snapshot(path) -> str:
     body = _without_usage_links(body)
     content = {'meta': meta, 'body': body}
     # Method approval covers knowledge, while per-implementation receipts cover code.
+    asset = path.with_suffix('')
     for folder in (('source',) if meta.get('type') == 'method' else ('source', 'code')):
-        content[folder] = {p.relative_to(path.with_suffix('')).as_posix(): hashlib.sha256(p.read_bytes()).hexdigest()
-                           for p in sorted((path.with_suffix('') / folder).rglob('*'))
-                           if p.is_file() and p.resolve().is_relative_to(path.with_suffix('').resolve())
+        content[folder] = {p.relative_to(asset).as_posix(): hashlib.sha256(p.read_bytes()).hexdigest()
+                           for p in sorted((asset / folder).rglob('*'))
+                           if p.is_file() and confined(p, asset, asset.parent.parent)
                            and '__pycache__' not in p.parts and p.suffix not in ('.pyc', '.pyo')}
     return hashlib.sha256(json.dumps(content, ensure_ascii=False, sort_keys=True).encode()).hexdigest()
 

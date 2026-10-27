@@ -6,6 +6,7 @@ from datetime import datetime, timezone
 from pathlib import Path
 
 from PIL import Image, ImageChops, ImageStat
+from .confine import confined
 from .errors import WikiError
 
 
@@ -19,8 +20,7 @@ def replay_inputs(target: Path) -> dict:
     files = {}
 
     def add(path):
-        resolved = path.resolve()
-        if not resolved.is_relative_to(root.resolve()) or not resolved.is_file():
+        if not confined(path, root, root) or not path.is_file():
             raise WikiError(f'回放输入不存在或越出 Wiki: {path}')
         files[path.relative_to(root).as_posix()] = digest(path)
 

@@ -3,7 +3,7 @@ import json
 import sys
 from pathlib import Path
 
-from .config import load_config
+from .config import load_config, prepare_env
 from .contact_sheet import contact_sheet
 from .errors import WikiError
 from .ingest import ingest_figure
@@ -61,8 +61,11 @@ def parser() -> argparse.ArgumentParser:
     guard.add_argument("--sync-ignore", action="store_true", help="重写知识库 .gitignore 的 GPL 托管块")
     gh_sub.add_parser("protect-baseline", help="生成或核验作者块字节基准（纯本地，不需要 gh）").add_argument(
         "--check", action="store_true", help="只核验，不写基准")
+    tier = gh_sub.add_parser("tier", help="按改动路径与 .github/risk-tiers.json 计算风险档（纯本地，不需要 gh）")
+    tier.add_argument("--range", dest="rev_range", required=True, help="比较范围，如 origin/main..HEAD")
+    tier.add_argument("--rules-ref", help="从哪个提交读规则（缺省为范围左端/merge-base，即 base 上的规则）")
     gh_sub.add_parser("preflight", help="只读检查 gh、账号、远端仓库、分支保护与待推送范围；有阻断项时退出 1")
-    batch = gh_sub.add_parser("start-batch", help="从 origin/main 建长期分支与同名 Milestone")
+    batch = gh_sub.add_parser("start-batch", help="建批次 Milestone（<kind>/<名称>）；不建长期分支，任务 PR 直接合入 main")
     batch.add_argument("kind", help="project 或 ingest")
     batch.add_argument("name", help="批次名（小写 slug）")
     batch.add_argument("--title", required=True, help="中文标题，写入 Milestone 描述")
@@ -73,7 +76,8 @@ def parser() -> argparse.ArgumentParser:
     task.add_argument("topic", help="主题（小写 slug）")
     task.add_argument("--title", required=True, help="Issue 标题")
     task.add_argument("--worktree", action="store_true", help="在 worktree_root 下建独立 worktree（并行或 Obsidian 使用中时）")
-    gh_sub.add_parser("finish-task", help="推送当前任务分支并开 PR 到所属长期分支").add_argument(
+    task.add_argument("--repo", choices=("dev", "vault"), help="批次所在仓库；两个仓库都有同名批次时必须给")
+    gh_sub.add_parser("finish-task", help="推送当前任务分支并开 PR 到 main（旧批次为所属长期分支）").add_argument(
         "--local-report", type=Path, help="仅本地运行的检查摘要，填入 PR 的本地专属验证一栏")
     reviewing = gh_sub.add_parser("review", help="以 PR review（COMMENT）回帖 Codex 评审结论")
     reviewing.add_argument("pr", type=int)
@@ -82,7 +86,9 @@ def parser() -> argparse.ArgumentParser:
     merging = gh_sub.add_parser("merge", help="合并门禁通过后合并 PR 并收尾（关闭 Issue、释放锁、清理分支）")
     merging.add_argument("pr", type=int)
     merging.add_argument("--plan", help="门禁不通过时回帖的修复计划")
-    gh_sub.add_parser("close-batch", help="Milestone 内 Issue 全部关闭后开长期分支到 main 的 PR").add_argument("batch")
+    closing = gh_sub.add_parser("close-batch", help="Milestone 内 Issue 全部关闭后关闭 Milestone（旧批次开长期分支到 main 的 PR）")
+    closing.add_argument("batch")
+    closing.add_argument("--repo", choices=("dev", "vault"), help="批次所在仓库；两个仓库都有同名批次时必须给")
     migrating = gh_sub.add_parser("migrate-legacy", help="按 legacy-map.json 把旧任务书与遗留缺口迁到 Issue")
     migrating.add_argument("--map", dest="mapping", type=Path, required=True)
     migrating.add_argument("--dry-run", action="store_true", help="只输出计划，不写 GitHub 与文件")
@@ -540,6 +546,11 @@ def _gh_dispatch(args, config) -> int:
     from .store import git
 
     verb = args.gh_command
+    if verb == "tier":
+        from . import risk
+        print(json.dumps(risk.tier_report(Path(git(Path.cwd(), "rev-parse", "--show-toplevel").strip()),
+                                          args.rev_range, args.rules_ref), ensure_ascii=False, indent=2))
+        return 0
     if verb not in ("guard", "protect-baseline"):
         # finish-task、review、merge 作用于当前目录所在的检出（主检出或 worktree）。
         checkout = (lambda: Path(git(Path.cwd(), "rev-parse", "--show-toplevel").strip()))
@@ -547,15 +558,15 @@ def _gh_dispatch(args, config) -> int:
             "preflight": lambda: ghflow.preflight(config),
             "start-batch": lambda: ghflow.start_batch(config, args.kind, args.name, args.title, args.repo),
             "start-task": lambda: ghflow.start_task(config, args.batch, args.stage, args.topic, args.title,
-                                                    args.worktree),
+                                                    args.worktree, args.repo),
             "finish-task": lambda: ghflow.finish_task(config, checkout(), args.local_report),
             "review": lambda: ghflow.review(config, checkout(), args.pr, args.verdict, args.findings),
             "merge": lambda: ghflow.merge(config, checkout(), args.pr, args.plan),
-            "close-batch": lambda: ghflow.close_batch(config, args.batch),
+            "close-batch": lambda: ghflow.close_batch(config, args.batch, args.repo),
             "migrate-legacy": lambda: ghflow.migrate_legacy(config, args.mapping, args.dry_run),
             "bootstrap": lambda: ghflow.bootstrap(config, args.confirm, args.config),
-            "install-hook": lambda: {"hook": str(ghflow.install_hook(
-                ghflow.repo_root(config, args.repo) if args.repo else checkout(), args.config))},
+            "install-hook": lambda: ghflow.install_hook_report(
+                ghflow.repo_root(config, args.repo) if args.repo else checkout(), args.config),
         }[verb]()
         print(json.dumps(result, ensure_ascii=False, indent=2))
         return 1 if verb in ("preflight", "bootstrap") and result.get("blockers") else 0
@@ -645,12 +656,23 @@ def _v2_dispatch(args, config) -> int:
     return 0
 
 
+def utf8_streams() -> None:
+    """stdout/stderr 统一 UTF-8 输出（Windows 管道缺省按 GBK 编码），已是 UTF-8 的不动。"""
+    for stream in (sys.stdout, sys.stderr):
+        encoding = (getattr(stream, "encoding", None) or "").replace("-", "").lower()
+        if encoding != "utf8" and hasattr(stream, "reconfigure"):
+            stream.reconfigure(encoding="utf-8", errors="replace")
+
+
 def main(argv: list[str] | None = None) -> int:
+    utf8_streams()
     args = parser().parse_args(argv)
     try:
         # 课题状态命令只依赖课题目录；check 有配置时才核查 Wiki 引用。
         config = (load_config(args.config, args.wiki_root)
                   if args.command != 'project' or args.config.is_file() else None)
+        if config is not None:
+            prepare_env(config)
         if args.command == "project":
             _project_dispatch(args, config)
             return 0

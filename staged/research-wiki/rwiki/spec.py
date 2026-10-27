@@ -2,6 +2,7 @@ import csv
 import json
 from pathlib import Path
 
+from .confine import confined
 from .config import read_json
 from .errors import WikiError
 from .interfaces import load_interface
@@ -10,7 +11,7 @@ from .interfaces import load_interface
 def _inside(template_dir: Path, value) -> bool:
     """A spec file reference must stay inside the template's own asset folder."""
     return (isinstance(value, str) and not Path(value).anchor
-            and (template_dir / value).resolve().is_relative_to(template_dir.resolve())
+            and confined(template_dir / value, template_dir, template_dir.parent.parent)
             and (template_dir / value).is_file())
 
 

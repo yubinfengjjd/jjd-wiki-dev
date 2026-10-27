@@ -41,7 +41,14 @@ STALE = ("提交到 master", "提交到master", "save 自动提交", "维护文�
          "不要改用知识库的解释器", "Wiki 环境代跑课题",
          "画廊条目只由 sci-figure-replica 复刻产生", "不得为没有复刻过的图写页面",
          "panel 模板只能从已签核的版式拆出", "模板必须记录至少一个来源 `layouts`",
-         "入库八步", "逐一授权", "五处", "5 处")
+         "入库八步", "逐一授权", "五处", "5 处",
+         # GitHub Flow 之前：批次建长期分支，close-batch 开批次 PR 到 main 是必经步骤。
+         "从 `origin/main` 建长期分支", "开 PR 到所属长期分支", "全部关闭后开长期分支到 `main` 的 PR",
+         "旧批次改为开长期分支到 `main` 的 PR", "长期分支：`project/<课题>`")
+# GitHub Flow 与三档风险门禁：三份规则文档都要写到。
+FLOW_DOCS = ("assets/AGENTS.md", "SKILL.md", "references/github-workflow.md")
+FLOW_REQUIRED = ("risk:low", "risk:normal", "risk:high", "owner-approved", "high_requires_owner", "gh tier",
+                 "origin/main", "gh finish-task", "gh merge")
 RULE_DOCS = ("assets/AGENTS.md", "SKILL.md",
              *sorted(f"references/{path.name}" for path in (SKILL_ROOT / "references").glob("*.md")))
 
@@ -69,7 +76,7 @@ def stale(text: str) -> list[str]:
 def test_gh_subcommand_set_is_documented():
     assert gh_subcommands() == sorted(("preflight", "bootstrap", "install-hook", "start-batch", "start-task",
                                        "finish-task", "review", "merge", "close-batch", "migrate-legacy",
-                                       "guard", "protect-baseline"))
+                                       "guard", "protect-baseline", "tier"))
     workflow = read(SKILL_ROOT / "references/github-workflow.md")
     assert [name for name in gh_subcommands() if f"| `{name}` |" not in workflow] == []
 
@@ -77,6 +84,18 @@ def test_gh_subcommand_set_is_documented():
 @pytest.mark.parametrize("name", sorted(REQUIRED))
 def test_rule_doc_states_v2_points(name):
     assert missing(read(SKILL_ROOT / name), REQUIRED[name]) == []
+
+
+@pytest.mark.parametrize("name", FLOW_DOCS)
+def test_rule_doc_states_github_flow_and_tiers(name):
+    assert missing(read(SKILL_ROOT / name), FLOW_REQUIRED) == []
+
+
+def test_workflow_doc_states_gate_details():
+    workflow = read(SKILL_ROOT / "references/github-workflow.md")
+    assert missing(workflow, ("agent 禁止添加", "只是约定", "PR 未包含最新 main", "批次 PR", "判定时刻",
+                              "每周全量 CI", "只看本机元数据", "path_prepend", "部署后才对 hook 生效",
+                              "跳过 pytest", "--no-renames", "--repo dev|vault")) == []
 
 
 @pytest.mark.parametrize("name", RULE_DOCS)

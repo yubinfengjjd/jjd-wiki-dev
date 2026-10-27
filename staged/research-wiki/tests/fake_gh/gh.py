@@ -7,6 +7,8 @@
  "remote_map": {"<origin url>": "owner/name"}, "clock": 0,
  "repos": {"owner/name": {"visibility": "PRIVATE", "protection_status": 403,
            "milestones": [], "issues": [], "prs": [], "labels": [], "secrets": [], "deploy_keys": []}}}
+PR 另有 "labels"（名字列表）与 "timeline"（REST timeline 事件，可在场景中预置；pr edit 增删标签时追加
+labeled/unlabeled 事件）。
 """
 import json
 import os
@@ -21,7 +23,7 @@ VALUE_OPTIONS = {"--title", "-t", "--body", "-b", "--body-file", "-F", "--milest
                  "-d", "--header", "--hostname", "--author", "--input"}
 NEVER_VALUE = {"--private", "--public", "--internal", "--force", "--merge", "--squash", "--rebase",
                "--delete-branch", "--allow-write", "--paginate", "--approve", "--request-changes",
-               "--draft", "--admin", "--auto"}
+               "--draft", "--admin", "--auto", "--slurp"}
 # 各子命令接受的参数（gh 2.103 的 --help）；不在表中的参数与真实 gh 一样报 unknown flag。
 REPO_FLAGS = {"--repo", "-R", "--help"}
 FORMAT_FLAGS = {"--json", "--jq", "-q", "--template", "-t"}
@@ -267,6 +269,14 @@ def cmd_api(state, args):
         if method == "PATCH":
             milestone.update(fields)
         return emit(milestone, options)
+    if len(rest) == 3 and rest[0] == "issues" and rest[2] == "timeline" and method == "GET":
+        # PR 与 Issue 共用编号；事件形状同 REST：labeled/unlabeled（label、created_at）、
+        # committed（sha、committer.date，无 created_at）、head_ref_force_pushed（created_at）。
+        item = next((item for item in repo["prs"] + repo["issues"] if str(item["number"]) == rest[1]), None)
+        if item is None:
+            fail("gh: Not Found (HTTP 404)")
+        timeline = item.get("timeline", [])
+        return emit([timeline] if options.get("--slurp") else timeline, options)
     if rest == ["actions", "secrets"]:
         return emit({"total_count": len(repo["secrets"]), "secrets": [{"name": s} for s in repo["secrets"]]}, options)
     fail(f"假 gh 不支持的 API: {path}")
@@ -346,6 +356,11 @@ def issue_view(issue: dict) -> dict:
             "milestone": {"title": issue["milestone"]} if issue.get("milestone") else None}
 
 
+def pr_view(pr: dict) -> dict:
+    """PR 的 labels 存为名字列表，输出为 gh 的 [{"name": …}] 形状。"""
+    return {**pr, "labels": [{"name": name} for name in pr.get("labels", [])]}
+
+
 def cmd_issue(state, args):
     verb, rest = args[0], args[1:]
     positional, options = parse(rest, flags=() if verb == "close" else ())
@@ -413,6 +428,7 @@ def cmd_pr(state, args):
                             "state": "OPEN", "headRefName": head, "baseRefName": options["--base"],
                             "headRefOid": state.get("pr_head_oid") or git_sha(head),
                             "reviews": [], "comments": [], "checks": list(state.get("default_checks", [])),
+                            "labels": labels_of(options.get("--label")), "timeline": [],
                             "mergeCommit": None, "url": f"https://github.com/{name}/pull/{number}"})
         print(f"https://github.com/{name}/pull/{number}")
         return
@@ -422,10 +438,10 @@ def cmd_pr(state, args):
                  if (wanted == "ALL" or pr["state"] == wanted)
                  and (not options.get("--head") or pr["headRefName"] == options["--head"])
                  and (not options.get("--base") or pr["baseRefName"] == options["--base"])]
-        return emit(items, options)
+        return emit([pr_view(pr) for pr in items], options)
     pr = find(repo["prs"], positional[0], "PullRequest")
     if verb == "view":
-        return emit(pr, options)
+        return emit(pr_view(pr), options)
     if verb == "checks":
         checks = pr["checks"]
         if not checks:
@@ -454,13 +470,24 @@ def cmd_pr(state, args):
         if expected and expected != pr["headRefOid"]:
             fail("GraphQL: Head branch was modified. Review and try the merge again. (mergePullRequest)")
         pr["state"] = "MERGED"
-        pr["mergeCommit"] = {"oid": state.get("merge_oid", "f" * 40)}
+        # 默认等同快进合并：合并提交即 head，本地分支是它的祖先（after_task_merge 会核对）。
+        pr["mergeCommit"] = {"oid": state.get("merge_oid", pr["headRefOid"])}
         if options.get("--delete-branch"):
             state.setdefault("deleted_branches", []).append(pr["headRefName"])
         return
     if verb == "edit":
         if "--body" in options or "--body-file" in options:
             pr["body"] = body_of(options)
+        labels = pr.setdefault("labels", [])
+        timeline = pr.setdefault("timeline", [])
+        for label in labels_of(options.get("--remove-label")):
+            if label in labels:
+                labels.remove(label)
+                timeline.append({"event": "unlabeled", "label": {"name": label}, "created_at": tick(state)})
+        for label in labels_of(options.get("--add-label")):
+            if label not in labels:
+                labels.append(label)
+                timeline.append({"event": "labeled", "label": {"name": label}, "created_at": tick(state)})
         return
     fail(f"假 gh 不支持: pr {' '.join(args)}")
 

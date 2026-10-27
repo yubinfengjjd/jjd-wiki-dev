@@ -23,6 +23,51 @@ class Config:
     work_root: Path | None = None
     r_libs: tuple[Path, ...] = ()
     cran_mirror: str = "https://cloud.r-project.org/"
+    # 运行入口准备的进程环境：{"vars": {...}, "path_prepend": [...]}，见 prepare_env。
+    env: dict = field(default_factory=dict)
+
+
+# 只在环境与 config.env.vars 都没给时补；git 身份不在此列，避免掩盖用户真实身份。
+DEFAULT_ENV = {"GH_PROMPT_DISABLED": "1"}
+# 这些变量决定写入身份、目标仓库或 guard 的范围，只能由调用方显式设置，不能写进共享配置。
+FORBIDDEN_ENV = {"RWIKI_AGENT", "RWIKI_WIKI_ROOT", "RWIKI_BOOTSTRAP", "RWIKI_DEPLOYED_SKILL", "RWIKI_VAULT_ROOT",
+                 "GIT_DIR", "GIT_WORK_TREE", "GIT_INDEX_FILE", "GIT_COMMON_DIR", "GIT_OBJECT_DIRECTORY", "PATH"}
+
+
+def _check_env(env) -> dict:
+    if not isinstance(env, dict) or env.keys() - {"vars", "path_prepend"}:
+        raise WikiError("env 只允许 vars 与 path_prepend")
+    names = env.get("vars", {})
+    if not isinstance(names, dict) or any(not isinstance(value, str) for value in names.values()):
+        raise WikiError("env.vars 必须是 名称→字符串 的对象")
+    forbidden = sorted(name for name in names if name.upper() in FORBIDDEN_ENV)
+    if forbidden:
+        raise WikiError("env.vars 不能设置 " + "、".join(forbidden) + "：它们决定写入身份、目标仓库或 guard 范围，"
+                        "只能由调用方显式设置（PATH 用 env.path_prepend）")
+    dirs = env.get("path_prepend", [])
+    if not isinstance(dirs, list) or any(not isinstance(item, str) or not item for item in dirs):
+        raise WikiError("env.path_prepend 必须是目录字符串列表")
+    return {key: value for key, value in (("vars", dict(names)), ("path_prepend", list(dirs))) if value}
+
+
+def prepare_env(config: Config, environ=None) -> None:
+    """合并进程环境：已有环境变量 > config.env.vars > DEFAULT_ENV；不改 git config。
+
+    path_prepend 中存在的目录按顺序放到 PATH 最前，已在 PATH 中的不重复添加。
+    """
+    environ = os.environ if environ is None else environ
+    for key, value in {**DEFAULT_ENV, **config.env.get("vars", {})}.items():
+        environ.setdefault(key, value)
+    parts = [item for item in environ.get("PATH", "").split(os.pathsep) if item]
+    seen = {os.path.normcase(os.path.normpath(item)) for item in parts}
+    front = []
+    for item in config.env.get("path_prepend", []):
+        key = os.path.normcase(os.path.normpath(item))
+        if key not in seen and Path(item).is_dir():
+            seen.add(key)
+            front.append(item)
+    if front:
+        environ["PATH"] = os.pathsep.join(front + parts)
 
 
 def read_json(path: Path) -> dict:
@@ -64,7 +109,8 @@ def load_config(path: Path, wiki_root: Path | None = None) -> Config:
                   function_defaults=defaults, single_panel_only=single_only,
                   push_guard=values.get("push_guard", {}), github=values.get("github", {}),
                   r_libs=tuple(Path(item).resolve() for item in libs),
-                  cran_mirror=values.get("cran_mirror", "https://cloud.r-project.org/"), **optional)
+                  cran_mirror=values.get("cran_mirror", "https://cloud.r-project.org/"),
+                  env=_check_env(values.get("env", {})), **optional)
 
 
 def load_taxonomy(path: Path) -> dict:

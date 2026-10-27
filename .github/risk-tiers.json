@@ -1,0 +1,23 @@
+{
+  "high_requires_owner": false,
+  "high": [
+    "staged/research-wiki/rwiki/ghflow.py",
+    "staged/research-wiki/rwiki/push_guard.py",
+    "staged/research-wiki/rwiki/writer_lock.py",
+    "staged/research-wiki/rwiki/store.py",
+    "staged/research-wiki/rwiki/risk.py",
+    ".github/**",
+    "ci/**",
+    ".gitignore",
+    "**/.gitignore",
+    ".gitattributes",
+    ".push-guard-allow",
+    "staged/research-wiki/assets/AGENTS.md",
+    "staged/research-wiki/SKILL.md",
+    "staged/research-wiki/references/github-workflow.md"
+  ],
+  "low": [
+    "review/**/*.md",
+    "*.md"
+  ]
+}

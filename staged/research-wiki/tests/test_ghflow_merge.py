@@ -3,10 +3,10 @@ from pathlib import Path
 
 import pytest
 
-from conftest import git_run
+from conftest import commit_file, git_run
 from rwiki.config import load_config
 from rwiki.errors import WikiError
-from rwiki.ghflow import close_batch, finish_task, merge, read_meta, review, start_batch, start_task
+from rwiki.ghflow import close_batch, finish_task, merge, read_meta, review, start_batch, start_task, write_meta
 from rwiki.store import save
 from rwiki.writer_lock import read_lock
 from test_ghflow_start_task import add_gpl_method
@@ -24,12 +24,31 @@ def merge_calls(gh_repos) -> list[list[str]]:
     return [call for call in gh_repos.gh.calls() if call[:2] == ["pr", "merge"]]
 
 
-def open_task_pr(gh_repos, monkeypatch, tmp_path, worktree=True, checks=PASSING):
-    """start-batch → start-task → save → finish-task，返回 (PR 号, 检出, Issue 号)。"""
+def start_legacy_batch(gh_repos, kind, name, title, repo_key="vault"):
+    """旧流程批次（T6 之前建的）：从 origin/main 建长期分支并推送，元数据有 branch、没有 flow。"""
+    repo = gh_repos.vault if repo_key == "vault" else gh_repos.dev
+    start_batch(gh_repos.config, kind, name, title, repo_key)
+    branch = f"{kind}/{name}"
+    if not git_run(repo, "branch", "--list", branch).strip():
+        git_run(repo, "branch", "--no-track", branch, "origin/main")
+    git_run(repo, "push", "-q", "origin", branch)
+    meta = read_meta(repo)
+    info = meta["batches"][name]
+    info.pop("flow", None)
+    info["branch"] = branch
+    write_meta(repo, meta)
+    return branch
+
+
+def open_task_pr(gh_repos, monkeypatch, tmp_path, worktree=True, checks=PASSING, legacy=False):
+    """start-batch → start-task → save → finish-task，返回 (PR 号, 检出, Issue 号)；legacy 为旧流程批次。"""
     config = gh_repos.config
     gh_repos.gh.update(default_checks=checks)
     monkeypatch.setenv("RWIKI_AGENT", "codex")
-    start_batch(config, "ingest", BATCH, "SCP 第三批", "vault")
+    if legacy:
+        start_legacy_batch(gh_repos, "ingest", BATCH, "SCP 第三批")
+    else:
+        start_batch(config, "ingest", BATCH, "SCP 第三批", "vault")
     started = start_task(config, BATCH, "P2", "harmony", "整合 harmony", worktree)
     checkout = Path(started["checkout"])
     wiki = checkout / "知识库"
@@ -52,11 +71,12 @@ def tree_hashes(root: Path) -> dict:
             for path in sorted(root.rglob("*")) if path.is_file()}
 
 
-def test_finish_task_and_review_fill_pr_and_labels(gh_repos, monkeypatch, tmp_path):
-    pr, checkout, issue = open_task_pr(gh_repos, monkeypatch, tmp_path)
+@pytest.mark.parametrize("legacy, base", [(False, "main"), (True, LONG)])
+def test_finish_task_and_review_fill_pr_and_labels(gh_repos, monkeypatch, tmp_path, legacy, base):
+    pr, checkout, issue = open_task_pr(gh_repos, monkeypatch, tmp_path, legacy=legacy)
     state = vault_state(gh_repos)
     opened = next(item for item in state["prs"] if item["number"] == pr)
-    assert (opened["baseRefName"], opened["headRefName"]) == (LONG, TASK)
+    assert (opened["baseRefName"], opened["headRefName"]) == (base, TASK)
     assert f"Refs #{issue}" in opened["body"] and "verify-template：通过" in opened["body"]
     assert "harmony 方法页" in opened["body"] and "不适用" in opened["body"]
     assert git_run(gh_repos.vault, "ls-remote", "origin", TASK).split()[0] == git_run(checkout, "rev-parse", "HEAD").strip()
@@ -100,9 +120,10 @@ def test_gate_failure_blocks_merge_and_records_reason(gh_repos, monkeypatch, tmp
     head = opened["headRefOid"]
     assert len(gates) == 2 and all(body.startswith(f"<!-- rwiki-gate: blocked sha={head} -->") for body in gates)
     assert "修复 pytest 失败后重跑" in gates[0] and "待补" in gates[1]
-    # CI 修好后又有新提交：先前的评审失效。
+    # CI 修好后又有新提交：先前的评审失效（merge 要按新 head 重算档位，提交须真实存在于远端）。
     opened["checks"] = PASSING
-    opened["headRefOid"] = "1" * 40
+    opened["headRefOid"] = commit_file(checkout, "文档/追加.md", "# 追加\n", "追加")
+    git_run(checkout, "push", "-q", "origin", TASK)
     gh_repos.gh.write(state)
     with pytest.raises(WikiError, match="评审已失效"):
         merge(gh_repos.config, checkout, pr, None)
@@ -119,7 +140,7 @@ def test_merge_cleans_up_worktree_without_touching_gpl_sources(gh_repos, monkeyp
     assert (checkout / "知识库/methods/scp/code/run.R").is_file()
     head = pass_review(gh_repos, checkout, pr, tmp_path)["sha"]
     result = merge(gh_repos.config, gh_repos.vault, pr, None)
-    assert result["merged"] and result["base"] == LONG
+    assert result["merged"] and result["base"] == "main"
     assert merge_calls(gh_repos) == [["pr", "merge", str(pr), "--merge", "--match-head-commit", head,
                                       "--delete-branch", "--repo", VAULT]]
     closed = next(item for item in vault_state(gh_repos)["issues"] if item["number"] == issue)
@@ -148,9 +169,10 @@ def test_merge_in_main_checkout_returns_to_main(gh_repos, monkeypatch, tmp_path)
 
 
 def test_long_branch_merge_closes_milestone(gh_repos, monkeypatch, tmp_path):
-    pr, checkout, _ = open_task_pr(gh_repos, monkeypatch, tmp_path)
+    """旧流程批次：任务 PR 合入长期分支，close-batch 开长期分支 → main 的 PR，合并后关闭 Milestone。"""
+    pr, checkout, _ = open_task_pr(gh_repos, monkeypatch, tmp_path, legacy=True)
     pass_review(gh_repos, checkout, pr, tmp_path)
-    merge(gh_repos.config, gh_repos.vault, pr, None)
+    assert merge(gh_repos.config, gh_repos.vault, pr, None)["base"] == LONG
     batch_pr = close_batch(gh_repos.config, BATCH)["pr"]
     pass_review(gh_repos, gh_repos.vault, batch_pr, tmp_path)
     result = merge(gh_repos.config, gh_repos.vault, batch_pr, None)
