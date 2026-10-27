@@ -105,7 +105,7 @@ def test_glob_double_star_semantics():
 
 
 def test_load_rules_missing_file_is_empty(tmp_path):
-    assert load_rules(tmp_path) == {"high": [], "low": []}
+    assert load_rules(tmp_path) == {"high": [], "low": [], "high_requires_owner": True}
     assert risk_tier(["README.md"], load_rules(tmp_path))[0] == "normal"
 
 
@@ -150,7 +150,7 @@ def test_pr_cannot_lower_tier_by_editing_or_deleting_rules(ruled_repo):
 def test_rules_ref_missing_file_is_empty_and_bad_ref_is_error(ruled_repo):
     work, _ = ruled_repo
     first = git_run(work, "rev-list", "--max-parents=0", "HEAD").strip()
-    assert load_rules(work, first) == {"high": [], "low": []}
+    assert load_rules(work, first) == {"high": [], "low": [], "high_requires_owner": True}
     with pytest.raises(WikiError, match="不是有效提交"):
         load_rules(work, "no-such-ref")
 

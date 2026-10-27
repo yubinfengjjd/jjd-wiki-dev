@@ -2,7 +2,7 @@ import random
 
 import pytest
 
-from rwiki.ghflow import gate_decision, render_review
+from rwiki.ghflow import OWNER_LABEL, gate_decision, owner_approval, render_review
 
 SEED = 20261101
 ITERATIONS = 500
@@ -61,3 +61,83 @@ def test_gate_decision_skipping_checks(buckets, ok, reason):
     checks = [{"name": f"job{index}", "bucket": bucket} for index, bucket in enumerate(buckets)]
     decided, reasons = gate_decision(checks, PASSED, HEAD)
     assert decided is ok and (reasons == [] if ok else any(item.startswith(reason) for item in reasons)), reasons
+
+
+def stamp(seconds: int) -> str:
+    return f"2026-10-28T{seconds // 3600:02d}:{seconds // 60 % 60:02d}:{seconds % 60:02d}Z"
+
+
+def reference_owner(labeled, committed, forced, head_in_timeline, head_date, has_label) -> bool:
+    """作者确认：PR 现有 owner-approved 标签，且最近一次 labeled 晚于 head 推送时间（各来源取最晚）。"""
+    if not has_label or not labeled:
+        return False
+    pushed = committed + forced + ([] if head_in_timeline else [head_date])
+    return max(labeled) > max(pushed)
+
+
+def test_tiered_gate_matches_reference():
+    """Feature: lite-gh, Property: 合并门禁按风险档判定"""
+    seed = 20261028
+    rng = random.Random(seed)
+    for iteration in range(300):
+        head = random_sha(rng)
+        tier = rng.choice(("low", "normal", "high"))
+        owner_required = rng.random() < 0.5
+        checks = [{"name": f"job{index}", "bucket": rng.choice(BUCKETS)} for index in range(rng.randint(0, 3))]
+        entries = []
+        for _ in range(rng.randint(0, 3)):
+            verdict = rng.choice(("pass", "changes"))
+            sha = head if rng.random() < 0.7 else random_sha(rng)
+            entries.append({"body": render_review(verdict, sha, []), "marker": (verdict, sha)})
+        labeled = [rng.randint(0, 100) for _ in range(rng.randint(0, 2))]
+        committed = [rng.randint(0, 100) for _ in range(rng.randint(0, 2))]
+        forced = [rng.randint(0, 100) for _ in range(rng.randint(0, 1))]
+        head_in_timeline = bool(committed) and rng.random() < 0.7
+        head_date = rng.randint(0, 100)
+        has_label = rng.random() < 0.7
+        timeline = ([{"event": "labeled", "label": {"name": OWNER_LABEL}, "created_at": stamp(t)} for t in labeled]
+                    + [{"event": "labeled", "label": {"name": "risk:low"}, "created_at": stamp(200)}]
+                    + [{"event": "committed", "sha": head if head_in_timeline and index == 0 else random_sha(rng),
+                        "committer": {"date": stamp(t)}} for index, t in enumerate(committed)]
+                    + [{"event": "head_ref_force_pushed", "created_at": stamp(t)} for t in forced])
+        rng.shuffle(timeline)
+        labels = [OWNER_LABEL] if has_label else []
+        owner = owner_approval(labels, timeline, head, stamp(head_date)) if tier == "high" and owner_required else None
+        ok, reasons = gate_decision(checks, [{"body": e["body"]} for e in entries], head, tier, ["命中 x"], owner)
+        expected = reference(checks, entries, head) if tier != "low" else reference(checks, [{"marker": ("pass", head)}], head)
+        if tier == "high" and owner_required:
+            expected = expected and reference_owner(labeled, committed, forced, head_in_timeline, head_date,
+                                                    has_label)
+        assert ok == expected, f"seed={seed} iteration={iteration} tier={tier} reasons={reasons}"
+        assert ok == (not reasons), f"seed={seed} iteration={iteration} reasons={reasons}"
+        if reasons:
+            assert reasons[0].startswith(f"风险档 {tier}"), f"seed={seed} iteration={iteration} reasons={reasons}"
+
+
+def test_low_tier_needs_no_review_but_ci():
+    assert gate_decision([{"name": "ci", "bucket": "pass"}], [], HEAD, "low") == (True, [])
+    ok, reasons = gate_decision([{"name": "ci", "bucket": "fail"}], [], HEAD, "low", ["全部命中低风险规则"])
+    assert not ok and reasons[0] == "风险档 low：全部命中低风险规则" and "没有 Codex 评审回帖" not in reasons
+
+
+def test_owner_approval_reasons():
+    head = "b" * 40
+    commit = {"event": "committed", "sha": head, "committer": {"date": "2026-10-28T10:00:00+08:00"}}
+    label = {"event": "labeled", "label": {"name": OWNER_LABEL}, "created_at": "2026-10-28T03:00:00Z"}
+    assert owner_approval([], [commit, label], head, None)[0] is False
+    assert "没有 owner-approved 标签" in owner_approval([], [commit, label], head, None)[1]
+    ok, reason = owner_approval([OWNER_LABEL], [label, commit], head, None)
+    assert ok and reason == ""
+    stale = {**label, "created_at": "2026-10-28T01:59:59Z"}
+    ok, reason = owner_approval([OWNER_LABEL], [stale, commit], head, None)
+    assert not ok and "已失效" in reason
+    # timeline 没有 head 的 committed 事件：用 head 提交的 committer date。
+    assert owner_approval([OWNER_LABEL], [label], head, "2026-10-28T04:00:00Z")[0] is False
+    assert owner_approval([OWNER_LABEL], [label], head, "2026-10-28T02:00:00Z")[0] is True
+    forced = {"event": "head_ref_force_pushed", "created_at": "2026-10-28T03:00:01Z"}
+    assert owner_approval([OWNER_LABEL], [label, commit, forced], head, None)[0] is False
+
+
+def test_gate_decision_rejects_unknown_tier():
+    with pytest.raises(ValueError):
+        gate_decision([], [], HEAD, "medium")

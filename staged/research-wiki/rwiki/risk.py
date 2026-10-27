@@ -66,17 +66,22 @@ def load_rules(repo: Path, ref: str | None = None) -> dict:
     """读 `.github/risk-tiers.json`；ref 为 None 读工作树，否则读该提交上的版本。文件缺失时返回空规则（全部归 normal）。
 
     判 PR 档位时必须用 base 上的规则（ref），否则 PR 可以改/删规则文件给自己降档。
+    可选键 `high_requires_owner`（布尔，缺省 true）：high 档合并是否还要作者确认（owner-approved 标签）。
     """
     text = _rules_text(repo, ref)
     if text is None:
-        return {"high": [], "low": []}
+        return {"high": [], "low": [], "high_requires_owner": True}
     try:
         data = json.loads(text)
     except json.JSONDecodeError as error:
         raise WikiError(f"{RULES_FILE} 不是合法 JSON: {error}") from error
     if not isinstance(data, dict) or not all(isinstance(data.get(kind, []), list) for kind in ("high", "low")):
         raise WikiError(f"{RULES_FILE} 格式应为 {{\"high\": [glob...], \"low\": [glob...]}}")
-    return {kind: [str(item) for item in data.get(kind, [])] for kind in ("high", "low")}
+    owner = data.get("high_requires_owner", True)
+    if not isinstance(owner, bool):
+        raise WikiError(f"{RULES_FILE} 的 high_requires_owner 必须是 true 或 false: {owner!r}")
+    return {**{kind: [str(item) for item in data.get(kind, [])] for kind in ("high", "low")},
+            "high_requires_owner": owner}
 
 
 def _first_hit(path: str, patterns: list[str]) -> str | None:

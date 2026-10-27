@@ -11,9 +11,10 @@ import subprocess
 import sys
 import tempfile
 from dataclasses import replace
+from datetime import datetime
 from pathlib import Path
 
-from . import push_guard, writer_lock
+from . import push_guard, risk, writer_lock
 from .config import read_json
 from .errors import WikiError
 from .process import run
@@ -38,10 +39,18 @@ LABELS = {"type:project": "1d76db", "type:ingest": "0e8a16", "type:code": "5319e
           "stage:legacy": "c5def5",
           "status:进行中": "fbca04", "status:待评审": "0052cc", "status:需修改": "d93f0b", "status:已验收": "0e8a16",
           "blocked:用户决定": "b60205", "blocked:本地验证": "b60205", "blocked:外部依赖": "b60205",
-          "blocked:CI": "b60205"}
+          "blocked:CI": "b60205",
+          "risk:low": "c2e0c6", "risk:normal": "fef2c0", "risk:high": "e99695", "owner-approved": "5319e7"}
+OWNER_LABEL = "owner-approved"
+LABEL_DESCRIPTIONS = {"risk:low": "风险档 low：CI 通过即可合并（finish-task 写入，merge 时重算）",
+                      "risk:normal": "风险档 normal：CI + 针对当前 head 的 Codex 评审（finish-task 写入，merge 时重算）",
+                      "risk:high": "风险档 high：normal 的要求，按规则可能还需作者确认（finish-task 写入，merge 时重算）",
+                      OWNER_LABEL: "只由作者在网页上添加"}
 STATUS_LABELS = tuple(name for name in LABELS if name.startswith("status:"))
+RISK_LABELS = tuple(f"risk:{tier}" for tier in risk.TIERS)
+TIER_LINE = re.compile(r"^- 风险档：.*$", re.M)
 ISSUE_FIELDS = "number,title,body,state,url,labels,milestone"
-PR_FIELDS = "number,state,url,headRefName,baseRefName,headRefOid,reviews,comments,mergeCommit"
+PR_FIELDS = "number,state,url,headRefName,baseRefName,headRefOid,reviews,comments,mergeCommit,labels"
 NO_LOCAL_REPORT = "未运行：本 PR 不涉及仅本地运行的检查。"
 WIKI_PY = Path(__file__).resolve().parents[1] / "wiki.py"
 HOOK_MARK = "# rwiki pre-push hook：由 wiki.py gh install-hook / bootstrap 写入，不入库"
@@ -186,8 +195,54 @@ def parse_review_marker(text: str) -> tuple[str, str] | None:
     return (match.group(1), match.group(2)) if match else None
 
 
-def gate_decision(checks: list[dict], entries: list[dict], head: str) -> tuple[bool, list[str]]:
-    """CI 全部 pass 或 skipping（至少一个 pass），且按时间最新的 codex-review 标记为 pass 并针对当前 head。"""
+def _when(text: str) -> datetime:
+    return datetime.fromisoformat(text.replace("Z", "+00:00"))
+
+
+def head_pushed_at(timeline: list[dict], head: str, head_commit_date: str | None) -> datetime | None:
+    """当前 head 被推送时间的估计：取 head_ref_force_pushed 的 created_at 与各 committed 事件提交者时间的最晚值。
+
+    REST timeline 不记普通推送的时间，committed 事件只有提交者时间；timeline 里没有 head 的 committed 事件时
+    补上 head 提交本身的 committer date。这是保守近似：所有已知时间取最晚（提交时间不晚于推送时间，
+    所以它只可能偏早）；偏早的代价是“提交之后、推送之前”打的标签会被当作晚于推送，这类标签可能针对
+    上一个 head。评审标记仍必须针对当前 head，不受这段空档影响。
+    """
+    times = [_when(event["created_at"]) for event in timeline if event.get("event") == "head_ref_force_pushed"]
+    commits = [event for event in timeline if event.get("event") == "committed"]
+    times += [_when(event["committer"]["date"]) for event in commits]
+    if head not in {event.get("sha") for event in commits} and head_commit_date:
+        times.append(_when(head_commit_date))
+    return max(times, default=None)
+
+
+def owner_approval(labels: list[str], timeline: list[dict], head: str,
+                   head_commit_date: str | None) -> tuple[bool, str]:
+    """作者确认：PR 上有 owner-approved 标签，且它最近一次 labeled 事件晚于当前 head 的推送时间。"""
+    if OWNER_LABEL not in labels:
+        return False, f"high 档需要作者确认：PR 上没有 {OWNER_LABEL} 标签（只由作者在网页上添加）"
+    labeled = [_when(event["created_at"]) for event in timeline
+               if event.get("event") == "labeled" and (event.get("label") or {}).get("name") == OWNER_LABEL]
+    pushed = head_pushed_at(timeline, head, head_commit_date)
+    if not labeled or pushed is None:
+        return False, f"high 档需要作者确认：取不到 {OWNER_LABEL} 标签或当前 head 的时间，无法判断确认是否针对当前 head"
+    if max(labeled) <= pushed:
+        return False, (f"high 档需要作者确认：{OWNER_LABEL} 标签（{max(labeled).isoformat()}）不晚于当前 head 推送时间"
+                       f"（{pushed.isoformat()}）：作者确认已失效，需作者在网页上移除后重新添加")
+    return True, ""
+
+
+def tier_summary(tier: str, reasons: list[str], limit: int = 3) -> str:
+    shown = "；".join(reasons[:limit]) + (f" 等 {len(reasons)} 条" if len(reasons) > limit else "")
+    return f"风险档 {tier}" + (f"：{shown}" if shown else "")
+
+
+def gate_decision(checks: list[dict], entries: list[dict], head: str, tier: str = "normal",
+                  tier_reasons: list[str] = (), owner: tuple[bool, str] | None = None) -> tuple[bool, list[str]]:
+    """CI 全部 pass 或 skipping（至少一个 pass）；normal/high 还要按时间最新的 codex-review 标记为 pass 并针对
+    当前 head；high 在规则要求作者确认时，owner 为 owner_approval() 的结果（None 表示不需要）。
+    不通过时第一条原因写档位与命中规则。旧的三参数调用等价于 normal。"""
+    if tier not in risk.TIERS:
+        raise ValueError(f"风险档只能是 {'|'.join(risk.TIERS)}: {tier!r}")
     reasons = []
     if not checks:
         reasons.append("没有 CI 检查结果")
@@ -198,7 +253,9 @@ def gate_decision(checks: list[dict], entries: list[dict], head: str) -> tuple[b
     if failing:
         reasons.append("CI 检查未全部通过: " + ", ".join(failing))
     markers = [marker for marker in (parse_review_marker(entry.get("body") or "") for entry in entries) if marker]
-    if not markers:
+    if tier == "low":
+        pass
+    elif not markers:
         reasons.append("没有 Codex 评审回帖")
     else:
         verdict, sha = markers[-1]
@@ -206,6 +263,10 @@ def gate_decision(checks: list[dict], entries: list[dict], head: str) -> tuple[b
             reasons.append(f"最新 Codex 评审针对 {sha}，当前 head 为 {head}：评审已失效")
         elif verdict != "pass":
             reasons.append("最新 Codex 评审结论为需修改")
+    if tier == "high" and owner is not None and not owner[0]:
+        reasons.append(owner[1])
+    if reasons:
+        reasons.insert(0, tier_summary(tier, list(tier_reasons)))
     return not reasons, reasons
 
 
@@ -345,7 +406,12 @@ def ensure_labels(repo: Path, names: list[str]) -> None:
     existing = {label["name"] for label in gh_json(["label", "list", "--limit", "500", "--json", "name"], repo)}
     for name in names:
         if name not in existing:
-            gh(["label", "create", name, "--color", LABELS.get(name, "c5def5"), "--force"], repo)
+            gh(["label", "create", name, "--color", LABELS.get(name, "c5def5"), *description_args(name), "--force"],
+               repo)
+
+
+def description_args(name: str) -> list[str]:
+    return ["--description", LABEL_DESCRIPTIONS[name]] if name in LABEL_DESCRIPTIONS else []
 
 
 def issue_list(repo: Path, *args: str) -> list[dict]:
@@ -565,8 +631,66 @@ def protected_status(cfg, checkout: Path) -> str:
         f"- {line}" for line in problems))
 
 
+def has_commit(repo: Path, sha: str) -> bool:
+    return subprocess.run(["git", "-C", str(repo), "cat-file", "-e", f"{sha}^{{commit}}"],
+                          stdin=subprocess.DEVNULL, capture_output=True).returncode == 0
+
+
+def fetch_head(repo: Path, view: dict) -> str:
+    """PR 的 headRefOid 本地可能没有：依次 git fetch origin <head 分支>、git fetch origin <sha>。"""
+    head = view["headRefOid"]
+    for ref in (view["headRefName"], head):
+        if has_commit(repo, head):
+            return head
+        subprocess.run(["git", "-C", str(repo), "fetch", "-q", "origin", ref], stdin=subprocess.DEVNULL,
+                       capture_output=True)
+    if not has_commit(repo, head):
+        raise WikiError(f"取不到 PR head 提交 {head}（按分支 {view['headRefName']} 与按 sha 取回都失败），不能判风险档")
+    return head
+
+
+def pr_tier(repo: Path, base_branch: str, head: str) -> tuple[str, list[str], dict]:
+    """规则读 base 分支当前提交（origin/<base>，调用前已 fetch），PR 改不了；改动范围 origin/<base>...<head>
+    （merge-base 语义，与 GitHub PR diff 一致）。"""
+    base = f"origin/{base_branch}"
+    rules = risk.load_rules(repo, base)
+    tier, reasons = risk.risk_tier(risk.changed_paths(repo, f"{base}...{head}"), rules)
+    return tier, reasons, rules
+
+
+def tier_line(tier: str, reasons: list[str], limit: int = 3) -> str:
+    more = f" 等 {len(reasons)} 条" if len(reasons) > limit else ""
+    return f"风险档：{tier}（{'；'.join(reasons[:limit])}{more}）"
+
+
+def sync_pr_tier(repo: Path, pr: int, tier: str, line: str) -> None:
+    """PR 正文的风险档行与 risk:* 标签对齐当前档位；已一致时不写。标签只供查看，merge 会重算。"""
+    view = gh_json(["pr", "view", str(pr), "--json", "body,labels"], repo)
+    body = view.get("body") or ""
+    updated = TIER_LINE.sub(lambda _: f"- {line}", body, count=1)
+    if updated != body:
+        gh_body(["pr", "edit", str(pr)], updated, repo)
+    labels = {label["name"] for label in view.get("labels") or []}
+    wanted = f"risk:{tier}"
+    stale = [name for name in RISK_LABELS if name in labels and name != wanted]
+    if wanted in labels and not stale:
+        return
+    ensure_labels(repo, [wanted])
+    gh(["pr", "edit", str(pr), "--add-label", wanted, *[part for name in stale for part in ("--remove-label", name)]],
+       repo)
+
+
+def pr_owner_approval(repo: Path, pr: int, view: dict) -> tuple[bool, str]:
+    pages = gh_json(["api", f"repos/{{owner}}/{{repo}}/issues/{pr}/timeline?per_page=100", "--paginate", "--slurp"],
+                    repo)
+    timeline = [event for page in pages for event in page]
+    head = view["headRefOid"]
+    labels = [label["name"] for label in view.get("labels") or []]
+    return owner_approval(labels, timeline, head, git(repo, "show", "-s", "--format=%cI", head).strip())
+
+
 def finish_task(cfg, checkout: Path, local_report: Path | None) -> dict:
-    """拒绝未提交的已跟踪改动 → 推送（经 guard）→ PR（base 为长期分支）→ status:待评审。"""
+    """拒绝未提交的已跟踪改动 → 推送（经 guard）→ PR（base 为长期分支）→ 风险档标签与正文行 → status:待评审。"""
     branch = current_branch(checkout)
     parse_task_branch(branch)
     meta = read_meta(checkout)
@@ -579,16 +703,21 @@ def finish_task(cfg, checkout: Path, local_report: Path | None) -> dict:
     if changes:
         raise WikiError("有未提交的已跟踪改动，先提交（知识库经 wiki.py save）再 finish-task：\n" + "\n".join(changes))
     push(checkout, branch, checkout_rules(cfg, checkout))
+    git(checkout, "fetch", "origin")
+    tier, tier_reasons, _ = pr_tier(checkout, long, branch)
+    line = tier_line(tier, tier_reasons)
     live = [pr for pr in gh_json(["pr", "list", "--head", branch, "--state", "all", "--json", "number,state,url"],
                                  checkout) if pr["state"] in ("OPEN", "MERGED")]
     if live:
         pr = live[0]
     else:
-        summary = git(checkout, "log", "--reverse", "--format=%s", f"origin/{long}..{branch}").splitlines()
+        summary = [line, *git(checkout, "log", "--reverse", "--format=%s", f"origin/{long}..{branch}").splitlines()]
         report = local_report.read_text(encoding="utf-8") if local_report else NO_LOCAL_REPORT
         body = render_pr_body(f"Refs #{task['issue']}", summary, report, protected_status(cfg, checkout))
         url = gh_body(["pr", "create", "--base", long, "--head", branch, "--title", task["title"]], body, checkout)
         pr = {"number": number_of(url), "url": url.strip()}
+    if pr.get("state") != "MERGED":
+        sync_pr_tier(checkout, pr["number"], tier, line)
     set_status(checkout, task["issue"], "status:待评审")
     meta = read_meta(checkout)
     meta["tasks"][branch]["pr"] = pr["number"]
@@ -671,17 +800,23 @@ def after_batch_merge(main: Path, meta: dict, branch: str) -> None:
 
 
 def merge(cfg, checkout: Path, pr: int, plan: str | None) -> dict:
-    """门禁（CI 全部 pass + 最新 codex-review 针对当前 head 且为 pass）通过才合并；已合并时只做合并后步骤。"""
+    """按风险档判门禁：low 只要 CI；normal 再要最新 codex-review 针对当前 head 且为 pass；high 再按规则要作者确认。
+    通过才合并；已合并时只做合并后步骤（tier 为 None）。"""
     main = main_checkout(checkout)
     require_gh(main)
     view = gh_json(["pr", "view", str(pr), "--json", PR_FIELDS], main)
     if view["state"] not in ("OPEN", "MERGED"):
         raise WikiError(f"PR #{pr} 状态为 {view['state']}，不能合并")
+    tier = None
     if view["state"] == "OPEN":
-        head = view["headRefOid"]
+        # 档位按 base 上的规则重算，不信 PR 上的 risk:* 标签。
+        git(main, "fetch", "origin")
+        head = fetch_head(main, view)
+        tier, tier_reasons, rules = pr_tier(main, view["baseRefName"], head)
+        owner = pr_owner_approval(main, pr, view) if tier == "high" and rules["high_requires_owner"] else None
         entries = sorted(view["reviews"] + view["comments"],
                          key=lambda entry: entry.get("submittedAt") or entry.get("createdAt") or "")
-        passed, reasons = gate_decision(pr_checks(main, pr), entries, head)
+        passed, reasons = gate_decision(pr_checks(main, pr), entries, head, tier, tier_reasons, owner)
         if not passed:
             body = render_gate_block(head, reasons, plan)
             if not view["comments"] or view["comments"][-1]["body"] != body:
@@ -700,7 +835,7 @@ def merge(cfg, checkout: Path, pr: int, plan: str | None) -> dict:
     elif branch.startswith(tuple(f"{kind}/" for kind in KINDS)):
         after_batch_merge(main, meta, branch)
     write_meta(main, meta)
-    return {"pr": pr, "merged": True, "merge_sha": sha, "branch": branch, "base": view["baseRefName"]}
+    return {"pr": pr, "merged": True, "merge_sha": sha, "branch": branch, "base": view["baseRefName"], "tier": tier}
 
 
 def close_batch(cfg, batch: str) -> dict:
@@ -1083,7 +1218,7 @@ def bootstrap_remote(cfg, repo: Path, key: str, name: str) -> dict:
               for label in gh_json(["label", "list", "--limit", "500", "--json", "name,color"], repo)}
     created = [label for label, color in LABELS.items() if colors.get(label) != color]
     for label in created:
-        gh(["label", "create", label, "--color", LABELS[label], "--force"], repo)
+        gh(["label", "create", label, "--color", LABELS[label], *description_args(label), "--force"], repo)
     steps["labels"] = len(created)
     return steps
 

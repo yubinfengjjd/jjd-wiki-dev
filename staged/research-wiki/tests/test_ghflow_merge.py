@@ -3,7 +3,7 @@ from pathlib import Path
 
 import pytest
 
-from conftest import git_run
+from conftest import commit_file, git_run
 from rwiki.config import load_config
 from rwiki.errors import WikiError
 from rwiki.ghflow import close_batch, finish_task, merge, read_meta, review, start_batch, start_task
@@ -100,9 +100,10 @@ def test_gate_failure_blocks_merge_and_records_reason(gh_repos, monkeypatch, tmp
     head = opened["headRefOid"]
     assert len(gates) == 2 and all(body.startswith(f"<!-- rwiki-gate: blocked sha={head} -->") for body in gates)
     assert "修复 pytest 失败后重跑" in gates[0] and "待补" in gates[1]
-    # CI 修好后又有新提交：先前的评审失效。
+    # CI 修好后又有新提交：先前的评审失效（merge 要按新 head 重算档位，提交须真实存在于远端）。
     opened["checks"] = PASSING
-    opened["headRefOid"] = "1" * 40
+    opened["headRefOid"] = commit_file(checkout, "文档/追加.md", "# 追加\n", "追加")
+    git_run(checkout, "push", "-q", "origin", TASK)
     gh_repos.gh.write(state)
     with pytest.raises(WikiError, match="评审已失效"):
         merge(gh_repos.config, checkout, pr, None)
