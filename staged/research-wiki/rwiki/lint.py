@@ -255,7 +255,7 @@ def lint(config: Config, ci: bool = False) -> list[str]:
             capture_output=True).returncode == 0
 
     def method_missing(path):
-        """方法页的复核依赖其 GPL 源码目录；CI 检出中这些目录被忽略而缺失。"""
+        """方法、配方与派生模板的检查依赖其限制性许可源码目录；CI 检出中这些目录被忽略而缺失。"""
         asset = path.with_suffix("")
         return next((f"{d}/" for d in gpl_missing if d.is_relative_to(asset)), None)
 
@@ -319,7 +319,7 @@ def lint(config: Config, ci: bool = False) -> list[str]:
             if meta["type"] in ("layout", "template", "method", "interface", "recipe", "source", "scenario"):
                 findings = asset_diagnostics(config, path, meta)
                 for level, message in findings:
-                    report(level, path, message)
+                    report(level, path, message, method_missing(path))
                 if not findings:
                     derived_pages.append((path, meta, body))
             if meta["type"] in ("layout", "template"):
