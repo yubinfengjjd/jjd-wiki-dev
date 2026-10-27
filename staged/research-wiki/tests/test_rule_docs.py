@@ -2,10 +2,9 @@ import argparse
 
 import pytest
 
-from conftest import DEV_ROOT, SKILL_ROOT
+from conftest import SKILL_ROOT
 from rwiki.cli import parser
 
-VAULT_ROOT = DEV_ROOT.parent
 STAGED_DOCS = ("assets/AGENTS.md", "SKILL.md", "references/github-workflow.md")
 # (a) 与宿主无关 (b) hook 重新安装 (c) 评审分工 (d) 本地门禁下的唯一合并入口
 REQUIRED = {
@@ -65,13 +64,13 @@ def test_staged_rule_docs(name):
 
 
 @pytest.mark.local
-def test_vault_rule_docs():
-    rules = VAULT_ROOT / "知识库/AGENTS.md"
+def test_vault_rule_docs(vault_root):
+    rules = vault_root / "知识库/AGENTS.md"
     assert rules.read_bytes() == (SKILL_ROOT / "assets/AGENTS.md").read_bytes()
     check_rules(read(rules))
-    readme = read(VAULT_ROOT / "README.md")
+    readme = read(vault_root / "README.md")
     assert not [phrase for phrase in STALE if phrase in readme]
     assert [phrase for phrase in (*REPO_NAMES, "`main`", "github.com/", "本地门禁", "不推送",
                                   "wiki.py gh install-hook")
             if phrase not in readme] == []
-    assert "RWIKI_WIKI_ROOT" in read(VAULT_ROOT / "tools/launcher.ps1")
+    assert "RWIKI_WIKI_ROOT" in read(vault_root / "tools/launcher.ps1")
