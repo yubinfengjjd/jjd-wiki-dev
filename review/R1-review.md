@@ -1,3 +1,6 @@
+<!-- rwiki-migrated: issue=https://github.com/yubinfengjjd/jjd-wiki-dev/issues/16 -->
+> 已迁移，停止维护：https://github.com/yubinfengjjd/jjd-wiki-dev/issues/16
+
 # R1 审查 · 方法改笔记、场景改自由标签
 
 日期：2026-10-21。结论：**通过**。

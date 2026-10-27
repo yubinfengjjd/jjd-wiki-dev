@@ -1,3 +1,6 @@
+<!-- rwiki-migrated: issue=https://github.com/yubinfengjjd/jjd-wiki-dev/issues/6 -->
+> 已迁移，停止维护：https://github.com/yubinfengjjd/jjd-wiki-dev/issues/6
+
 # T3 审查
 
 结论：**通过**。

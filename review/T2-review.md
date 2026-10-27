@@ -1,3 +1,6 @@
+<!-- rwiki-migrated: issue=https://github.com/yubinfengjjd/jjd-wiki-dev/issues/5 -->
+> 已迁移，停止维护：https://github.com/yubinfengjjd/jjd-wiki-dev/issues/5
+
 # T2 审查
 
 结论：**退回一处（模板不能换数据）**，其余通过。
