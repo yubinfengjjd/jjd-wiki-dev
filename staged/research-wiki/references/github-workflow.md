@@ -41,7 +41,7 @@ v2（2026-10-27）起，Issue / PR / 他人评审是可选流程：知识库可�
 
 ## 子命令
 
-除 `guard`、`protect-baseline`、`install-hook` 外，每个子命令先检查 gh 已安装且已登录（`gh auth status`）；不满足时报出安装页与 `gh auth login`，不自动安装。
+除 `guard`、`protect-baseline`、`install-hook`、`tier` 外，每个子命令先检查 gh 已安装且已登录（`gh auth status`）；不满足时报出安装页与 `gh auth login`，不自动安装。
 
 | 子命令 | 参数 | 用途 | 前置条件 |
 |---|---|---|---|
@@ -57,6 +57,7 @@ v2（2026-10-27）起，Issue / PR / 他人评审是可选流程：知识库可�
 | `migrate-legacy` | `--map <legacy-map.json> [--dry-run]` | 按映射把旧任务书与 `remaining-gaps.md` 缺口迁为 Issue（`rwiki-legacy` 标记去重），非 dry-run 时在原文件顶部加迁移标记 | 首次推送完成 |
 | `guard` | `[--range <rev-range>] [--pre-push <remote> <url>] [--sync-ignore]` | 推送防泄漏扫描：画廊、限制性许可源码（路径与 GPL 文件头）、课题数据 `wiki-use/_project/`、超限文件、本机绝对路径；`--sync-ignore` 重写 `知识库/.gitignore` 的托管块；不带 `--range` 时扫描尚未推送的提交 | 无（纯本地，不需要 gh） |
 | `protect-baseline` | `[--check]` | 生成或核验 `知识库/.protected-hashes.json`（每个 user 块的 SHA-256，含行尾）；`--check` 输出为空表示通过 | 无（纯本地，不需要 gh） |
+| `tier` | `--range <rev-range>` | 按 `git diff --name-only <range>` 的改动路径与仓库内 `.github/risk-tiers.json`（`{"high": [glob], "low": [glob]}`；`*` 不跨 `/`，`**` 匹配零到多级目录，不带 `/` 的模式只匹配根目录）输出 JSON `{"tier", "reasons", "paths"}`：任一路径命中 high 为 `high`，全部命中 low 为 `low`，其余（含无改动、无规则文件）为 `normal` | 无（纯本地，不需要 gh） |
 
 全局参数 `--wiki-root <目录>` 覆盖 `config.json` 的 `wiki_root`，优先级：`--wiki-root` > 环境变量 `RWIKI_WIKI_ROOT` > 配置文件。
 
@@ -122,7 +123,7 @@ CI 运行 `pytest -m "not r and not compose and not local"`、前端 `npm test`�
 ## Merge_Gate 与评审标记（走 PR 时）
 
 - 评审回帖首行：`<!-- codex-review: verdict=pass|changes sha=<40 位 head SHA> -->`，随后为结论、问题列表与所评审的 SHA。
-- 通过条件：`gh pr checks` 非空且全部 pass；reviews 与 comments 中按时间最新的 codex-review 标记为 `pass`，且 sha 等于 PR 当前 head。PR 之后再有提交，旧评审失效，需要重新评审。
+- 通过条件：`gh pr checks` 至少一项 pass，其余为 pass 或 skipping（全部 skipping 视为没有 CI 结果）；pending、fail、cancel 阻断；reviews 与 comments 中按时间最新的 codex-review 标记为 `pass`，且 sha 等于 PR 当前 head。PR 之后再有提交，旧评审失效，需要重新评审。
 - 不通过：回帖 `<!-- rwiki-gate: blocked sha=<head> -->`、原因列表与 `### 修复计划`（`--plan`，缺省“待补”），PR 保持未合并，退出 1。
 - 通过：`gh pr merge --merge --match-head-commit <head> --delete-branch`；task PR 合并后关闭 Issue（附 PR 与合并 SHA）、标 `status:已验收`、释放锁、清理联接与 worktree、删本地分支，主检出模式切回 `main` 并 `pull --ff-only`；长期分支 PR 合并后关闭 Milestone 并删除长期分支。
 

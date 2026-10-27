@@ -69,7 +69,7 @@ def stale(text: str) -> list[str]:
 def test_gh_subcommand_set_is_documented():
     assert gh_subcommands() == sorted(("preflight", "bootstrap", "install-hook", "start-batch", "start-task",
                                        "finish-task", "review", "merge", "close-batch", "migrate-legacy",
-                                       "guard", "protect-baseline"))
+                                       "guard", "protect-baseline", "tier"))
     workflow = read(SKILL_ROOT / "references/github-workflow.md")
     assert [name for name in gh_subcommands() if f"| `{name}` |" not in workflow] == []
 
