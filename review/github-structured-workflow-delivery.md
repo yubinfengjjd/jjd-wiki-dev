@@ -1,6 +1,6 @@
 # github-structured-workflow 交付报告
 
-本报告覆盖 spec `.kiro/specs/github-structured-workflow/` 的本地部分（任务 1–14）。网络阶段（任务 15）因本机没有 gh CLI 未执行；任务 16 依赖它，也未执行。
+本报告覆盖 spec `.kiro/specs/github-structured-workflow/` 的全部任务（1–16）。任务 1–14 为本地部分；任务 15–16（网络阶段与最终检查）已于 2026-10-27 完成，见“网络阶段”。
 
 路径约定：`<dev>` = 开发仓库根（`E:\research-wiki\开发`），`<vault>` = 根仓库（`E:\research-wiki`），`<skill>` = `<dev>/staged/research-wiki`。逐步记录见 `E:\research-wiki-env\tmp\gsw\progress.md`。
 
@@ -52,32 +52,25 @@
 
 本报告另以 `docs(review): github-structured-workflow 交付报告` 提交，位于上表之后。
 
-## 网络阶段未执行的原因
+## 网络阶段（任务 15–16）
 
-`wiki.py gh preflight` 在本机找不到 gh CLI。按约束不自动安装依赖，所以任务 15（bootstrap、migrate-legacy、首个真实 PR、从 main 部署）全部没有执行。两仓库仍在 `master`，没有 remote，没有 pre-push hook，没有任何网络写。
+仓库：`yubinfengjjd/jjd-wiki-dev`（dev）、`yubinfengjjd/jjd-wiki`（vault），均为 PRIVATE，默认分支 `main`。免费私有仓库的分支保护 API 返回 403，两者均为本地门禁模式（`protection: local`），pre-push hook 已安装。
 
-## 用户后续步骤
+| 任务 | 结果 |
+|---|---|
+| 15.1 preflight | gh 2.103 已认证；发现两处不兼容（空列表输出、`deploy-key add` 不再有 `--read-only`），经 dev PR #2 修复 |
+| 15.2 bootstrap | 两仓库已建并首推；dev 为过滤重放历史，vault 为单次快照 |
+| 15.3 migrate-legacy | dry-run 25 项；正式执行建 dev Issue #4–#17、vault Issue #3–#13，T5、T7 与 12 个缺口保持打开；14 个任务书文件加迁移标记（dev PR #18）；重跑 25 项均为 none，无重复 |
+| 15.4 首个真实 PR | dev：PR #2、#18 → 批次 PR #19 合入 `main`（`d7c9a7d`）；vault：PR #2（改名同步）→ 批次 PR #14 合入 `main`（`f99bab2`）。每个 PR 都走 CI → 独立评审回帖 → `gh merge`。CI 实际检查项：dev `test`（约 13 分钟），vault `check`（约 2 分钟） |
+| 15.5 CI 拦截验证（可选） | 未执行 |
+| 15.6 从 main 部署 | 来源门禁通过，manifest `source_commit` = `d7c9a7d`；5 处各 330 个文件哈希一致。部署前把 5 处 `config.json` 同步为 staged 版本（新增 `push_guard`、`github` 两段），原文件备份在维护记录 `2026-10-27-GitHub接入收尾/config-before/` |
+| 16 | 完整 pytest 746 passed、3 skipped；两仓库 `main` CI 为绿；`--verify-only` 仅余下述旧残留 |
 
-以下命令中 `wiki.py` 指 `<skill>/wiki.py`，用平时的解释器运行。
+## 遗留与后续
 
-1. 安装并登录 gh：`winget install GitHub.cli`，重开终端后 `gh auth login`。
-2. `wiki.py gh preflight`：确认账号、owner、两仓库不存在或为 PRIVATE、待推送范围与 guard 结果无阻断；把账号与 owner 写进本机 `config.json` 的 `github` 段。
-3. `wiki.py gh bootstrap`（不带 `--confirm`）：只读输出授权摘要（账号/组织、仓库名、private、待推送提交范围），核对无误后再决定授权。
-4. `wiki.py gh bootstrap --confirm`：master 改名 `legacy/master`、构造并切到 `main`、装 pre-push hook、建私有仓库、推送、Label、deploy key 与 secret、分支保护探测。完成后核对两仓库可见性为 PRIVATE、主检出在 `main`、`画廊/`、`维护记录/`、`config.json`、`codex/` 仍在磁盘。
-5. `wiki.py gh migrate-legacy --map <dev>/review/legacy-map.json --dry-run` 核对计划，再去掉 `--dry-run` 正式执行；重跑一次确认没有重复 Issue。
-6. 首个 PR：dev 用 `start-batch`/`start-task` 提交迁移标记，vault 同样流程把 README 的远程地址与保护模式填实；两边都走 `finish-task` → CI → `review` → `merge` → `close-batch`。
-7. 在 `<dev>` 检出已推送的 `main`，运行 `python tools/deploy.py <record> "<note>"`，确认来源门禁通过、manifest 有 `source_commit`、5 处副本哈希一致。
-
-## 未执行项
-
-- 任务 15.1–15.6（含可选的 15.5 CI 拦截验证 PR）。
-- 任务 16：两仓库 `main` 上的 CI 绿检查、最终 `deploy.py --verify-only`。
-- 独立代码审查尚未进行，需要另行安排。
-
-## 剩余风险
-
-- `RWIKI_BOOTSTRAP=1` 会放行本地门禁对 `main`/`project/*`/`ingest/*` 的直接推送限制（guard 内容扫描仍然生效）。GitHub 侧拿不到分支保护（403 → local 模式）时，只要设置这个变量就能绕过本地门禁。
-- pre-push hook 调用的是当前检出中的 `wiki.py`。在旧分支或改坏的检出上推送时，hook 运行的就是那份代码。
-- CI 跑在 `windows-latest`，中文路径（`知识库/`、`开发/` 等）在 runner 上的检出与 pytest 还没有真实验证过，首个 PR 时需要观察。
-- vault 侧改动（`.gitignore`、`.gitattributes`、`.push-guard-allow`、`.github/`、`知识库/.gitignore` GPL 托管块、`.protected-hashes.json`、规则文档、README、launcher、`tools/deploy.py` 与测试、规格留档）都还在工作区，没有提交；bootstrap 的快照会把它们带进 vault 的 `main`，在此之前请勿丢弃。
-- `cfaa2357` 这个 chore(repo) 提交在本地 amend 过一次。它从未推送，所以没有影响远端历史；之后的修改一律用新提交。
+- `deploy.py` 不删除 `app/` 之外的旧文件：4 处副本仍残留 `references/tag-taxonomy.md`、`rwiki/categories.py`（本特性之前就有），需要时手工删除。
+- 在 `start-task --worktree` 建的 worktree 中，`lint` 对带 `source/` 联接的 ready 方法页报“入库验收记录已过期”：`rwiki/acceptance.py` 的 `snapshot()` 用 `resolve()` 判断文件是否在资产目录内，联接解析到主检出后文件全部被排除。主检出无此问题。
+- `tests/test_rule_docs.py::test_vault_rule_docs` 以 `DEV_ROOT.parent` 作为 vault 根，在 dev worktree 中失败；在主检出通过。
+- `start-batch` 不拒绝与另一仓库已有批次同名的名称，而 `find_batch` 先查 vault：同名时 `start-task` 会建到 vault。本次误建的 vault Issue #17 已关闭（not planned），对应的空 worktree 与分支已移除，dev 侧同名空批次（分支与 Milestone）已删除，改用 `gsw-delivery-report`。
+- `gh merge` 在 worktree 已被删除但 git 仍登记时（`git worktree remove` 中断）重跑会因 `rev-parse` 失败退出；本次手工补完分支删除与元数据。
+- 剩余风险中的 `RWIKI_BOOTSTRAP=1` 与 hook 使用当前检出代码两条仍然成立。
