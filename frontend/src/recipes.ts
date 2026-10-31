@@ -1,6 +1,13 @@
 import { isItem, workflowOf } from './api';
 import type { PageSummary, PageType, RecipeMeta, ScenarioPick } from './api';
 
+export function matchesRecipeQuery(meta: RecipeMeta, origin: string, query: string): boolean {
+  const text = [meta.id, meta.title, meta.summary ?? '', origin,
+    ...(meta.tags ?? []), ...(meta.keywords ?? []), ...(meta.chart_types ?? []),
+    ...(meta.inputs ?? []).map(input => input.file)].join(' ').toLowerCase();
+  return query.toLowerCase().split(/\s+/).filter(Boolean).every(word => text.includes(word));
+}
+
 /** SPDX ids such as CC-BY-NC-SA-4.0 carry an `NC` token; the permissive `NCSA` licence does not. */
 export const isNonCommercial = (license: string | null | undefined): boolean =>
   (license ?? '').split(/[-_.\s]+/).some((token) => token.toUpperCase() === 'NC');

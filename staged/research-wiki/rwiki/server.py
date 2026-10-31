@@ -2,6 +2,7 @@ import json
 import re
 from datetime import datetime, timezone
 from pathlib import Path
+from contextlib import nullcontext
 from urllib.parse import quote, urlsplit
 
 from fastapi import FastAPI, HTTPException
@@ -23,6 +24,7 @@ from .relations import relations_for, all_relations
 from .code_assets import code_files, read_code, code_file
 from .verification import replay_available
 from .workflow import workflow_snapshot
+from .read_cache import read_session, remember
 
 
 class RejectBody(BaseModel):
@@ -85,7 +87,8 @@ def create_app(config: Config) -> FastAPI:
                 origin == "null" or _host_name(urlsplit(origin).netloc) not in LOCAL_HOSTS)
             if foreign or request.headers.get("sec-fetch-site") == "cross-site":
                 return JSONResponse(status_code=403, content={"detail": "拒绝跨站写请求"})
-        return await call_next(request)
+        with read_session() if request.method == "GET" else nullcontext():
+            return await call_next(request)
 
     # Same boundary as cli.main: a WikiError reaches the page as its message, not "Internal Server Error".
     @app.exception_handler(WikiError)
@@ -100,8 +103,8 @@ def create_app(config: Config) -> FastAPI:
 
     def pages() -> list[Path]:
         # An unreadable page is reported by lint; it must not take the whole UI down.
-        return [path.resolve() for path, _ in readable_pages(root)
-                if path.resolve().is_relative_to(root)]
+        return remember(("allowed-pages", root), lambda: [path.resolve() for path, _ in readable_pages(root)
+                        if path.resolve().is_relative_to(root)])
 
     def page_file(value: str) -> Path:
         path = safe_file(root, value)
@@ -279,15 +282,31 @@ def create_app(config: Config) -> FastAPI:
         return taxonomy(root)
 
     @app.get("/api/pages")
-    def list_pages():
+    def list_pages(light: bool = False):
         records = []
-        workflow = workflow_snapshot(config)
-        relations = all_relations(config)
+        workflow = {} if light else workflow_snapshot(config)
+        relations = [] if light else all_relations(config)
         for path in pages():
             meta, body = read_page(path)
             page = path.relative_to(root).as_posix()
             from .method_implementations import implementation_status
             from .runtime_contract import runtime_facts
+            if light:
+                pending = ({"stage": "archived", "queue": None, "label": "已归档", "reason": "已归档。", "templates": []}
+                           if meta.get("status") == "archived" else
+                           {"stage": "checking", "queue": None, "label": "正在核对证据",
+                            "reason": "运行与验收证据尚未核对完成，不能据此推荐执行。", "templates": []})
+                image = None
+                if meta["type"] in ("template", "recipe", "layout"):
+                    name = "thumb.png" if meta["type"] == "layout" else "preview.png"
+                    saved = path.with_suffix("") / name
+                    image = {"url": "/files/wiki/" + quote(saved.relative_to(root).as_posix()) if saved.is_file() else None,
+                             "kind": "pending", "label": "已保存预览 · 当前证据核对中"}
+                records.append({"path": page, "meta": meta, "implementation_status": [], "runtime": None,
+                                "figure_refs": [], "preview": image,
+                                "workflow": pending if meta["type"] in ("layout", "template", "method", "recipe") else None,
+                                "relations": []})
+                continue
             records.append({"path": page, "meta": meta,
                             "implementation_status": implementation_status(path, meta) if meta['type'] == 'method' else [],
                             "runtime": runtime_facts(path.with_suffix(''), meta['id'], 'template') if meta['type'] == 'template' else None,
@@ -295,6 +314,33 @@ def create_app(config: Config) -> FastAPI:
                             "workflow": workflow.get(page),
                             "relations": [r for r in relations if page in (r["method"], r["figure"])]})
         return records
+
+    @app.get("/api/source-items")
+    def source_items():
+        from .finder import _item_record
+        from .sources import read_items, SOURCE_ID
+
+        metadata = [read_page(path)[0] for path in pages()]
+        promoted = {f"{source.get('id')}:{source.get('item')}" for meta in metadata
+                    if meta.get("type") == "recipe" and meta.get("status") != "archived"
+                    for source in [meta.get("source") or {}]}
+        records = []
+        for meta in metadata:
+            sid = meta.get("id", "")
+            if meta.get("type") != "source" or not isinstance(sid, str) or not SOURCE_ID.fullmatch(sid):
+                continue
+            page = root / "sources" / f"{sid}.md"
+            if page not in pages():
+                continue
+            item_file = f"sources/{sid}/items.jsonl"
+            if not (root / item_file).is_file():
+                continue
+            safe_file(root, item_file)
+            for item in read_items(config, sid):
+                identity = f"{sid}:{item.get('item', '')}"
+                if item.get("id") == identity and identity not in promoted:
+                    records.append(_item_record(item, meta))
+        return sorted(records, key=lambda record: record["id"])
 
     @app.get("/api/page")
     def get_page(path: str):

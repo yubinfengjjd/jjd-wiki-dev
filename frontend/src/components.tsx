@@ -140,7 +140,7 @@ export function FigureImage({ meta }: { meta: PageMeta }) {
   if (!src || failed) return <span className="preview-empty">{meta.type === 'recipe' ? '暂无运行图' : '暂无预览图'}</span>;
   return <>
     <img key={src} src={src} alt={preview?.label ?? '图样预览'} loading="lazy" onError={() => setFailed(true)} />
-    {meta.type === 'template' && (preview?.kind === 'source' || preview?.kind === 'stale') && <span className="preview-label">{preview.label}</span>}
+    {(preview?.kind === 'pending' || (meta.type === 'template' && (preview?.kind === 'source' || preview?.kind === 'stale'))) && <span className="preview-label">{preview.label}</span>}
   </>;
 }
 

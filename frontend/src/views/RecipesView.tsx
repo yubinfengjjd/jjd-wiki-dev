@@ -2,7 +2,7 @@ import { useState } from 'react';
 import { PageSummary, RecipeMeta, stageStatus } from '../api';
 import type { AppData } from '../App';
 import { RecipeCard } from '../components';
-import { RECIPE_STAGES, recipeOrigin, recipeStage } from '../recipes';
+import { RECIPE_STAGES, recipeOrigin, recipeStage, matchesRecipeQuery } from '../recipes';
 
 interface Filters {
   q: string;
@@ -17,12 +17,7 @@ function matches(meta: RecipeMeta, origin: string, f: Filters): boolean {
   if (f.stage && recipeStage(meta) !== f.stage) return false;
   if (f.chart && !(meta.chart_types ?? []).includes(f.chart)) return false;
   if (f.favorite && !meta.favorite) return false;
-  const words = f.q.toLowerCase().split(/\s+/).filter(Boolean);
-  if (words.length === 0) return true;
-  const haystack = [meta.id, meta.title, meta.summary ?? '', origin, ...(meta.tags ?? []), ...(meta.keywords ?? []), ...(meta.chart_types ?? [])]
-    .join(' ')
-    .toLowerCase();
-  return words.every((word) => haystack.includes(word));
+  return matchesRecipeQuery(meta, origin, f.q);
 }
 
 /** L1 recipes: whole upstream modules run as-is; archived ones are listed in the queue. */
