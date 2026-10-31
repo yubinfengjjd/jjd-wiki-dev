@@ -1,6 +1,7 @@
-import { Component, lazy, ReactNode, Suspense, useCallback, useEffect, useMemo, useState } from 'react';
-import { api, effectiveStatus, GraphData, isItem, MethodTaxonomy, PageSummary } from './api';
+import { Component, lazy, ReactNode, Suspense, useCallback, useEffect, useMemo, useRef, useState } from 'react';
+import { effectiveStatus, GraphData, isItem, MethodTaxonomy, PageSummary } from './api';
 import { useBackdropZone } from './backdrop/instance';
+import { loadLibrary } from './api';
 import { Flow } from './flow';
 import { singlePanelKnowledge } from './figureModels';
 import { RenderEnv } from './markdown';
@@ -12,6 +13,7 @@ import { PageView } from './views/PageView';
 import { QueueView } from './views/QueueView';
 import { RecipesView } from './views/RecipesView';
 import { ScenariosView } from './views/ScenariosView';
+import { SourcesView } from './views/SourcesView';
 import { pendingCount as countPending } from './workflow';
 
 // The force-graph engine is the heaviest module; load it only when the network is opened.
@@ -53,6 +55,7 @@ function withEffectiveStatus(graph: GraphData, pages: PageSummary[]): GraphData 
 const NAV = [
   ['gallery', '图库'],
   ['recipes', '配方'],
+  ['sources', '来源目录'],
   ['scenarios', '场景'],
   ['methods', '方法库'],
   ['graph', '知识网络'],
@@ -64,39 +67,52 @@ export function App() {
   const route = useRoute();
   useBackdropZone(route.view);
   const [pages, setPages] = useState<PageSummary[] | null>(null);
-  const [graph, setGraph] = useState<GraphData | null>(null);
-  const [taxonomy, setTaxonomy] = useState<MethodTaxonomy | null>(null);
+  const [graph, setGraph] = useState<GraphData>({ nodes: [], links: [] });
+  const [taxonomy, setTaxonomy] = useState<MethodTaxonomy>({total: 0, domains: [], purposes: [], unclassified: []});
   const [error, setError] = useState('');
-  const [hiddenSources, setHiddenSources] = useState<Set<string>>(new Set());
-  const [hiddenPages, setHiddenPages] = useState<PageSummary[]>([]);
+  const [checking, setChecking] = useState(true);
+  const [backgroundErrors, setBackgroundErrors] = useState<string[]>([]);
+  const generation = useRef(0);
 
   const reload = useCallback(async () => {
-    const [p, g, t] = await Promise.all([api.pages(), api.graph(), api.methodTaxonomy()]);
-    const visible = singlePanelKnowledge(p, g);
-    setPages(visible.pages);
-    setGraph(withEffectiveStatus(visible.graph, visible.pages));
-    setTaxonomy(t);
-    setHiddenSources(visible.hiddenSources);
-    setHiddenPages(p.filter((page) => visible.hiddenSources.has(page.path)));
+    const own = ++generation.current;
+    const current = () => generation.current === own;
+    setChecking(true);
+    setError('');
+    setBackgroundErrors([]);
+    try {
+      await loadLibrary({pages: setPages, graph: setGraph, taxonomy: setTaxonomy,
+        error: message => setBackgroundErrors(previous => [...previous, message])}, current);
+    } catch (failure) {
+      if (current()) setError((failure as Error).message);
+    } finally {
+      if (current()) setChecking(false);
+    }
   }, []);
 
   useEffect(() => {
-    reload().catch((e: Error) => setError(e.message));
+    void reload();
+    return () => { generation.current++; };
   }, [reload]);
 
-  const env = useMemo<RenderEnv>(() => ({ titles: new Map((pages ?? []).map((p) => [p.path, p.meta.title])), hiddenSources }), [pages, hiddenSources]);
-  const flow = useMemo(() => new Flow(graph ?? { nodes: [], links: [] }), [graph]);
+  const visible = useMemo(() => singlePanelKnowledge(pages ?? [], graph), [pages, graph]);
+  const displayedGraph = useMemo(() => withEffectiveStatus(visible.graph, visible.pages), [visible]);
+  const env = useMemo<RenderEnv>(() => ({ titles: new Map(visible.pages.map((p) => [p.path, p.meta.title])), hiddenSources: visible.hiddenSources }), [visible]);
+  const flow = useMemo(() => new Flow(displayedGraph), [displayedGraph]);
 
-  const pendingCount = countPending(pages ?? []);
+  const pendingCount = countPending(visible.pages);
 
   let content;
   if (error) content = <p className="notice error">连不上本地服务（{error}）。在终端运行 wiki.py serve 后刷新页面。</p>;
-  else if (!pages || !graph || !taxonomy) content = null;
+  else if (!pages) content = <p className="notice" role="status">正在读取目录…</p>;
   else {
-    const data: AppData = { pages, hiddenPages, graph, flow, env, taxonomy, reload };
+    const data: AppData = { pages: visible.pages,
+      hiddenPages: pages.filter(page => visible.hiddenSources.has(page.path)),
+      graph: displayedGraph, flow, env, taxonomy, reload };
     if (route.view === 'page') content = <PageView key={route.arg} path={route.arg} data={data} />;
     else if (route.view === 'methods') content = <MethodsView data={data} query={route.query} />;
     else if (route.view === 'recipes') content = <RecipesView data={data} />;
+    else if (route.view === 'sources') content = <SourcesView data={data} query={route.query} />;
     else if (route.view === 'scenarios') content = <ScenariosView data={data} />;
     else if (route.view === 'graph') content = <Suspense fallback={null}><GraphView data={data} /></Suspense>;
     else if (route.view === 'queue') content = <QueueView data={data} />;
@@ -126,7 +142,11 @@ export function App() {
           ))}
         </nav>
       </header>
-      <main className={route.view === 'graph' ? 'main full' : 'main'}>{content}</main>
+      <main className={route.view === 'graph' ? 'main full' : 'main'}>
+        {pages && checking && <p className="notice small" role="status">目录已加载，正在核对运行证据与关联；完成前不作为可执行推荐。</p>}
+        {backgroundErrors.length > 0 && <p className="notice error" role="alert">部分证据或关联未加载完成：{backgroundErrors.join('；')} <button onClick={() => void reload()}>重试</button></p>}
+        {content}
+      </main>
     </div>
   );
 }

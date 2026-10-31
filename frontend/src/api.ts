@@ -316,7 +316,7 @@ export interface Workflow {
 export interface Preview {
   url: string | null;
   /** `stale`: a replay image left from an older code/spec/example, not evidence for the current version. */
-  kind: 'replay' | 'stale' | 'source' | 'none';
+  kind: 'replay' | 'stale' | 'source' | 'none' | 'pending';
   label: string;
 }
 
@@ -387,6 +387,15 @@ export interface LogEntry {
   message: string;
 }
 
+/** Source catalog records are discoverable, never executable recommendations. */
+export interface CatalogItem {
+  id: string; title: string; kind: 'item'; level: 'L0'; status: 'catalog';
+  usable: false; run: 'none'; source: string; page: string; use: string;
+  summary: string; scenario: string; inputs: string[]; requires: string[];
+  chart_types: string[]; tags: string[]; keywords: string[]; license: string;
+  language?: string; thumb?: string;
+}
+
 export const STATUS_LABEL: Record<Status, string> = {
   pending_signoff: '待签核',
   pending_template: '待模板化',
@@ -432,15 +441,20 @@ const workflowCache = new Map<string, Workflow | null>();
 const previewKey = (meta: PageMeta) =>
   `${meta.type}/${'id' in meta ? meta.id : 'slug' in meta ? meta.slug : meta.title}`;
 
+export function cachePages(pages: PageSummary[]) {
+  previewCache.clear();
+  workflowCache.clear();
+  for (const p of pages) if (p.preview !== undefined) previewCache.set(previewKey(p.meta), p.preview);
+  for (const p of pages) if (p.workflow !== undefined) workflowCache.set(previewKey(p.meta), p.workflow);
+}
+
 export const api = {
-  pages: async () => {
-    const pages = await request<PageSummary[]>('/api/pages');
-    previewCache.clear();
-    workflowCache.clear();
-    for (const p of pages) if (p.preview !== undefined) previewCache.set(previewKey(p.meta), p.preview);
-    for (const p of pages) if (p.workflow !== undefined) workflowCache.set(previewKey(p.meta), p.workflow);
+  pages: async (light = false, cache = true) => {
+    const pages = await request<PageSummary[]>(light ? '/api/pages?light=true' : '/api/pages');
+    if (cache) cachePages(pages);
     return pages;
   },
+  sourceItems: () => request<CatalogItem[]>('/api/source-items'),
   page: async (path: string) => {
     const page = await request<PageDetail>(`/api/page?path=${encodeURIComponent(path)}`);
     pageCache.set(path, page);
@@ -516,6 +530,7 @@ export function methodNoteLabel(meta: MethodMeta, workflow?: Workflow | null): s
 
 /** Workflow stage → the status colour it stands for; one mapping for badges, graph rings, census and filters. */
 const STAGE_STATUS: Record<string, Status> = {
+  checking: 'pending_template',
   archived: 'archived', complete: 'ready', signoff: 'pending_signoff',
   template_confirm: 'draft', method_confirm: 'draft',
   template_work: 'pending_template', method_work: 'pending_template',
@@ -537,3 +552,24 @@ export const safeUrl = (url: string | null | undefined): string | null =>
 export const isItem = (meta: PageMeta): meta is ItemMeta =>
   meta.type === 'layout' || meta.type === 'template' || meta.type === 'method' || meta.type === 'recipe';
 export const isFigure = (meta: PageMeta): meta is LayoutMeta | TemplateMeta => meta.type === 'layout' || meta.type === 'template';
+
+/** Publish a safe initial listing before independent, expensive graph/evidence requests. */
+export async function loadLibrary(observer: {
+  pages: (pages: PageSummary[]) => void;
+  graph: (graph: GraphData) => void;
+  taxonomy: (taxonomy: MethodTaxonomy) => void;
+  error?: (message: string) => void;
+}, current: () => boolean = () => true): Promise<void> {
+  const publish = (pages: PageSummary[]) => {
+    if (!current()) return;
+    cachePages(pages);
+    observer.pages(pages);
+  };
+  publish(await api.pages(true, false));
+  if (!current()) return;
+  await Promise.all([
+    api.pages(false, false).then(publish),
+    api.graph().then(graph => { if (current()) observer.graph(graph); }),
+    api.methodTaxonomy().then(taxonomy => { if (current()) observer.taxonomy(taxonomy); }),
+  ].map(promise => promise.catch((error: Error) => { if (current()) observer.error?.(error.message); })));
+}

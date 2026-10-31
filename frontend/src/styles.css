@@ -1998,3 +1998,15 @@ a.chain-item:hover {
 
 .input-columns th { color: var(--muted); font-weight: 600; }
 .input-columns code { overflow-wrap: anywhere; }
+/* Source catalogs expose upstream modules without presenting them as verified templates. */
+.source-grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(min(100%, 310px), 1fr)); gap: 1.2rem; }
+.source-card { border: 1px solid var(--line, #d8d4ca); padding: 1.2rem; overflow-wrap: anywhere; }
+.source-card figure { margin: 0 0 1rem; }
+.source-card img { width: 100%; height: 180px; object-fit: contain; }
+.source-card figcaption { font-size: .75rem; opacity: .7; }
+.source-card h3 { margin: .5rem 0; }
+.source-card code { display: block; white-space: pre-wrap; font-size: .75rem; }
+.source-card dd { margin-left: 0; font-size: .85rem; }
+.source-card dt { font-size: .75rem; opacity: .7; margin-top: .6rem; }
+.source-assets { display: flex; gap: 2rem; flex-wrap: wrap; margin: 1.5rem 0; }
+.source-assets details { min-width: min(100%, 280px); flex: 1; }

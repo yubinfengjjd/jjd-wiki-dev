@@ -4,6 +4,27 @@ import type { Flow } from './flow';
 export type FigureMeta = LayoutMeta | TemplateMeta;
 export type FigureShelf = 'single' | 'template';
 
+/** Search provenance as well as the display title; translated titles often omit the library name. */
+export function matchesFigureQuery(meta: FigureMeta, query: string, pages: PageSummary[]): boolean {
+  const byPath = new Map(pages.map(p => [p.path, p.meta]));
+  const words = [meta.id, meta.title, ...meta.tags, ...meta.chart_types,
+    ...('keywords' in meta && Array.isArray(meta.keywords) ? meta.keywords.map(String) : [])];
+  if (meta.type === 'template') {
+    for (const reference of meta.sources ?? []) {
+      words.push(reference);
+      const source = byPath.get(reference.endsWith('.md') ? reference : `${reference}.md`);
+      if (source) words.push(source.title);
+      if (source?.type === 'recipe') {
+        words.push(source.source?.id ?? '', source.source?.item ?? '');
+        const library = byPath.get(`sources/${source.source?.id}.md`);
+        if (library) words.push(library.title);
+      }
+    }
+  }
+  const text = words.join(' ').toLowerCase();
+  return query.toLowerCase().split(/\s+/).filter(Boolean).every(word => text.includes(word));
+}
+
 export function isWholeSource(meta: PageSummary['meta']): boolean {
   return meta.type === 'layout' && Object.keys(meta.panels).length !== 1;
 }

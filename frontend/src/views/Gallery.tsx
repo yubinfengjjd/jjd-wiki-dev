@@ -4,7 +4,7 @@ import type { AppData } from '../App';
 import { PlateCard } from '../components';
 import { Lattice } from '../hero/Lattice';
 import { openPage } from '../nav';
-import { FigureShelf, galleryEntries, galleryInventory, templateSourceNote } from '../figureModels';
+import { FigureShelf, galleryEntries, galleryInventory, templateSourceNote, matchesFigureQuery } from '../figureModels';
 
 interface Filters {
   q: string;
@@ -32,17 +32,14 @@ const STAGES: Record<Shelf, [string, string][]> = {
 
 const progressOf = (meta: FigureMeta) => workflowOf(meta)?.stage ?? (meta.status === 'ready' ? 'complete' : meta.status);
 
-function matches(meta: FigureMeta, f: Filters): boolean {
+function matches(meta: FigureMeta, f: Filters, pages: AppData['pages']): boolean {
   if (f.tag && !meta.tags.includes(f.tag)) return false;
   if (f.chart && !meta.chart_types.includes(f.chart)) return false;
   if (f.language && meta.language !== f.language) return false;
   if (f.status && progressOf(meta) !== f.status) return false;
   if (f.favorite && !meta.favorite) return false;
   if (!f.q) return true;
-  const haystack = [meta.title, ...meta.tags, ...meta.chart_types]
-    .join(' ')
-    .toLowerCase();
-  return f.q.toLowerCase().split(/\s+/).every((word) => haystack.includes(word));
+  return matchesFigureQuery(meta, f.q, pages);
 }
 
 const uniq = (values: string[]) => [...new Set(values)].sort();
@@ -82,7 +79,7 @@ export function Gallery({ data }: { data: AppData }) {
   const entries = useMemo(() => galleryEntries(data.pages), [data.pages]);
   const templates = entries[shelf];
   const stages = STAGES[shelf];
-  const shown = templates.filter((t) => matches(t.meta, f));
+  const shown = templates.filter((t) => matches(t.meta, f, data.pages));
   const pickShelf = (next: Shelf) => {
     setShelf(next);
     // Status values differ per shelf, so a status filter would silently hide everything.
@@ -130,7 +127,7 @@ export function Gallery({ data }: { data: AppData }) {
       <div className="filters" role="search">
         <input
           type="search"
-          placeholder="搜索标题、标签、图型"
+          placeholder="搜索标题、来源、ID、关键词或图型"
           aria-label="搜索"
           value={f.q}
           onChange={(e) => set('q', e.target.value)}

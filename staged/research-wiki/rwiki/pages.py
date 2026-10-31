@@ -1,9 +1,11 @@
 import re
+from copy import deepcopy
 from pathlib import Path
 
 import yaml
 
 from .errors import WikiError
+from .read_cache import remember
 
 
 def parse_page(text: str) -> tuple[dict, str, str | None]:
@@ -26,11 +28,17 @@ def read_page(path: Path) -> tuple[dict, str]:
         raise WikiError(f"页面不存在: {path}")
     # Author blocks are protected bytes, including their line endings.
     # Universal newline conversion would silently alter them during facts refresh.
-    with path.open(encoding="utf-8", newline="") as stream:
-        meta, body, error = parse_page(stream.read())
-    if error:
-        raise WikiError(f"{path}: {error}")
-    return meta, body
+    def load():
+        with path.open(encoding="utf-8", newline="") as stream:
+            meta, body, error = parse_page(stream.read())
+        if error:
+            raise WikiError(f"{path}: {error}")
+        return meta, body
+
+    stamp = path.stat()
+    meta, body = remember(("page", path, stamp.st_mtime_ns, stamp.st_ctime_ns, stamp.st_size), load)
+    # Callers may edit metadata before a write; never share that mutable object.
+    return deepcopy(meta), body
 
 
 def visual_path(root: Path, entry_id: str) -> Path:
