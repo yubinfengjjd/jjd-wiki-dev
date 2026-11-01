@@ -46,6 +46,7 @@ function ImageViewer({ item, close, busy, decide }: {
     <div className="review-actions">{choices.map(([state, label]) => <button key={state} disabled={busy} aria-pressed={item.decision === state}
       className={state === 'removed' ? 'ghost danger' : 'ghost'} onClick={() => void decide([item.id], state)}>{label}</button>)}
       {item.decision !== 'pending' && <button className="ghost" disabled={busy} onClick={() => void decide([item.id], 'pending')}>恢复待筛选</button>}</div>
+    {busy && <p className="small" role="status">正在保存选择，请稍候…</p>}
   </dialog>;
 }
 
@@ -58,6 +59,7 @@ export function FigureYaReview({ data }: { data: AppData }) {
   const [selected, setSelected] = useState<Set<string>>(new Set());
   const [opened, setOpened] = useState<string | null>(null);
   const [busy, setBusy] = useState(false);
+  const [savingIds, setSavingIds] = useState<Set<string>>(new Set());
   const [error, setError] = useState('');
   const [notice, setNotice] = useState('');
   const saving = useRef(false);
@@ -80,6 +82,7 @@ export function FigureYaReview({ data }: { data: AppData }) {
   async function decide(ids: string[], decision: VisualDecision) {
     if (!inventory || saving.current) return;
     saving.current = true; setBusy(true); setError(''); setNotice('正在保存…');
+    setSavingIds(new Set(ids));
     try {
       const saved = await api.figureyaDecide(ids, decision, inventory.revision);
       setInventory(previous => previous && ({ revision: saved.revision,
@@ -90,7 +93,7 @@ export function FigureYaReview({ data }: { data: AppData }) {
     } catch (failure) {
       setError((failure as Error).message); setNotice('本次操作未保存，请核对记录后重试。');
       await refresh().catch(() => undefined);
-    } finally { saving.current = false; setBusy(false); }
+    } finally { saving.current = false; setBusy(false); setSavingIds(new Set()); }
   }
   return <section className="figureya-review">
     <header className="hero slim"><div className="hero-text"><h1>看图，留下合适的样式。</h1>
@@ -124,7 +127,7 @@ export function FigureYaReview({ data }: { data: AppData }) {
     </div>
     {error && <p className="notice error" role="alert">{error} <button onClick={() => void refresh().then(() => setError('')).catch(f => setError(f.message))}>重新加载</button></p>}
     {!inventory ? <p role="status">正在读取全部模块和本地参考图…</p> : <div className="review-grid">{shown.map((item, number) =>
-      <article key={item.id} className={`review-card decision-${item.decision}`}>
+      <article key={item.id} className={`review-card decision-${item.decision}`} aria-busy={savingIds.has(item.id)}>
         <div className="review-card-top"><label><input type="checkbox" checked={selected.has(item.id)} disabled={busy} onChange={() => toggle(item.id)} aria-label={`选择 ${item.id}`} /> {number + 1}</label>
           <span className={`review-decision decision-${item.decision}`}>{labels[item.decision]}</span></div>
         <button className="review-image" aria-label={`放大 ${item.id} 的参考图`} onClick={() => setOpened(item.id)}>
@@ -134,6 +137,7 @@ export function FigureYaReview({ data }: { data: AppData }) {
           <div className="review-actions">{choices.map(([key, label]) => <button key={key} className={key === 'removed' ? 'ghost danger' : 'ghost'} disabled={busy}
             aria-pressed={item.decision === key} onClick={() => void decide([item.id], key)}>{label}</button>)}
             {item.decision !== 'pending' && <button className="ghost review-restore" disabled={busy} onClick={() => void decide([item.id], 'pending')}>恢复</button>}</div>
+          {savingIds.has(item.id) && <p className="small" role="status">正在保存选择，请稍候…</p>}
           <details><summary>用途与来源</summary><p>{item.summary || item.scenario || '详见来源页。'}</p>
             <a {...pageLink(item.page)}>来源说明</a>{item.recipes.map(r => <p key={r.id}><a {...pageLink(r.page)}>{r.title} · 配方</a></p>)}
             <p className="small muted">保留只记录样式偏好，不改变 ready 或运行验证状态。</p></details>

@@ -10,7 +10,7 @@ from urllib.parse import urlencode
 from .config import Config
 from .errors import WikiError
 from .pages import read_page
-from .read_cache import remember
+from .read_cache import read_session, remember
 
 FILE = 'figureya-curation.json'
 STATES = {'pending', 'kept', 'removed', 'later'}
@@ -207,5 +207,8 @@ def update(config, ids, decision, expected_revision):
                      config.wiki_root / '.gitignore', *watched):
             path.write_text(json.dumps({'schema_version': 1, 'decisions': data}, ensure_ascii=False, indent=2) + '\n',
                             encoding='utf-8', newline='\n')
-            save(config, f'FigureYa visual selection: {decision} ({len(ids)} modules)')
+            # Start AFTER writing, so cached filtering sees this new decision.
+            # One transaction shares reads; the next click gets a fresh snapshot.
+            with read_session():
+                save(config, f'FigureYa visual selection: {decision} ({len(ids)} modules)')
         return {'revision': revision(config), 'decisions': {key: data[key]['decision'] for key in ids}}

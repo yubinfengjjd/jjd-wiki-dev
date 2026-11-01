@@ -6,10 +6,12 @@ never create a semantic relationship. Reading this module does not run code.
 
 import re
 from collections import Counter
+from copy import deepcopy
 
 from .errors import WikiError
 from .pages import read_page
 from .spec import load_spec
+from .read_cache import remember
 
 COMPATIBILITIES = ("direct", "adaptable", "candidate")
 VERIFICATION_STATES = ("not_run", "example", "project")
@@ -161,6 +163,11 @@ def relation_errors(config, meta: dict) -> list[str]:
 
 
 def all_relations(config, include_archived: bool = True) -> list[dict]:
+    return deepcopy(remember(('relations', config.wiki_root, include_archived),
+                             lambda: _collect_relations(config, include_archived)))
+
+
+def _collect_relations(config, include_archived: bool) -> list[dict]:
     """Resolve valid author/agent records once; both endpoints share this shape.
 
     Invalid records are reported by lint and omitted here, so a dangling or

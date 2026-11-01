@@ -132,3 +132,37 @@ def test_batch_rejects_unknown_ids_and_cross_site_writes_atomically(curated_wiki
         assert client.post('/api/figureya/curation', json=payload,
                            headers={'Origin': 'https://foreign.example'}).status_code == 403
         assert not curation.removed_ids(curated_wiki)
+
+
+def test_selection_save_reuses_reads_but_sees_new_decision(curated_wiki, monkeypatch):
+    from rwiki import curation
+    from rwiki.read_cache import remember
+    built = []
+    def save_probe(config, message):
+        assert curation.removed_ids(config) == {'figureya:FigureYa1'}
+        for _ in range(20):
+            remember('expensive-library-scan', lambda: built.append(True))
+    monkeypatch.setattr('rwiki.store.save', save_probe)
+    result = curation.update(curated_wiki, ['figureya:FigureYa1'], 'removed', curation.revision(curated_wiki))
+    assert len(built) == 1
+    assert result['revision'] == curation.revision(curated_wiki)
+
+
+def test_relation_inventory_is_built_once_per_read_session(curated_wiki, monkeypatch):
+    from rwiki import relations
+    from rwiki.read_cache import read_session
+    config = curated_wiki
+    write_page(config.wiki_root / 'methods' / 'm.md',
+               {'type': 'method', 'id': 'm', 'title': 'method', 'status': 'draft'}, '# method\n')
+    checked = []
+    def probe(*args):
+        checked.append(True)
+        return [], []
+    monkeypatch.setattr(relations, '_checked', probe)
+    with read_session():
+        relations.all_relations(config)
+        relations.all_relations(config)
+    assert len(checked) == 1
+    with read_session():
+        relations.all_relations(config)
+    assert len(checked) == 2
