@@ -9,6 +9,7 @@ from .pages import get_block, read_page, section_text
 from .spec import load_spec
 from .relations import all_relations
 from .acceptance import ready_for_use
+from .curation import excluded_paths
 
 
 DISCOVERY_NOTE = "关键词与列覆盖仅为检索线索；需由课题 agent 核对研究目的、每行单位、量纲和方法前提。"
@@ -132,7 +133,10 @@ def suggest(config: Config, chart_types: list[str],
         raise WikiError("--limit 不能为负数")
     results = []
     relations = all_relations(config, include_archived=False)
+    hidden = excluded_paths(config)
     for path in page_paths(config.wiki_root):
+        if path.relative_to(config.wiki_root).as_posix() in hidden:
+            continue
         meta, body = read_page(path)
         if meta["type"] not in ("layout", "template") or not ready_for_use(config, path, meta):
             continue
@@ -187,6 +191,7 @@ def suggest(config: Config, chart_types: list[str],
 
 
 def suggest_pipeline(config: Config, figure: str | None = None, query: str = "") -> list[dict]:
+    hidden = excluded_paths(config)
     methods = []
     for path in sorted((config.wiki_root / "methods").glob("*.md")):
         meta, body = read_page(path)
@@ -195,6 +200,8 @@ def suggest_pipeline(config: Config, figure: str | None = None, query: str = "")
     relations = all_relations(config, include_archived=False)
     groups = []
     for path in sorted((config.wiki_root / "templates").glob("*.md")):
+        if path.relative_to(config.wiki_root).as_posix() in hidden:
+            continue
         template, body = read_page(path)
         if not ready_for_use(config, path, template) or (figure is not None and template["id"] != figure):
             continue

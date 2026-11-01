@@ -15,6 +15,7 @@ from .adapters import CHART_RULES, required_packages
 from .config import Config, load_taxonomy
 from .errors import WikiError
 from .pages import read_page, section_text
+from .curation import excluded_paths, filter_records, removed_ids
 
 CATALOG = "catalog.jsonl"
 KIND_ORDER = {"scenario": 0, "template": 1, "recipe": 2, "method": 3, "item": 4}
@@ -141,17 +142,21 @@ def catalog_records(config: Config) -> list[dict]:
         for item in read_items(config, source_id):
             if item["id"] not in promoted:
                 records.append(_item_record(item, meta))
-    return sorted(records, key=lambda record: (KIND_ORDER.get(record["kind"], 9), record["id"]))
+    return sorted(filter_records(config, records), key=lambda record: (KIND_ORDER.get(record["kind"], 9), record["id"]))
 
 
 def record_for(config: Config, entry_id: str) -> dict | None:
     """Catalog record of one id (page id or `<source>:<item>`); None when absent or archived."""
     try:
+        if entry_id in removed_ids(config):
+            return None
         if ":" in entry_id:
             from .sources import find_item, load_source
             source_id, item = entry_id.split(":", 1)
             return _item_record(find_item(config, source_id, item), load_source(config, source_id)[0])
         path = _page(config, entry_id)
+        if path.relative_to(config.wiki_root).as_posix() in excluded_paths(config):
+            return None
         meta, body = read_page(path)
         if meta.get("status") == "archived":
             return None
@@ -177,7 +182,7 @@ def load_catalog(config: Config) -> list[dict]:
     path = config.wiki_root / CATALOG
     if not path.is_file():
         return catalog_records(config)
-    return [json.loads(line) for line in path.read_text(encoding="utf-8").splitlines() if line.strip()]
+    return filter_records(config, [json.loads(line) for line in path.read_text(encoding="utf-8").splitlines() if line.strip()])
 
 
 # ---------------------------------------------------------------- find

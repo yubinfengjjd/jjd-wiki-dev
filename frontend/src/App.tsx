@@ -14,6 +14,7 @@ import { QueueView } from './views/QueueView';
 import { RecipesView } from './views/RecipesView';
 import { ScenariosView } from './views/ScenariosView';
 import { SourcesView } from './views/SourcesView';
+import { FigureYaReview } from './views/FigureYaReview';
 import { pendingCount as countPending } from './workflow';
 
 // The force-graph engine is the heaviest module; load it only when the network is opened.
@@ -56,6 +57,7 @@ const NAV = [
   ['gallery', '图库'],
   ['recipes', '配方'],
   ['sources', '来源目录'],
+  ['figureya', 'FigureYa 筛选'],
   ['scenarios', '场景'],
   ['methods', '方法库'],
   ['graph', '知识网络'],
@@ -113,6 +115,7 @@ export function App() {
     else if (route.view === 'methods') content = <MethodsView data={data} query={route.query} />;
     else if (route.view === 'recipes') content = <RecipesView data={data} />;
     else if (route.view === 'sources') content = <SourcesView data={data} query={route.query} />;
+    else if (route.view === 'figureya') content = <FigureYaReview data={data} />;
     else if (route.view === 'scenarios') content = <ScenariosView data={data} />;
     else if (route.view === 'graph') content = <Suspense fallback={null}><GraphView data={data} /></Suspense>;
     else if (route.view === 'queue') content = <QueueView data={data} />;

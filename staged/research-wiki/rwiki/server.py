@@ -25,6 +25,7 @@ from .code_assets import code_files, read_code, code_file
 from .verification import replay_available
 from .workflow import workflow_snapshot
 from .read_cache import read_session, remember
+from . import curation
 
 
 class RejectBody(BaseModel):
@@ -45,6 +46,12 @@ class NoteBody(BaseModel):
 
 class DeleteBody(BaseModel):
     confirmed: StrictBool
+    revision: StrictStr
+
+
+class CurationBody(BaseModel):
+    ids: list[StrictStr] = Field(min_length=1, max_length=1000)
+    decision: StrictStr
     revision: StrictStr
 
 
@@ -238,7 +245,7 @@ def create_app(config: Config) -> FastAPI:
         runtime = None
         if meta['type'] == 'template':
             runtime = runtime_facts(path.with_suffix(''), meta['id'], 'template')
-        return {"path": path.relative_to(root).as_posix(), "meta": meta, "body": body,
+        return {"path": path.relative_to(root).as_posix(), "meta": curation.visible_meta(config, meta), "body": body,
                 "implementation_status": implementation_status(path, meta) if meta['type'] == 'method' else [],
                 "runtime": runtime,
                 "backlinks": sorted(backlinks, key=lambda item: item["title"]),
@@ -287,7 +294,10 @@ def create_app(config: Config) -> FastAPI:
         workflow = {} if light else workflow_snapshot(config)
         relations = [] if light else all_relations(config)
         for path in pages():
+            if path.relative_to(root).as_posix() in curation.excluded_paths(config):
+                continue
             meta, body = read_page(path)
+            meta = curation.visible_meta(config, meta)
             page = path.relative_to(root).as_posix()
             from .method_implementations import implementation_status
             from .runtime_contract import runtime_facts
@@ -340,7 +350,27 @@ def create_app(config: Config) -> FastAPI:
                 identity = f"{sid}:{item.get('item', '')}"
                 if item.get("id") == identity and identity not in promoted:
                     records.append(_item_record(item, meta))
-        return sorted(records, key=lambda record: record["id"])
+        return sorted(curation.filter_records(config, records), key=lambda record: record["id"])
+
+    @app.get("/api/figureya/curation")
+    def figureya_curation():
+        return curation.inventory(config)
+
+    @app.post("/api/figureya/curation")
+    def figureya_decision(request: CurationBody):
+        try:
+            return curation.update(config, request.ids, request.decision, request.revision)
+        except curation.StaleDecision as error:
+            raise HTTPException(409, str(error)) from error
+        except WikiError as error:
+            raise HTTPException(422, str(error)) from error
+
+    @app.get("/api/figureya/image")
+    def figureya_image(id: str, path: str):
+        try:
+            return FileResponse(curation.image_path(config, id, path))
+        except (WikiError, ValueError, OSError, KeyError) as error:
+            raise HTTPException(404, "此模块的本地图片不存在") from error
 
     @app.get("/api/page")
     def get_page(path: str):
@@ -348,7 +378,8 @@ def create_app(config: Config) -> FastAPI:
 
     @app.get("/api/graph")
     def graph():
-        paths = pages()
+        hidden = curation.excluded_paths(config)
+        paths = [p for p in pages() if p.relative_to(root).as_posix() not in hidden]
         nodes, edges, feeds = [], set(), set()
         for path in paths:
             meta, body = read_page(path)

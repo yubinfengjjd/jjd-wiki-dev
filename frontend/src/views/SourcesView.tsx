@@ -61,6 +61,7 @@ export function SourcesView({ data, query = '' }: { data: AppData; query?: strin
     <header className="hero slim"><div className="hero-text"><h1>来源目录</h1>
       <p className="lede">按来源查找可视化模块。L0 仅登记用途、输入与依赖；配方和函数模板保留各自的运行、回放与确认状态。</p></div></header>
     <div className="filters" role="search">
+      <a className="button" href="#/figureya">看图筛选 FigureYa</a>
       <input type="search" aria-label="搜索来源模块" placeholder="搜索 FigureYa、图型、模块 ID、输入或依赖" value={q} onChange={e => {setQuery(e.target.value);setLimit(24);}} />
       <select aria-label="来源库" value={source} onChange={e => {setSource(e.target.value);setLimit(24);}}>
         <option value="">全部来源</option>{sources.map(p => <option key={p.meta.id} value={p.meta.id}>{p.meta.title} · {p.meta.id}</option>)}

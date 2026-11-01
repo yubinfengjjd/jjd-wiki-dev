@@ -167,6 +167,8 @@ def all_relations(config, include_archived: bool = True) -> list[dict]:
     malformed direct declaration cannot become an executable recommendation.
     Page status and invocation verification remain independent dimensions.
     """
+    from .curation import excluded_paths
+    hidden = excluded_paths(config)
     results = []
     for path in sorted((config.wiki_root / "methods").glob("*.md")):
         if not path.resolve().is_relative_to(config.wiki_root.resolve()):
@@ -183,7 +185,8 @@ def all_relations(config, include_archived: bool = True) -> list[dict]:
         for record in records:
             figure = record["figure"]
             _, target = _target(config, figure)
-            active = method["status"] != "archived" and target["status"] != "archived"
+            active = (method["status"] != "archived" and target["status"] != "archived"
+                      and f"{figure}.md" not in hidden)
             if not active and not include_archived:
                 continue
             results.append({
