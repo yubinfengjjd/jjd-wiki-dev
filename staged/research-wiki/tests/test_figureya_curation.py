@@ -166,3 +166,22 @@ def test_relation_inventory_is_built_once_per_read_session(curated_wiki, monkeyp
     with read_session():
         relations.all_relations(config)
     assert len(checked) == 2
+
+
+def test_removed_picks_are_not_rendered_or_reported_as_broken(curated_wiki):
+    from rwiki import curation
+    from rwiki.facts import scenario_facts
+    from rwiki.lint import lint
+    config = curated_wiki
+    path = curation.state_file(config)
+    path.write_text(json.dumps({'schema_version': 1, 'decisions': {
+        'figureya:FigureYa1': {'decision': 'removed'}}}), encoding='utf-8')
+    meta = read_page(config.wiki_root / 'scenarios' / 's.md')[0]
+    rendered = scenario_facts(config, meta)
+    assert 'figureya:FigureYa1' not in rendered
+    assert 'templates/t' not in rendered
+    assert 'figureya-archive:FigureYa1' in rendered
+    findings = lint(config)
+    assert not any('场景首选条目不存在或已归档' in item for item in findings)
+    # Authored source picks remain available when the decision is restored.
+    assert len(read_page(config.wiki_root / 'scenarios' / 's.md')[0]['picks']) == 3
