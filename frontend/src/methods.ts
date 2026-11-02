@@ -136,3 +136,26 @@ export function filterAnalysisMethods(
     return true;
   });
 }
+
+export type MethodBrowseKind = 'all' | 'analysis' | 'workflow' | 'technical';
+export function methodBrowseKind(query = ''): MethodBrowseKind {
+  const params = new URLSearchParams(query.replace(/^\?/, ''));
+  const value = params.get('kind');
+  if (value === 'all' || value === 'analysis' || value === 'workflow' || value === 'technical') return value;
+  return params.has('domain') || params.has('purpose') ? 'analysis' : 'all';
+}
+export function matchesMethodQuery(meta: MethodMeta, query: string): boolean {
+  const words = [meta.id, meta.title, meta.summary ?? '', ...(meta.purposes ?? []),
+    ...(meta.tags ?? []), ...(meta.keywords ?? []), ...(meta.cite ?? []),
+    ...(meta.implementations ?? []).flatMap(i => [i.id, i.title, i.entrypoint, ...i.dependencies])];
+  const text = words.join(' ').toLowerCase();
+  return query.toLowerCase().split(/\s+/).filter(Boolean).every(word => text.includes(word));
+}
+export function plottingCodePages(pages: PageSummary[]): PageSummary<MethodMeta>[] {
+  const seen = new Set<string>();
+  return pages.filter((page): page is PageSummary<MethodMeta> => {
+    if (page.meta.type !== 'method' || page.meta.status === 'archived'
+      || !page.meta.code_roles?.includes('visualization') || !page.meta.implementations?.length || seen.has(page.path)) return false;
+    seen.add(page.path);return true;
+  });
+}

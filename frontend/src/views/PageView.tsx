@@ -10,7 +10,7 @@ import { ItemActions, LayoutImages, MethodSource, NoteEditor, TagsEditor } from 
 import { CodeButton } from '../CodeViewer';
 import { RelationList } from '../RelationList';
 import { adaptableTemplateRelations } from '../relations';
-import { MethodOverview } from './MethodOverview';
+import { MethodOverview, MethodImplementations } from './MethodOverview';
 import { allPackages, conditionFacts, entryKindLabel, pageTypeLabel, portabilityLabel, runtimeModeLabel } from '../methods';
 
 /** The list a page belongs to, for the breadcrumb; figures and hubs fall back to the gallery. */
@@ -129,6 +129,7 @@ export function PageView({ path, data }: { path: string; data: AppData }) {
         </details>}
         {meta.type === 'layout' && <PanelSet meta={meta} pages={pagesOf(meta.templates)} />}
 
+        {meta.type === 'method' && !analysisMethod && !!meta.implementations?.length && <MethodImplementations meta={meta} implementationStatus={page.implementation_status} />}
         {analysisMethod && <MethodOverview purposeHtml={purposeHtml} meta={meta} implementationStatus={page.implementation_status} figures={methodFigures(path, data.pages.map((p) => p.path === path ? page : p), data.graph, flow)} pages={data.pages} hiddenSources={data.env.hiddenSources} />}
         {analysisMethod && <details className="method-details"><summary>查看接口结构匹配与完整关联证据</summary>
           <Chain

@@ -144,6 +144,7 @@ export function App() {
             </a>
           ))}
         </nav>
+        <button type="button" className="library-refresh" disabled={checking} onClick={() => void reload()}>{checking ? '正在同步…' : '同步知识库'}</button>
       </header>
       <main className={route.view === 'graph' ? 'main full' : 'main'}>
         {pages && checking && <p className="notice small" role="status">目录已加载，正在核对运行证据与关联；完成前不作为可执行推荐。</p>}

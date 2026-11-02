@@ -7,7 +7,7 @@ import { Flow } from '../src/flow';
 import { galleryEntries, templateSourceNote } from '../src/figureModels';
 import { escapeTableWikilinks, renderBody } from '../src/markdown';
 import { isNonCommercial, licenseLabel, recipeOrigin, resolvePick } from '../src/recipes';
-import { Gallery } from '../src/views/Gallery';
+import { Gallery, PlottingCodeShelf } from '../src/views/Gallery';
 import { PageView } from '../src/views/PageView';
 import { QueueView } from '../src/views/QueueView';
 import { RecipesView } from '../src/views/RecipesView';
@@ -28,6 +28,17 @@ const recipeMeta = (id: string, extra: Record<string, unknown> = {}) => ({
 });
 const flow = (stage: string, queue: string | null, label: string, reason = '') => ({ stage, queue, label, reason, templates: [] });
 const noRun = { url: null, kind: 'none', label: '暂无运行图' };
+
+{
+  const html = renderToStaticMarkup(<Gallery data={dataOf([])} />);
+  assert.ok(html.includes('绘图代码'), 'Gallery must expose reusable native/custom plot code separately from templates');
+  const plot = {path: 'methods/plot-code.md', meta: {type: 'method',id:'plot-code',title:'依赖与自定义绘图',method_kind:'technical',status:'draft',tags:[],inputs:[],outputs:[],source:{kind:'written'},license:'none',cite:[],favorite:false,code_roles:['visualization'],implementations:[{id:'native-route',title:'irGSEA 原生热图',language:'R',entrypoint:'code/native.R:plot',dependencies:['irGSEA']}]},implementation_status:[{id:'native-route',state:'not_run',scope:'missing package'}]};
+  const hidden = { ...plot, path:'methods/archived-plot.md', meta:{...plot.meta,id:'archived-plot',title:'已归档不展示',status:'archived'} };
+  const shelf = renderToStaticMarkup(<PlottingCodeShelf data={dataOf([plot,plot,hidden])} query="irGSEA" />);
+  assert.equal((shelf.match(/class="source-card method-code-card"/g) || []).length,1,'same code page appears once');
+  assert.ok(shelf.includes('已验证 0/1') && shelf.includes('技术资料'));
+  assert.ok(!shelf.includes('已归档不展示'));
+}
 
 const confirmable = { path: 'recipes/r-confirm.md', meta: recipeMeta('r-confirm'),
   preview: { url: '/files/wiki/recipes/r-confirm/preview.png', kind: 'replay', label: '原样运行图（最近一次通过）' },

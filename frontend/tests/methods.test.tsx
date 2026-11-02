@@ -36,23 +36,46 @@ const technical = method('technical-guide', 'technical');
 const unclassified = method('legacy-note', undefined);
 const archived = { ...method('archived-family', 'analysis'), meta: { ...analysis.meta, id: 'archived-family', title: 'archived-family', status: 'archived' } };
 const pages = [analysis, workflow, technical, unclassified, archived];
+
+check('directory searches technical code and exposes explicit type filters', () => {
+  const code = { ...method('local-omics-analysis-guide', 'technical'),
+    meta: { ...technical.meta, id: 'local-omics-analysis-guide', title: '组学代码复用',
+      keywords: ['DotPlotScores', 'irGSEA'], implementations: [
+        { id: 'native-score-dot', title: '原生 DotPlotScores', language: 'R', entrypoint: 'code/native_cases.R:native_score_dot', dependencies: [] },
+      ] } };
+  const html = renderToStaticMarkup(<MethodsView data={dataOf([...pages, code])} query="q=DotPlotScores" />);
+  assert.ok(html.includes('href="#/page/methods/local-omics-analysis-guide.md"'), 'technical code must be searchable');
+  assert.ok(html.includes('代码与技术资料') && html.includes('组合流程') && html.includes('分析理论'));
+  const only = renderToStaticMarkup(<MethodsView data={dataOf(pages)} query="kind=technical" />);
+  assert.ok(only.includes('href="#/page/methods/technical-guide.md"'));
+  assert.ok(!only.includes('href="#/page/methods/analysis-family.md"'), 'technical tab must not show analysis cards');
+});
+
+check('technical implementation detail shows branch scope without claiming an analysis family', () => {
+  const page = { ...method('project-code', 'technical'), backlinks: [], body: '# Project code\n\n## 用途\n\n项目适配。',
+    meta: { ...technical.meta, id: 'project-code', title: '项目适配', implementations: [
+      { id: 'native-route', title: '依赖原生图', language: 'R', entrypoint: 'code/plot.R:plot', dependencies: ['irGSEA'] },
+    ] }, implementation_status: [{ id: 'native-route', state: 'not_run', scope: 'irGSEA package absent' }] };
+  pageCache.set(page.path, page);
+  const html = renderToStaticMarkup(<PageView path={page.path} data={dataOf([page])} />);
+  assert.ok(html.includes('具体实现与验证范围'), 'technical implementations were hidden');
+  assert.ok(html.includes('依赖原生图') && html.includes('irGSEA package absent'));
+  assert.ok(!html.includes('研究问题与用途'), 'technical page must retain its classification');
+});
 globalThis.fetch = async () => ({ ok: true, json: async () => pages });
 await api.pages();
-check('default methods contains analysis only and auxiliary material remains reachable', () => {
+check('default directory includes typed materials and analysis tab keeps canonical families separate', () => {
   const html = renderToStaticMarkup(<MethodsView data={dataOf(pages)} />);
-  const auxiliaryAt = html.indexOf('<summary>辅助资料');
-  assert.ok(auxiliaryAt > 0, 'auxiliary material has its own folded area');
-  const main = html.slice(0, auxiliaryAt);
-  assert.ok(main.includes('href="#/page/methods/analysis-family.md"'));
-  for (const id of ['workflow-guide', 'technical-guide', 'legacy-note']) {
-    assert.ok(!main.includes(`href="#/page/methods/${id}.md"`));
-    assert.ok(html.slice(auxiliaryAt).includes(`href="#/page/methods/${id}.md"`));
+  for (const id of ['analysis-family','workflow-guide','technical-guide','legacy-note']) {
+    assert.ok(html.includes(`href="#/page/methods/${id}.md"`));
   }
   assert.ok(html.includes('待分类'));
   assert.ok(!html.includes('archived-family'));
-  assert.ok(main.includes('analysis-family answers its specific research question'));
-  assert.ok(main.includes('暂无已验证实现'));
-  assert.ok(!main.includes('>可用<'));
+  const canonical = renderToStaticMarkup(<MethodsView data={dataOf(pages)} query="kind=analysis" />);
+  assert.ok(canonical.includes('href="#/page/methods/analysis-family.md"'));
+  for (const id of ['workflow-guide','technical-guide','legacy-note']) assert.ok(!canonical.includes(`href="#/page/methods/${id}.md"`));
+  assert.ok(canonical.includes('暂无已验证实现'));
+  assert.ok(!canonical.includes('>可用<'));
 });
 
 const detailed = {
@@ -214,13 +237,13 @@ const taxPages = [
 ];
 const taxData = (query = '') => ({ ...dataOf(taxPages), taxonomy });
 check('domain and purpose navigation use backend vocabulary and distinct counts', () => {
-  const html = renderToStaticMarkup(<MethodsView data={taxData()} query="" />);
+  const html = renderToStaticMarkup(<MethodsView data={taxData()} query="kind=analysis" />);
   assert.ok(html.includes('全部 3'));
   assert.ok(html.includes('单细胞分析 3'));
   assert.ok(html.includes('转录组 1'));
   assert.ok(html.includes('降维与聚类 2'));
   assert.ok(html.includes('模型评价 2'));
-  assert.ok(html.includes('href="#/methods?domain=%E5%8D%95%E7%BB%86%E8%83%9E%E5%88%86%E6%9E%90"'));
+  assert.ok(html.includes('href="#/methods?domain=%E5%8D%95%E7%BB%86%E8%83%9E%E5%88%86%E6%9E%90&amp;kind=analysis"'));
 });
 check('one page appears once even with multiple domain and purpose memberships', () => {
   const html = renderToStaticMarkup(<MethodsView data={taxData()} query="" />);
@@ -250,13 +273,13 @@ check('search and empty results stay explicit with a return-to-all link', () => 
   assert.ok(!matched.includes('href="#/page/methods/both.md"'));
   const empty = renderToStaticMarkup(<MethodsView data={taxData()} query="?q=no-such-method" />);
   assert.ok(empty.includes('没有匹配的方法'));
-  assert.ok(empty.includes('href="#/methods"'));
+  assert.ok(empty.includes('href="#/methods?kind=all"'));
 });
 check('technical and workflow material stays out of analysis filtering', () => {
   const paths = filterAnalysisMethods(taxPages, taxonomy, { domain: '', purpose: '', q: '' }).map(p => p.path);
   assert.deepEqual(paths, ['methods/qc-umap.md', 'methods/reg-eval.md', 'methods/both.md']);
   const html = renderToStaticMarkup(<MethodsView data={taxData()} query="" />);
-  const auxiliaryAt = html.indexOf('<summary>辅助资料');
+  const auxiliaryAt = html.indexOf('class="method-auxiliary"');
   assert.ok(auxiliaryAt > 0);
   assert.ok(html.slice(auxiliaryAt).includes('href="#/page/methods/flow-note.md"'));
 });
@@ -266,7 +289,7 @@ check('the 22 interface schemas are folded behind a reachable entry', () => {
     meta: { type: 'interface', slug: `i${i}`, title: `接口 ${i}`, columns: { value: { type: 'float', description: '值' } } },
   }));
   const data = { ...dataOf([...taxPages, ...interfaces]), taxonomy } as any;
-  const html = renderToStaticMarkup(<MethodsView data={data} query="" />);
+  const html = renderToStaticMarkup(<MethodsView data={data} query="kind=analysis" />);
   const summaryAt = html.indexOf('<summary>数据接口');
   assert.ok(summaryAt > 0, 'interface section is folded');
   assert.ok(html.indexOf('接口 0') > summaryAt, 'interface detail remains reachable inside the fold');
@@ -341,7 +364,7 @@ check('search matches purposes and is controlled by the URL query', () => {
 });
 check('real API taxonomy drives SSR without a second word list or duplicate cards', () => {
   const data = { ...dataOf(REAL_API_PAGES), taxonomy: REAL_TAXONOMY } as any;
-  const html = renderToStaticMarkup(<MethodsView data={data} query="" />);
+  const html = renderToStaticMarkup(<MethodsView data={data} query="kind=analysis" />);
   assert.ok(html.includes('全部 15'));
   assert.ok(html.includes('单细胞分析 13'));
   assert.ok(html.includes('转录组 4'));

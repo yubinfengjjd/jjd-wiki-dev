@@ -221,6 +221,10 @@ export interface MethodMeta extends ItemBase {
   type: 'method';
   /** Missing classification remains unclassified; it must not default to analysis. */
   method_kind?: MethodKind;
+  /** Explicit browsing roles; do not infer a plot or algorithm from its filename. */
+  code_roles?: ('analysis' | 'visualization' | 'runtime')[];
+  /** Canonical theory references, not executable compatibility claims. */
+  theory_methods?: string[];
   /** Controlled analysis purpose list; discovery only, never an execution gate. */
   purposes?: string[];
   keywords?: string[];

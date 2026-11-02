@@ -39,10 +39,18 @@ medfig-render、medpaper-pipeline 出图前先 `rwiki find`：有可用模板或
 3. `rwiki deps <配方…>` 列缺包，整理成一批清单交作者；作者按批次批准后 `rwiki deps <配方…> --install`（只装进 Wiki 专用 R 库）。
 4. `rwiki run <配方…> [--jobs N]` 原样运行；看收据与 preview.png，补页面判断。缺包写 not_run，不伪造。
 5. 作者确认一批：`rwiki mark-ready <id…>`（任一不通过则全部不改）。
-6. L2 课题用到再做：`rwiki scaffold-template <配方 id> --from-recipe --chart-type <slug> --title …` → 写 `code\`、`example\` 与 spec → `rwiki verify-template <模板 id>` → `rwiki mark-ready <模板 id>`。复刻图：sci-figure-replica 复刻后 `rwiki ingest-figure <画廊条目>` → `rwiki scaffold-template <版式 id> --chart-type … --panels …`（相同画法用 `attach-template`）→ `verify-template` → `mark-ready`。
+6. 默认同步整理代码复用层（成熟依赖优先复用既有闭包/原生调用适配，避免重复建模板）；确需单 panel 模板时：`rwiki scaffold-template <配方 id> --from-recipe --chart-type <slug> --title …` → 写 `code\`、`example\` 与 spec → `rwiki verify-template <模板 id>` → `rwiki mark-ready <模板 id>`。复刻图：sci-figure-replica 复刻后 `rwiki ingest-figure <画廊条目>` → `rwiki scaffold-template <版式 id> --chart-type … --panels …`（相同画法用 `attach-template`）→ `verify-template` → `mark-ready`。
 7. 方法：按 AGENTS.md 的四步（读目的与输入 → 查库语义去重 → 提炼与验证 → 知识整合与确认），骨架用 `rwiki scaffold-method`。
 
 细节见 references/sources-and-recipes.md 与 references/method-families.md。
+
+## 默认双层入库与前端同步（2026-11-02）
+
+作者要求：每次入库默认交付代码复用层与方法理论层，并实际同步前端展示。方法理论含目的、输入单位、假设/统计边界和输出含义；代码保留原语言、原字节来源与显式可复制入口、最小闭包、runtime.json、当前逐分支收据。缺包或未运行如实写 not_run；只有理论来源时标明代码缺口，不虚构实现。
+
+继续遵循方法语义去重：analysis 为规范理论家族，workflow/technical 资料关联既有家族。irGSEA/SCP 等原生绘图与自定义函数分开，优先复用，不为展示凑模板。方法页 `code_roles: [visualization]` 显式进入图库“绘图代码”；`theory_methods` 仅指向理论资料，不授予接口直连或科学验证。
+
+收尾顺序：逐页 check-entry → save → lint → 核对实际 API/前端显示与代码查看/下载。改前端时构建并通过 tools/deploy.py 同步安装副本；浏览器实际核对方法库检索、图库对应入口、详情分支/缺包标识。只报告本地提交不算完成前端同步，未操作界面时不得声称已展示。
 
 ## 待办、体检与 Git
 

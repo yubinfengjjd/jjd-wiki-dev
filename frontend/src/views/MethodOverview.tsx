@@ -64,6 +64,29 @@ export function MethodOverview({ meta, purposeHtml, implementationStatus = [], f
         </section>
       ))}
     </details>
+    <MethodImplementations meta={meta} implementationStatus={implementationStatus} />
+    <h2>可以怎样画</h2>
+    <p className="muted small">同一图样只展示一次，优先提供函数模板；来源保留在图样或模板详情中。兼容关系与运行验证分别说明。</p>
+    {shown.length === 0 ? <p className="muted">暂无有依据的关联图样；方法判断见正文。</p> : <div className="method-figure-grid">
+      {shown.map((f) => <article key={f.path} className="method-visual">
+        <a className="method-figure-link" {...pageLink(f.path)}>
+          <span className="plate"><FigureImage key={imageOf(f.meta)} meta={f.meta} /></span>
+          <strong>{f.meta.title}</strong>
+        </a>
+        <div className="method-visual-badges"><StatusBadge status={effectiveStatus(f.meta)} label={methodFigureStatusLabel(f)} />
+          <span className={`compatibility compatibility-${f.semantic?.compatibility ?? 'candidate'}`}>{f.semantic ? COMPATIBILITY_LABEL[f.semantic.compatibility] : f.relation === 'reference' ? '参考图样' : '仅结构匹配'}</span></div>
+        {f.semantic && <><p className="small">{f.semantic.reason}</p>{f.semantic.compatibility === 'adaptable' && <p className="small adaptation-note"><b>使用前需准备：</b>{f.semantic.adaptation}</p>}<p className="muted small">分析到绘图：{verificationLabel(f.semantic.verification)}</p></>}
+        {f.meta.type === 'template' && <p className="muted small source-note">{templateSourceNote(f.meta, pages, hiddenSources)}</p>}
+        {!!f.sourceLinks?.length && <p className="small source-note">来源：{f.sourceLinks.map((s, i) => <a key={s.path} {...pageLink(s.path)} title={s.title}>{i ? ' · ' : ''}图样 {i + 1}</a>)}</p>}
+      </article>)}
+    </div>}
+    <p className="small"><a href={wikiFile(`methods/${meta.id}.md`)} target="_blank" rel="noreferrer">查看完整 Wiki 记录与来源元数据</a></p>
+  </section>;
+}
+
+/** Runtime evidence is visible for technical/workflow code too, without analysis UI. */
+export function MethodImplementations({ meta, implementationStatus = [] }: Pick<Props, 'meta' | 'implementationStatus'>) {
+  return <section className="method-code-implementations">
     <h2>具体实现与验证范围</h2>
     <p className="muted small">笔记确认与运行验证分别记录。验证仅覆盖所列分支、环境和检查范围；课题中仍需核对科学前提。</p>
     {meta.implementations?.length ? <div className="method-implementation-scroll"><table className="method-implementations">
@@ -98,21 +121,5 @@ export function MethodOverview({ meta, purposeHtml, implementationStatus = [], f
         </tr>;
       })}</tbody>
     </table></div> : <p className="notice small">尚未登记具体实现；可阅读方法判断，暂无已验证实现。</p>}
-    <h2>可以怎样画</h2>
-    <p className="muted small">同一图样只展示一次，优先提供函数模板；来源保留在图样或模板详情中。兼容关系与运行验证分别说明。</p>
-    {shown.length === 0 ? <p className="muted">暂无有依据的关联图样；方法判断见正文。</p> : <div className="method-figure-grid">
-      {shown.map((f) => <article key={f.path} className="method-visual">
-        <a className="method-figure-link" {...pageLink(f.path)}>
-          <span className="plate"><FigureImage key={imageOf(f.meta)} meta={f.meta} /></span>
-          <strong>{f.meta.title}</strong>
-        </a>
-        <div className="method-visual-badges"><StatusBadge status={effectiveStatus(f.meta)} label={methodFigureStatusLabel(f)} />
-          <span className={`compatibility compatibility-${f.semantic?.compatibility ?? 'candidate'}`}>{f.semantic ? COMPATIBILITY_LABEL[f.semantic.compatibility] : f.relation === 'reference' ? '参考图样' : '仅结构匹配'}</span></div>
-        {f.semantic && <><p className="small">{f.semantic.reason}</p>{f.semantic.compatibility === 'adaptable' && <p className="small adaptation-note"><b>使用前需准备：</b>{f.semantic.adaptation}</p>}<p className="muted small">分析到绘图：{verificationLabel(f.semantic.verification)}</p></>}
-        {f.meta.type === 'template' && <p className="muted small source-note">{templateSourceNote(f.meta, pages, hiddenSources)}</p>}
-        {!!f.sourceLinks?.length && <p className="small source-note">来源：{f.sourceLinks.map((s, i) => <a key={s.path} {...pageLink(s.path)} title={s.title}>{i ? ' · ' : ''}图样 {i + 1}</a>)}</p>}
-      </article>)}
-    </div>}
-    <p className="small"><a href={wikiFile(`methods/${meta.id}.md`)} target="_blank" rel="noreferrer">查看完整 Wiki 记录与来源元数据</a></p>
   </section>;
 }

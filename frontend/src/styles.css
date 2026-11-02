@@ -2073,3 +2073,8 @@ a.chain-item:hover {
 .source-card dt { font-size: .75rem; opacity: .7; margin-top: .6rem; }
 .source-assets { display: flex; gap: 2rem; flex-wrap: wrap; margin: 1.5rem 0; }
 .source-assets details { min-width: min(100%, 280px); flex: 1; }
+.method-auxiliary { margin-top: 2rem; }
+.method-code-card { display: flex; flex-direction: column; }
+.method-code-card .code-entry-names { padding-left: 1.2rem; }
+.method-code-actions { display: flex; flex-wrap: wrap; align-items: center; gap: 1rem; margin-top: auto; padding-top: .8rem; }
+.theory-links a { display: inline-block; margin-right: .8rem; }
