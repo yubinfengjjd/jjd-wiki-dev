@@ -12,7 +12,7 @@
 
 | 键 | 含义 |
 |---|---|
-| `sources_root` | 上游快照目录（不在 Wiki 内，不进 Git） |
+| `sources_root` | 上游获取缓存目录（不在 Wiki 内）；已入库的知识源码与必要资源默认保存 Git |
 | `work_root` | 配方运行副本、装包日志与临时 R 脚本目录 |
 | `r_libs` | Wiki 专用 R 库列表；运行时全部加入 `R_LIBS`，`deps --install` 只装进第一个目录 |
 | `cran_mirror` | `deps --install` 用的 CRAN 镜像，缺省 `https://cloud.r-project.org/` |
@@ -112,17 +112,15 @@
 
 ## restore
 
-`restore <配方 id…>`：限制性许可配方的 `source/` 不进 Git，新检出里没有。restore 要求来源页 commit 与 `source.json` 的 commit 相同，从快照取回条目，先放进暂存目录核对全部哈希，一致才替换 `source/`；不一致时什么都不替换。
+`restore <配方 id…>`：源码默认随 Git 检出；本命令用于修复旧检出或缺失的 `source/`。restore 要求来源页 commit 与 `source.json` 的 commit 相同，从快照取回条目，先放进暂存目录核对全部哈希，一致才替换 `source/`；不一致时什么都不替换。
 
-## 许可与 .gitignore 托管块
+## 许可与 Git 保存（作者 2026-11-02 修订）
 
-- 限制性许可：GPL 系（GPL、AGPL、LGPL）与 CC-BY-*-NC/SA/ND（如 FigureYa 的 `CC-BY-NC-SA-4.0`）。
-- 托管块在知识库 `.gitignore` 的 `# >>> push-guard gpl` 与 `# <<< push-guard gpl` 之间，save 与 `gh guard --sync-ignore` 重写，块外字节不动：
-  - GPL 系方法：`methods/<id>/code/`、`methods/<id>/source/`；
-  - 限制性许可配方：`recipes/<id>/source/`；
-  - 限制性许可模板（含从这类配方派生的模板，`license` 随 `scaffold-template --from-recipe` 继承）：`templates/<id>/code/`、`templates/<id>/example/`。
-- 这些目录不进 Git、不推送；`source.json`、`runs/`、`preview.png` 与页面照常提交。pre-push 的 `gh guard` 另按路径与许可头拦截。
-- 许可提示：`CC-BY-NC-SA-4.0` 有内置提示（仅限非商业、署名并引用、改编须相同方式共享、源码与派生代码不进 Git）；其他许可用 `--notice` 或通用提示。提示写在配方页顶部和 `RWIKI-USE.md`。
+- 所有知识默认保存 Git，包括限制性许可源码、派生代码、公开示例、模板与验证材料；私有数据、密码和私钥不进 Git。
+- 保留原字节、许可证、署名、来源和用途限制。保存 Git 不改变 GPL、CC-BY-NC-SA 等许可，不授予商业使用或任意改许可的权限。
+- `save` 与 `gh guard --sync-ignore` 只清除旧 `# >>> push-guard gpl` 托管块，不再生成许可排除项；历史本地排除需要迁移时一并清理。
+- `restore` 仍按固定 commit 和 source.json 哈希恢复缺失源码；不覆盖哈希不一致的内容。
+- 运行环境、缓存、浏览器会话与重复备份不属于知识原件；公开样例与必要配色等资源不能当作私有课题数据误排除。
 
 ## catalog.jsonl 与 find
 

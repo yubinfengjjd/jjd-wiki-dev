@@ -20,21 +20,22 @@ def vault_issues(gh_repos) -> list[dict]:
     return gh_repos.gh.state()["repos"]["tester/jjd-wiki"]["issues"]
 
 
-def add_gpl_method(gh_repos):
-    """GPL 方法页 + 托管块入库并推到 origin/main；源码只在主检出磁盘上（被忽略）。"""
+def add_gpl_method(gh_repos, legacy=False):
+    """Knowledge code is tracked by default; legacy=True tests old ignored junctions."""
     wiki, vault = gh_repos.config.wiki_root, gh_repos.vault
     (wiki / "methods/scp.md").write_text("---\ntype: method\nid: scp\ntitle: SCP\nlicense: GPL-3\n---\n# SCP\n",
                                          encoding="utf-8", newline="\n")
-    sync_ignore(wiki)
+    if legacy:
+        (wiki / ".gitignore").write_text("# >>> push-guard gpl\n/methods/scp/code/\n/methods/scp/source/\n# <<< push-guard gpl\n", encoding="utf-8")
     write_page(wiki / "projects/p.md", {"type": "project", "slug": "p", "title": "课题", "templates": []},
                "# 课题\n\n源码 [[methods/scp/code/run.R]]，许可 [[methods/scp/source/LICENSE.md]]\n")
-    git_run(vault, "add", "-A")
-    git_run(vault, "commit", "-q", "-m", "gpl method")
-    git_run(vault, "push", "-q", "origin", "main")
     (wiki / "methods/scp/code").mkdir(parents=True)
     (wiki / "methods/scp/source").mkdir()
     (wiki / "methods/scp/code/run.R").write_text("x <- 1\n", encoding="utf-8")
     (wiki / "methods/scp/source/LICENSE.md").write_text("许可证文本\n", encoding="utf-8")
+    git_run(vault, "add", "-A")
+    git_run(vault, "commit", "-q", "-m", "gpl method")
+    git_run(vault, "push", "-q", "origin", "main")
     assert git_run(vault, "status", "--porcelain") == ""
 
 
@@ -116,7 +117,7 @@ def test_rerun_after_failure_does_not_duplicate_issue(gh_repos, monkeypatch):
 
 def test_worktree_links_gpl_dirs_readably_and_invisibly(gh_repos, monkeypatch):
     config, vault = gh_repos.config, gh_repos.vault
-    add_gpl_method(gh_repos)
+    add_gpl_method(gh_repos, legacy=True)
     monkeypatch.setenv("RWIKI_AGENT", "codex")
     start_batch(config, "ingest", BATCH, "SCP 第三批", "vault")
     result = start_task(config, BATCH, "P2", "harmony", "整合 harmony", True)

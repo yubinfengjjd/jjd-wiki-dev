@@ -157,7 +157,7 @@ def test_find_and_show_l0(v2):
     assert find(config, "完全不相关的词组xyz") == []
 
 
-def test_promote_copies_bytes_and_ignores_restricted_source(v2):
+def test_promote_copies_and_tracks_licensed_source(v2):
     from rwiki.lint import lint
     from rwiki.pages import read_page
 
@@ -176,9 +176,9 @@ def test_promote_copies_bytes_and_ignores_restricted_source(v2):
     assert meta["status"] == "draft" and meta["title"] == "两组 KM 生存曲线"
     assert "CC BY-NC-SA 4.0" in body and "只有一组时不适用" in body
     ignore = (config.wiki_root / ".gitignore").read_text(encoding="utf-8")
-    assert "/recipes/figureya-demosurv/source/" in ignore
+    assert "/recipes/figureya-demosurv/source/" not in ignore
     tracked = git_run(vault, "ls-files", "--", "知识库/recipes")
-    assert "source.json" in tracked and "FigureYaDemoSurv.Rmd" not in tracked
+    assert "source.json" in tracked and "FigureYaDemoSurv.Rmd" in tracked
     assert (config.wiki_root / "chart-types/km-curve.md").is_file()
     errors = [line for line in lint(config) if line.startswith("ERROR")]
     assert errors == []
@@ -339,18 +339,18 @@ def test_scenario_and_template_from_recipe_lint_clean(v2):
     facts = page_facts(config, scenario)
     assert "两组 KM" in facts and "L0" in facts
     ignore = (config.wiki_root / ".gitignore").read_text(encoding="utf-8")
-    assert f"/templates/{tid}/code/" in ignore
+    assert f"/templates/{tid}/code/" not in ignore
     errors = [line for line in lint(config) if line.startswith("ERROR")]
     assert errors == []
     from rwiki.finder import find
     assert find(config, "生存")[0]["id"] in ("figureya-demosurv", "demo:FigureYaDemoNeedy")
-    # GitHub 上的检出没有被许可证忽略的模板 code/：lint --ci 报 LOCAL-ONLY，不报 ERROR。
+    # Knowledge code is tracked: a missing code directory is an error in CI too.
     shutil.rmtree(config.wiki_root / f"templates/{tid}/code")
     plain = [line for line in lint(config) if line.startswith(f"ERROR templates/{tid}.md")]
     assert plain and all("code/" in line for line in plain)
     ci = lint(config, ci=True)
-    assert [line for line in ci if line.startswith("ERROR ")] == []
-    assert any(line.startswith(f"LOCAL-ONLY templates/{tid}.md") for line in ci)
+    assert any(line.startswith(f"ERROR templates/{tid}.md") for line in ci)
+    assert not any(line.startswith(f"LOCAL-ONLY templates/{tid}.md") for line in ci)
 
 
 def test_scenario_pick_must_exist(v2):

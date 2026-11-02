@@ -10,13 +10,13 @@ ITERATIONS = 100
 HOOK_EVERY = 4
 # (规则, 路径模板, 内容)；内容超过 push_guard.max_file_mb 对应的 209 字节即命中 size。
 VIOLATIONS = (
-    ("gallery", "画廊/e{n}/figure.png", b"\x89PNG\0fake"),
+    ("private-data", "private-data/e{n}/data.csv", b"private\n"),
     ("abs-path", "docs/路径 {n}.txt", "见 E:\\research-wiki\\证据\n".encode("utf-8")),
     ("abs-path", "qa/home{n}.md", b"run in /Users/alice/x\n"),
     ("size", "data/big{n}.bin", b"x" * 400),
     ("project-data", "课题/wiki-use/_project/t{n}.csv", b"a,b\n1,2\n"),
-    ("gpl-header", "src/g{n}.R", f"# {SPDX}GPL-3.0\nf <- 1\n".encode()),  # 拼出标记，自身不被拦截
-    ("gpl-path", "vendor/SCP-local/s{n}.txt", b"source\n"),
+    ("secret", "src/g{n}.txt", ("-----BEGIN " + "RSA PRIVATE KEY-----\n").encode()),
+    ("secret", "vendor/{n}/id_ed25519", b"private-key\n"),
     ("abs-path", "links/s{n}.lnk", b"L\0\0\0binary"),
 )
 

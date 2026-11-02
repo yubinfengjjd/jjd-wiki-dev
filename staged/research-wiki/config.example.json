@@ -1,7 +1,7 @@
 {
   "wiki_root": "<vault>\\知识库",
   "gallery_root": "<vault>\\画廊",
-  "taxonomy": "<home>\\.claude\\skills\\sci-figure-replica\\assets\\scenario_taxonomy.yaml",
+  "taxonomy": "<skill>\\assets\\scenario_taxonomy.json",
   "python_exe": "<home>\\.codex\\venvs\\sci-figure-replica\\Scripts\\python.exe",
   "rscript_exe": "<R_HOME>\\bin\\Rscript.exe",
   "port": 8765,
@@ -38,7 +38,7 @@
   "work_root": "<env>\\work\\rwiki",
   "r_libs": ["<env>\\R-lib\\figureya", "<env>\\R-lib-scp\\4.5"],
   "cran_mirror": "https://cloud.r-project.org/",
-  "push_guard": {"max_file_mb": 5, "gpl_globs": ["**/SCP-local/**"]},
+  "push_guard": {"max_file_mb": 5},
   "env": {
     "vars": {"HTTPS_PROXY": "http://<proxy-host>:<port>", "GH_PROMPT_DISABLED": "1"},
     "path_prepend": ["<GitHub CLI 安装目录>"]

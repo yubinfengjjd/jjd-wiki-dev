@@ -88,7 +88,7 @@ v2（2026-10-27）起，Issue / PR / 他人评审是可选流程：知识库可�
 | `merge` | `<pr> [--plan <文本>]` | 按风险档做 Merge_Gate 判定（档位在合并时重算，不信 `risk:*` 标签；base 为 `main` 时还要求 PR 已包含最新 main；见下文）；输出 JSON 含 `tier`；通过则 `--match-head-commit` 合并并收尾，不通过则回帖阻断原因与计划并退出 1；PR 已合并时只做收尾。全程非交互；收尾任一步中断（如 worktree 目录被终端或编辑器占用）时报错并保留本地分支，关闭占用后原样重跑即补完 | — |
 | `close-batch` | `<批次> [--repo dev\|vault]` | Milestone 内 Issue 全部关闭后关闭 Milestone，不开 PR（旧批次兼容见上文）；有未关闭 Issue 时拒绝并列出 | Milestone 内 Issue 全部关闭；两个仓库都有同名批次时须给 `--repo` |
 | `migrate-legacy` | `--map <legacy-map.json> [--dry-run]` | 按映射把旧任务书与 `remaining-gaps.md` 缺口迁为 Issue（`rwiki-legacy` 标记去重），非 dry-run 时在原文件顶部加迁移标记 | 首次推送完成 |
-| `guard` | `[--range <rev-range>] [--pre-push <remote> <url>] [--sync-ignore]` | 推送防泄漏扫描：画廊、限制性许可源码（路径与 GPL 文件头）、课题数据 `wiki-use/_project/`、超限文件、本机绝对路径；`--sync-ignore` 重写 `知识库/.gitignore` 的托管块；不带 `--range` 时扫描尚未推送的提交 | 无（纯本地，不需要 gh） |
+| `guard` | `[--range <rev-range>] [--pre-push <remote> <url>] [--sync-ignore]` | 推送防泄漏扫描：私有数据、密码/令牌/私钥、课题数据 `wiki-use/_project/`、超限文件、本机绝对路径；`--sync-ignore` 清除旧许可排除托管块；不带 `--range` 时扫描尚未推送的提交 | 无（纯本地，不需要 gh） |
 | `protect-baseline` | `[--check]` | 生成或核验 `知识库/.protected-hashes.json`（每个 user 块的 SHA-256，含行尾）；`--check` 输出为空表示通过 | 无（纯本地，不需要 gh） |
 | `tier` | `--range <rev-range> [--rules-ref <提交>]` | 按 `git diff --no-renames --name-only <range>` 的改动路径（改名拆成旧路径删除 + 新路径新增，两边都判档）与 base 上的 `.github/risk-tiers.json`（规则来源缺省为范围左端，`A...B` 取 merge-base；`{"high": [glob], "low": [glob], "high_requires_owner": true\|false}`，最后一项可选、缺省 true、必须是布尔；`*` 不跨 `/`，`**` 匹配零到多级目录，不带 `/` 的模式只匹配根目录）输出 JSON `{"tier", "reasons", "paths", "rules_ref"}`：任一路径命中 high 为 `high`，全部命中 low 为 `low`，其余（含无改动、无规则文件）为 `normal`。提交前自查用 `gh tier --range origin/main...HEAD` | 无（纯本地，不需要 gh） |
 
@@ -145,13 +145,13 @@ $env:RWIKI_AGENT = 'codex'                         # 执行写入的 agent 名
 
 ## worktree 与限制性许可目录联接
 
-- 限制性许可源码目录（GPL 方法的 `code/`、`source/`，限制性许可配方的 `source/`，此类模板的 `code/`、`example/`）写在 `知识库/.gitignore` 的 `# >>> push-guard gpl` 托管块中，不入库；`save` 在暂存前自动同步该块。块的内容与许可判定见 sources-and-recipes.md。
-- `start-task --worktree` 在 `worktree_root/<分支名把 / 换成 __>` 建 worktree，并为托管块中每个目录建 `mklink /J` 目录联接指回主检出，使 worktree 内渲染、运行、完整 lint 与方法复核可用；联接不进 git。经联接看到的受限目录与主检出是同一份字节，lint 不因此报验收过期或 `spec.entry` 缺失。
+- 作者 2026-11-02 修订：知识默认保存 Git，包括限制性许可源码、公开示例、画廊知识与验证材料；私有数据、密码和私钥不入库。保留许可证与来源；`save` 清理旧 `push-guard gpl` 排除块。
+- 兼容旧检出：`start-task --worktree` 在 `worktree_root/<分支名把 / 换成 __>` 建 worktree，并为托管块中每个目录建 `mklink /J` 目录联接指回主检出，使 worktree 内渲染、运行、完整 lint 与方法复核可用；联接不进 git。经联接看到的受限目录与主检出是同一份字节，lint 不因此报验收过期或 `spec.entry` 缺失。
 - `merge` 收尾时先逐个 `rmdir` 联接本身（确认是 reparse 点，不带 `/s`），再 `git worktree remove`（不加 `--force`）。不要手工 `rmdir /s` 或强制删除 worktree：这些源码不在远端，误删只能从来源快照 `restore`（配方）或无法恢复（本地方法源码）。
 
 ## lint --ci 与 LOCAL-ONLY
 
-GitHub 上的 vault 不含限制性许可源码目录、`画廊/` 与 `维护记录/`。CI 运行 `lint --ci`：被 vault 忽略（`git check-ignore` 命中）而缺失的引用报 `LOCAL-ONLY`，不计入错误；未被忽略的缺失仍是 `ERROR`。`LOCAL-ONLY` 表示“这项只能在本机核对”，不是通过。完整 `lint` 与方法复核只在主检出或带联接的 worktree 中运行。
+GitHub 上的 vault 默认保存知识源码、公开资源与知识维护记录。私有课题数据及非知识运行产物不推送。CI 运行 `lint --ci`：被 vault 忽略（`git check-ignore` 命中）而缺失的引用报 `LOCAL-ONLY`，不计入错误；未被忽略的缺失仍是 `ERROR`。`LOCAL-ONLY` 表示“这项只能在本机核对”，不是通过。完整 `lint` 与方法复核只在主检出或带联接的 worktree 中运行。
 
 ## 仅本地运行的检查与 --local-report
 
@@ -170,7 +170,7 @@ CI 运行 `pytest -m "not r and not compose and not local"`、前端 `npm test`�
 | `verify-template` / `verify-layout` / `render`（`pytest -m r`） | 需本机 Rscript 与 R 包 |
 | 配方 `run`、`deps`、`restore` | 需本机 Rscript、Wiki 专用 R 库与来源快照 |
 | panel 合成（`pytest -m compose`） | 需 sci-figure-replica 环境 |
-| `pytest -m local`、方法复核回执重放、`check-entry` 涉及 runtime | 依赖本机数据、真实画廊与被忽略的限制性许可源码 |
+| `pytest -m local`、方法复核回执重放、`check-entry` 涉及 runtime | 依赖本机数据、真实画廊与历史检出的本地源码或私有输入 |
 | 真实画廊读取（`ingest-figure`、`test-gallery*`） | 画廊受版权保护，不入库 |
 | `frontend/tests/real-taxonomy.ts` | 读本机 taxonomy |
 | `tools/deploy.py` 部署与 `--verify-only` | 操作本机 6 个技能目录 |
@@ -196,7 +196,7 @@ CI 运行 `pytest -m "not r and not compose and not local"`、前端 `npm test`�
 
 ## 推送边界与部署来源
 
-- 不推送：`画廊/`、`维护记录/`、限制性许可源码目录、课题数据（`wiki-use/_project/`）、`config.json`、`codex/`、`*.lnk`、`Rplots.pdf`、超过阈值（默认 5 MB）的文件、本机绝对路径。`.push-guard-allow` 只能豁免 `abs-path` 与 `size`，每条须写理由。
+- 不推送：私有数据、密码、私钥、课题数据（`wiki-use/_project/`）、含凭据的本机配置与非知识运行产物。知识、源码、公开示例默认入 Git；超过阈值（默认 5 MB）的已核查公开资源和必要路径记录，按精确路径审批豁免。`.push-guard-allow` 只能豁免 `abs-path` 与 `size`，每条须写理由。
 - 每次推送都经 `gh guard`（wrapper 与 hook 各查一次）；hook 拒绝推送任何 `legacy/*`，其余分支（含 `main`）只做内容扫描。
 - `tools/deploy.py <record> "<note>" [--sync-config]` 只在 `开发` 工作区干净、HEAD 等于本地 `main`、`origin/main` 或恰为已推送 tag 时部署 6 个技能目录（`.agents`、`.codex`、`.claude`、`.cc-switch`、`.config/opencode`、`.kiro`），manifest 记 `source_commit`、`source_ref` 与 `source_tag`；`--sync-config` 先备份再用 staged `config.json` 覆盖各处；`deploy.py --verify-only` 只核对 6 处副本与 staged 的哈希，不写入。
 

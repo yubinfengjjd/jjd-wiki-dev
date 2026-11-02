@@ -67,7 +67,7 @@ medfig-render、medpaper-pipeline 出图前先 `rwiki find`：有可用模板或
 - 往课题环境装包，或未经作者按批次批准就 `deps --install`。
 - 把课题数据、脚本、成图写进知识库目录。
 - 手改 `<!-- user:start -->` 区块、facts 区块或 frontmatter 的 status/favorite。
-- 把限制性许可源码（如配方 `source\`）加进 Git 或推送：它们不进 Git，新检出用 `rwiki restore <配方…>` 取回。
+- 遗漏知识代码或泄漏敏感信息：作者 2026-11-02 要求所有知识默认保存 Git（包括 GPL/CC 源码、复用代码、公开示例、模板资源和验证材料）；私有数据、密码、私钥不进 Git。保留原许可证与来源；save 清理旧许可排除块。
 - 在主检出检出 `legacy/master`（会删掉本地画廊与维护记录）。
 - 临时文件、缓存写到 C 盘。
 

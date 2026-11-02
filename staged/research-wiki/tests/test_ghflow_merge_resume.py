@@ -13,13 +13,17 @@ from test_ghflow_merge import TASK, open_task_pr, pass_review, tree_hashes, vaul
 from test_ghflow_start_task import add_gpl_method
 
 
-def interrupted_merge(gh_repos, monkeypatch, tmp_path):
+def interrupted_merge(gh_repos, monkeypatch, tmp_path, legacy=False):
     """PR 已在 GitHub 合并、本地收尾一步未做（模拟收尾前中断），返回 (PR 号, 检出, Issue 号, GPL 目录, 哈希)。"""
-    add_gpl_method(gh_repos)
+    add_gpl_method(gh_repos, legacy=legacy)
     gpl = gh_repos.config.wiki_root / "methods/scp"
     before = tree_hashes(gpl)
-    pr, checkout, issue = open_task_pr(gh_repos, monkeypatch, tmp_path)
-    pass_review(gh_repos, checkout, pr, tmp_path)
+    # A legacy PR was prepared before the default tracking policy changed.
+    with monkeypatch.context() as old_policy:
+        if legacy:
+            old_policy.setattr(ghflow.push_guard, "sync_ignore", lambda root: False)
+        pr, checkout, issue = open_task_pr(gh_repos, monkeypatch, tmp_path)
+        pass_review(gh_repos, checkout, pr, tmp_path)
 
     def interrupted(*_args):
         raise KeyboardInterrupt
@@ -73,7 +77,7 @@ def test_rerun_after_worktree_dir_left_empty_without_git_file(gh_repos, monkeypa
 
 def test_rerun_after_git_file_deleted_but_junctions_remain(gh_repos, monkeypatch, tmp_path):
     """worktree remove 删掉了 .git 文件与普通文件，联接还在：重跑只 rmdir 联接，GPL 源码不受影响。"""
-    pr, checkout, issue, gpl, before = interrupted_merge(gh_repos, monkeypatch, tmp_path)
+    pr, checkout, issue, gpl, before = interrupted_merge(gh_repos, monkeypatch, tmp_path, legacy=True)
     junctions = junctions_of(gh_repos)
     assert junctions
     for path in sorted(checkout.rglob("*"), key=lambda p: len(p.parts), reverse=True):

@@ -83,8 +83,9 @@ def save(config: Config, message: str) -> None:
     # reset/clean/stash is ever used to hide them. A standalone wiki repo
     # behaves exactly as before (``.`` == the whole repo).
     scope = "."
-    # 新的 GPL 方法目录必须先进 .gitignore 托管块，否则 add -A 会把源码提交进去。
+    # 作者 2026-11-02：清理旧许可排除块，使知识源码与公开资源默认提交。
     push_guard.sync_ignore(root)
+    push_guard.assert_no_sensitive_changes(root)
     if not git(root, "status", "--porcelain", "--", scope).strip():
         return
     timestamp = datetime.now(timezone.utc).strftime("%Y-%m-%d %H:%M UTC")

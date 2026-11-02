@@ -14,7 +14,7 @@ from .config import Config
 from .errors import WikiError
 from .pages import read_page, write_page
 
-# Copyleft / non-commercial / no-derivatives code never enters Git; see push_guard.restricted_dirs.
+# License classification is preserved; knowledge is tracked by default (author policy 2026-11-02).
 RESTRICTED_LICENSE = re.compile(r"^(?:(?:A|L)?GPL|CC-BY(?:-[A-Z]+)*-(?:NC|SA|ND))", re.I)
 SOURCE_ID = re.compile(r"^[a-z0-9][a-z0-9-]{0,40}$")
 

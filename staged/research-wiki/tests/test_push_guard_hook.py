@@ -21,18 +21,10 @@ def test_sync_ignore_is_idempotent_and_keeps_outside_bytes(tmp_path):
     method(root, "scp", "GPL-3")
     method(root, "mit", "MIT")
     before, after = b"**/__pycache__/\r\n.obsidian/\r\n", b"# \xe4\xbd\x9c\xe8\x80\x85\xe8\xa1\x8c\nkeep.me"
-    (root / ".gitignore").write_bytes(before)
+    (root / ".gitignore").write_bytes(before + b"# >>> push-guard gpl\n/methods/scp/code/\n# <<< push-guard gpl\n" + after)
     assert sync_ignore(root) is True
-    data = (root / ".gitignore").read_bytes()
-    assert data.startswith(before)
-    assert b"/methods/scp/code/\n/methods/scp/source/\n" in data and b"mit" not in data
-    assert sync_ignore(root) is False
-    (root / ".gitignore").write_bytes(data + after)
+    assert (root / ".gitignore").read_bytes() == before + after
     method(root, "mit", "AGPL-3.0")
-    assert sync_ignore(root) is True
-    data = (root / ".gitignore").read_bytes()
-    assert data.startswith(before) and data.endswith(after)
-    assert b"/methods/mit/code/" in data
     assert sync_ignore(root) is False
 
 

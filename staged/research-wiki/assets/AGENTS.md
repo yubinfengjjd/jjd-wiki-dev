@@ -87,7 +87,7 @@
 3. 不编造数据、文献、收据或适用结论；没跑写“未跑”，不确定写“待作者确认”。
 4. 改变统计逻辑、补缺失算法、改分组含义，或缺原始数据需要估读、合成时，先问作者。
 5. 列映射显式写（内部字段 → 作者列）；不猜列、不补值、不换算单位、不聚合。
-6. 限制性许可（GPL 系、CC-*-NC/SA/ND）的源码、课题数据、密钥不进 Git、不推送。
+6. 知识库的所有知识默认保存 Git，包括方法理论、源码、复用代码、公开示例、画廊知识、模板资源与验证材料。私有数据、密码和私钥不进 Git、不推送；保留原许可证、署名、来源与用途限制，不因保存 Git 改变许可。
 7. 网页服务只接受本机访问，不为外部访问放开。
 
 ## 页面写什么
@@ -108,8 +108,8 @@
 - 本地日常不需要 Issue / PR；推送由作者决定。要推送 GitHub 或开发代码大改时走 GitHub Flow：`gh start-task … --worktree`（从 `origin/main` 切）→ 提交 → `gh finish-task`（PR 到 `main`）→ 非编码 agent `gh review` → 只经 `gh merge` 合并。批次只是 Milestone（`gh start-batch` / `gh close-batch`）。细节与全部 `gh` 子命令见 `references/github-workflow.md`。
 - 风险档按 base 上的 `.github/risk-tiers.json` 算，可先 `gh tier --range origin/main...HEAD` 自查：`risk:low` CI 通过即合；`risk:normal` 再要针对当前 head 的 pass 评审；`risk:high` 同 normal，`high_requires_owner` 为 true 时再要 `owner-approved`（当前为 false）。三档都要求 PR 已包含最新 main。
 - `owner-approved` 只由作者在网页上添加，agent 禁止添加；单账号下 GitHub 分不出是谁加的，这是约定。
-- pre-push 只拒绝 `legacy/*`，并扫描画廊、课题数据、限制性许可源码、超限文件与本机绝对路径。
-- 限制性许可源码由 `.gitignore` 的托管块排除（save 自动维护）；新检出里用 `restore <配方…>` 按记录的 commit 取回配方原字节。
+- pre-push 只拒绝 `legacy/*`，并扫描私有数据、课题数据、密码/令牌/私钥、超限文件与本机绝对路径。
+- 作者 2026-11-02 修订：知识默认入 Git，取消按 GPL/CC 许可排除源码的旧规则；save 移除旧 `push-guard gpl` 托管块。仅敏感内容与非知识运行产物（环境、缓存、浏览器会话、重复备份）排除；大文件按内容核查后用 Git LFS 或精确 size 豁免保存，不能只留页面而漏掉代码。`restore` 仍可修复缺失或损坏的来源原字节。
 - 不要在主检出检出 `legacy/master`：它跟踪过画廊与维护记录，切过去再切回会把这些文件从磁盘删除，远端没有副本。看旧历史用 `git log legacy/master` 或另建 worktree。
 
 ## 体检

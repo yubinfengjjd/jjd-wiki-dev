@@ -1,6 +1,6 @@
-"""推送前防泄漏检查：规则、推送范围扫描、GPL 忽略托管块与作者块基准。
+"""推送前防泄漏检查与作者块基准（作者 2026-11-02：知识默认入 Git）。
 
-规则 id：gallery、project-data、gpl-path、gpl-header、size、abs-path。
+规则 id：private-data、project-data、secret、size、abs-path。
 仓库根的 `.push-guard-allow` 只能豁免 abs-path 与 size，每条必须写理由。
 """
 import codecs
@@ -83,7 +83,7 @@ def parse_allow(text: str, source: str = ALLOW_FILE) -> tuple[tuple[str, str], .
         fields = rule_part.split()
         if len(fields) != 2 or fields[0] not in ALLOWED_RULES:
             raise WikiError(f"{source}:{number}: 只接受 `abs-path|size <glob>  # 理由`，"
-                            f"画廊、GPL、课题数据不可豁免: {line}")
+                            f"私有数据、课题数据、密码和私钥不可豁免: {line}")
         if not reason.strip():
             raise WikiError(f"{source}:{number}: 豁免规则缺少理由: {line}")
         entries.append((fields[0], fields[1]))
@@ -91,7 +91,7 @@ def parse_allow(text: str, source: str = ALLOW_FILE) -> tuple[tuple[str, str], .
 
 
 def restricted_dirs(wiki_root: Path) -> list[str]:
-    """限制性许可页的源码目录（相对 wiki_root，带结尾 `/`），不进 Git、不推送。
+    """限制性许可页的目录分类，仅供旧 worktree 联接兼容，不再用于 Git 排除。
 
     方法页：GPL 系的 code/ 与 source/；v2 配方页：GPL/CC-NC/SA/ND 的 source/；
     派生模板（frontmatter `license` 为上述许可）：code/ 与 example/。
@@ -146,18 +146,22 @@ def find_abs_paths(text: str) -> list[str]:
 def classify(path: str, size: int, added: list[str], head: bytes, rules: Rules) -> list[tuple[str, str]]:
     hits = []
     name = PurePosixPath(path).name
-    if glob_match(path, GALLERY):
-        hits.append(("gallery", "画廊内容不推送"))
     if glob_match(path, PROJECT_DATA):
         hits.append(("project-data", "课题数据留在课题目录"))
-    if (any(path.startswith(d) for d in rules.gpl_dirs)
-            or any(glob_match(path, g) for g in rules.gpl_globs)):
-        hits.append(("gpl-path", "GPL 源码目录"))
-    if PurePosixPath(path).suffix.lower() in CODE_SUFFIXES or name.upper().startswith("LICENSE"):
-        text = head[:HEAD_BYTES].decode("utf-8", "replace")
-        marker = next((m for m in rules.gpl_markers if m in text), None)
-        if marker:
-            hits.append(("gpl-header", marker))
+    lower = path.lower().split("/")
+    if set(lower) & {"private-data", "private_data", "私有数据", "隐私数据"}:
+        hits.append(("private-data", "私有数据目录"))
+    secret_names = {".env", ".npmrc", ".pypirc", "credentials.json", "credentials", "secrets.json",
+                    "id_rsa", "id_dsa", "id_ecdsa", "id_ed25519"}
+    if (name.lower() in secret_names or (name.lower().startswith(".env.")
+            and name.lower() not in {".env.example", ".env.sample", ".env.template"})
+            or PurePosixPath(path).suffix.lower() in {".pfx", ".p12", ".key"}):
+        hits.append(("secret", "凭据或私钥文件名（不显示内容）"))
+    content = "\n".join(added)
+    if b"\0" not in head[:HEAD_BYTES]:
+        content += "\n" + head[:HEAD_BYTES].decode("utf-8", "replace")
+    if contains_secret(content):
+        hits.append(("secret", "检测到密码、访问令牌或私钥（不显示内容）"))
     if size > rules.max_file_bytes:
         hits.append(("size", f"{size} 字节 > {rules.max_file_bytes}"))
     if name.lower().endswith(".lnk"):
@@ -169,6 +173,56 @@ def classify(path: str, size: int, added: list[str], head: bytes, rules: Rules) 
     return [(rule, detail) for rule, detail in hits
             if not (rule in ALLOWED_RULES
                     and any(kind == rule and glob_match(path, pattern) for kind, pattern in rules.allow))]
+
+
+def contains_secret(text: str) -> bool:
+    """只返回是否命中，不向日志回显秘密；示例占位符可提交。"""
+    if re.search(r"-----BEGIN (?:[A-Z0-9]+ )*PRIVATE KEY-----", text):
+        return True
+    if re.search(r"\b(?:gh[pousr]_[A-Za-z0-9]{36,}|github_pat_[A-Za-z0-9_]{50,}|AKIA[A-Z0-9]{16})\b", text):
+        return True
+    pattern = r'''(?i)["']?\b(?:password|passwd|api[_-]?key|access[_-]?token|client[_-]?secret)["']?\s*[:=]\s*["']([^"'\r\n]*)["']'''
+    for match in re.finditer(pattern, text):
+        if text[:match.start()].rstrip().endswith("?"):
+            continue  # JS ternary input type: secret ? "password" : "text"
+        value = match.group(1).strip()
+        if not value or value.upper() in {"REDACTED", "CHANGEME", "EXAMPLE", "NONE", "NULL"}:
+            continue
+        if value.startswith(("<", "${", "your_", "YOUR_")):
+            continue
+        return True
+    return False
+
+
+def assert_no_sensitive_changes(wiki_root: Path) -> None:
+    """检查即将由 save 暂存的文件，防止秘密先进入本地 Git 历史。"""
+    head = subprocess.run(["git", "-C", str(wiki_root), "rev-parse", "--verify", "-q", "HEAD"],
+                          capture_output=True)
+    tracked = (git(wiki_root, "diff", "--relative", "--name-only", "--diff-filter=ACMRT", "-z", "HEAD", "--", ".")
+               if head.returncode == 0 else git(wiki_root, "ls-files", "--cached", "-z", "--", "."))
+    untracked = git(wiki_root, "ls-files", "--others", "--exclude-standard", "-z", "--", ".")
+    rules = Rules(sys.maxsize, (), (), (), (("abs-path", "**"), ("size", "**")))
+    blocked = []
+    for name in sorted(set(filter(None, (tracked + "\0" + untracked).split("\0")))):
+        path = wiki_root / name
+        if not path.is_file():
+            continue
+        hits = classify(name, 0, [], b"", rules)
+        with path.open("rb") as stream:
+            first = stream.read(4096)
+            if b"\0" not in first:
+                stream.seek(0)
+                overlap = ""
+                while chunk := stream.read(65536):
+                    text = overlap + chunk.decode("utf-8", "replace")
+                    if contains_secret(text):
+                        hits.append(("secret", "检测到秘密"))
+                        break
+                    overlap = text[-4096:]
+        if hits:
+            blocked.append(name)
+    if blocked:
+        raise WikiError("save 拒绝将私有数据、密码或私钥写入 Git（不显示内容）：" + "、".join(blocked))
 
 
 def is_zero(sha: str) -> bool:
@@ -287,18 +341,10 @@ def pre_push(repo: Path, remote: str, stdin: str, rules: Rules) -> int:
 
 
 def sync_ignore(wiki_root: Path) -> bool:
-    """重写知识库 .gitignore 的 GPL 托管块；块外字节不动；内容变化时返回 True。"""
+    """移除旧 GPL 排除托管块，源码默认入 Git；块外字节不动。"""
     path = wiki_root / ".gitignore"
     data = path.read_bytes() if path.is_file() else b""
-    dirs = restricted_dirs(wiki_root)
-    block = (IGNORE_BEGIN + "\n" + "".join(f"/{d}\n" for d in dirs) + IGNORE_END + "\n").encode("utf-8")
-    match = IGNORE_BLOCK.search(data)
-    if match:
-        updated = data[:match.start()] + block + data[match.end():]
-    elif dirs:
-        updated = data + (b"" if not data or data.endswith(b"\n") else b"\n") + block
-    else:
-        return False
+    updated = IGNORE_BLOCK.sub(b"", data)
     if updated == data:
         return False
     path.write_bytes(updated)

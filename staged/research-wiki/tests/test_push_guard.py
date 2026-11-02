@@ -32,15 +32,8 @@ def reference(path, size, added, head, allow):
     segs = path.split("/")
     name = segs[-1]
     hits = set()
-    if segs[0] == "画廊":
-        hits.add("gallery")
     if any(segs[i] == "wiki-use" and segs[i + 1] == "_project" for i in range(len(segs) - 2)):
         hits.add("project-data")
-    if path.startswith(GPL_DIRS) or "SCP-local" in segs[:-1]:
-        hits.add("gpl-path")
-    code = name.rsplit(".", 1)[-1].lower() in ("py", "r", "sh") if "." in name else False
-    if (code or name.upper().startswith("LICENSE")) and any(m.encode() in head for m in GPL_MARKERS):
-        hits.add("gpl-header")
     if size > MAX_BYTES:
         hits.add("size")
     if name.endswith(".lnk") or (b"\0" not in head and any(a in line for line in added for a in ABSOLUTE)):
@@ -65,11 +58,11 @@ def test_classify_matches_reference_model():
         got = {rule for rule, _ in classify(path, size, added, head, rules)}
         assert got == reference(path, size, added, head, allow), \
             f"seed={SEED} iteration={iteration} path={path} size={size} added={added} head={head} allow={allow}"
-        # 豁免永远去不掉画廊、GPL、课题数据。
+        # 豁免永远去不掉课题数据。
         everything = Rules(MAX_BYTES, ("**/SCP-local/**",), GPL_MARKERS, GPL_DIRS,
                            (("abs-path", "**"), ("size", "**")))
         kept = {rule for rule, _ in classify(path, size, added, head, everything)}
-        protected = reference(path, size, added, head, ()) & {"gallery", "gpl-path", "gpl-header", "project-data"}
+        protected = reference(path, size, added, head, ()) & {"project-data"}
         assert kept == protected and protected <= got, f"seed={SEED} iteration={iteration} path={path}"
 
 

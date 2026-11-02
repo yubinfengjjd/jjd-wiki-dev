@@ -1,4 +1,4 @@
-# 格式：<abs-path|size> <glob>  # 理由；画廊、GPL、课题数据不可豁免
+# 格式：<abs-path|size> <glob>  # 理由；私有数据、密码、私钥、课题数据不可豁免
 abs-path staged/research-wiki/tests/**  # 测试夹具：合成假路径、越界路径用例与本机工具默认路径（local 测试）
 abs-path staged/research-wiki/rwiki/contact_sheet.py  # Windows 系统字体目录，非个人数据
 size obsidian-neural-view/media/orb.mp4  # 插件背景视频（约 8 MB），属于插件构建所需资产
