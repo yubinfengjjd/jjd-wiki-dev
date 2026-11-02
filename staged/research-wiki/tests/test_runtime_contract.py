@@ -70,6 +70,39 @@ def test_missing_manifest_is_unknown(tmp_path):
     assert read_manifest(root, 'demo', 'method') == (None, [])
 
 
+def test_method_branches_share_one_runtime_read_but_next_call_rechecks_files(tmp_path, monkeypatch):
+    from copy import deepcopy
+    from rwiki import runtime_contract
+    from rwiki.method_implementations import implementation_status
+
+    root = asset(tmp_path)
+    manifest = json.loads((root / 'runtime.json').read_text(encoding='utf-8'))
+    other = deepcopy(manifest['implementations'][0])
+    other.update(id='other', evidence={})
+    manifest['implementations'].append(other)
+    (root / 'runtime.json').write_text(json.dumps(manifest), encoding='utf-8')
+    receipt = root / 'verification/portability.json'
+    data = json.loads(receipt.read_text(encoding='utf-8'))
+    data['closure_hash'] = closure_hash(root, read_manifest(root, 'demo', 'method')[0]['implementations'][0])
+    receipt.write_text(json.dumps(data), encoding='utf-8')
+    meta = {'implementations': [dict(id=i, title=i, language='R', entrypoint='code/run.R:run', dependencies=['Seurat']) for i in ['branch', 'other']]}
+    original = runtime_contract.read_manifest
+    calls = []
+    def counted(*args):
+        calls.append(args)
+        return original(*args)
+    monkeypatch.setattr(runtime_contract, 'read_manifest', counted)
+    first = implementation_status(root.with_suffix('.md'), meta)
+    assert len(calls) == 1, 'each branch was revalidating the entire method manifest'
+    assert first[0]['runtime']['portability']['state'] == 'verified'
+    (root / 'code/run.R').write_text('run <- function(x) x + 1\n', encoding='utf-8')
+    second = implementation_status(root.with_suffix('.md'), meta)
+    assert len(calls) == 2, 'a later call must read and verify current bytes again'
+    # The existing validator may report invalid when the receipt's per-file
+    # hash also differs. Either way the old passed evidence must be revoked.
+    assert second[0]['runtime']['portability']['state'] in {'stale', 'invalid'}
+
+
 def test_standalone_without_evidence_is_only_declared(tmp_path):
     root = asset(tmp_path, evidence=False)
     facts = runtime_facts(root, 'demo', 'method')

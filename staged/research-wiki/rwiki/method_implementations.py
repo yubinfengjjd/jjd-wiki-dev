@@ -92,6 +92,10 @@ def implementation_status(page: Path, meta=None) -> list[dict]:
         return []
     asset = page.with_suffix('')
     result = []
+    # The manifest describes every branch. Validate it once per invocation,
+    # including file fingerprints; the next invocation always reads fresh bytes.
+    from .runtime_contract import runtime_facts
+    facts = runtime_facts(asset, page.stem, 'method') if any(isinstance(item, dict) for item in items) else None
     for item in items:
         if not isinstance(item, dict):
             result.append(dict(id='', title='', state='invalid', scope='',
@@ -109,7 +113,7 @@ def implementation_status(page: Path, meta=None) -> list[dict]:
         status = dict(id=item.get('id', ''), title=item.get('title', ''), state='not_run', scope='')
         from .runtime_contract import implementation_runtime
         runtime = implementation_runtime(
-            asset, page.stem, item.get('id', '') if isinstance(item.get('id'), str) else '')
+            asset, page.stem, item.get('id', '') if isinstance(item.get('id'), str) else '', facts=facts)
         if runtime.get('declared'):
             page_entry = str(item.get('entrypoint', ''))
             portability = runtime.setdefault('portability', {})

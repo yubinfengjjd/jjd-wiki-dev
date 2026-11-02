@@ -11,6 +11,7 @@ import hashlib
 import json
 import math
 import re
+from copy import deepcopy
 from pathlib import Path, PurePosixPath, PureWindowsPath
 
 from .confine import confined
@@ -578,9 +579,10 @@ def _runtime_facts(asset: Path, entry_id: str, kind: str) -> dict:
     }}
 
 
-def implementation_runtime(asset: Path, entry_id: str, implementation_id: str) -> dict:
-    facts = runtime_facts(asset, entry_id, 'method')
-    return facts.get('implementations', {}).get(implementation_id, {
+def implementation_runtime(asset: Path, entry_id: str, implementation_id: str, *, facts=None) -> dict:
+    if facts is None:
+        facts = runtime_facts(asset, entry_id, 'method')
+    return deepcopy(facts.get('implementations', {}).get(implementation_id, {
         'id': implementation_id, 'declared': False,
         'mode': 'unknown', 'entry': None, 'entry_kind': None, 'entry_function': None,
         'language': None, 'files': [], 'resources': [],
@@ -590,7 +592,7 @@ def implementation_runtime(asset: Path, entry_id: str, implementation_id: str) -
         'source': {}, 'portability': {'state': 'unknown', 'scope': '', 'evidence': None,
                                       'closure_hash': None,
                                       'issues': facts.get('portability', {}).get('issues', [])}
-    })
+    }))
 
 
 def lint_manifest(asset: Path, entry_id: str, kind: str) -> list[str]:
