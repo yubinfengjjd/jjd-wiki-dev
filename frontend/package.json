@@ -4,7 +4,7 @@
   "version": "0.1.0",
   "type": "module",
   "scripts": {
-    "test": "node tests/figure-models.mjs && node tests/methods.mjs",
+    "test": "node tests/figure-models.mjs && node tests/methods.mjs && node tests/figureya-review.mjs",
     "dev": "vite",
     "typecheck": "tsc --noEmit",
     "build": "tsc --noEmit && vite build"

@@ -436,6 +436,14 @@ const act = (kind: Kind, id: string, action: string) => `/api/${kind}/${encodeUR
 
 /** Last fetched detail per page, so a page can paint on the first frame of a transition. */
 export const pageCache = new Map<string, PageDetail>();
+export type VisualDecision = 'pending' | 'kept' | 'removed' | 'later';
+export interface CurationItem extends CatalogItem {
+  decision: VisualDecision;
+  source_id: string;
+  images: { url: string; label: string; name: string }[];
+  recipes: { id: string; title: string; status: string; page: string }[];
+}
+export interface CurationInventory { items: CurationItem[]; revision: string }
 const previewCache = new Map<string, Preview | null>();
 const workflowCache = new Map<string, Workflow | null>();
 const previewKey = (meta: PageMeta) =>
@@ -455,6 +463,11 @@ export const api = {
     return pages;
   },
   sourceItems: () => request<CatalogItem[]>('/api/source-items'),
+  figureyaCuration: () => request<CurationInventory>('/api/figureya/curation'),
+  figureyaDecide: (ids: string[], decision: VisualDecision, revision: string) =>
+    request<{ revision: string; decisions: Record<string, VisualDecision> }>('/api/figureya/curation', {
+      method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ ids, decision, revision }),
+    }),
   page: async (path: string) => {
     const page = await request<PageDetail>(`/api/page?path=${encodeURIComponent(path)}`);
     pageCache.set(path, page);

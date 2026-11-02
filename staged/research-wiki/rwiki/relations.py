@@ -6,10 +6,12 @@ never create a semantic relationship. Reading this module does not run code.
 
 import re
 from collections import Counter
+from copy import deepcopy
 
 from .errors import WikiError
 from .pages import read_page
 from .spec import load_spec
+from .read_cache import remember
 
 COMPATIBILITIES = ("direct", "adaptable", "candidate")
 VERIFICATION_STATES = ("not_run", "example", "project")
@@ -161,12 +163,19 @@ def relation_errors(config, meta: dict) -> list[str]:
 
 
 def all_relations(config, include_archived: bool = True) -> list[dict]:
+    return deepcopy(remember(('relations', config.wiki_root, include_archived),
+                             lambda: _collect_relations(config, include_archived)))
+
+
+def _collect_relations(config, include_archived: bool) -> list[dict]:
     """Resolve valid author/agent records once; both endpoints share this shape.
 
     Invalid records are reported by lint and omitted here, so a dangling or
     malformed direct declaration cannot become an executable recommendation.
     Page status and invocation verification remain independent dimensions.
     """
+    from .curation import excluded_paths
+    hidden = excluded_paths(config)
     results = []
     for path in sorted((config.wiki_root / "methods").glob("*.md")):
         if not path.resolve().is_relative_to(config.wiki_root.resolve()):
@@ -183,7 +192,8 @@ def all_relations(config, include_archived: bool = True) -> list[dict]:
         for record in records:
             figure = record["figure"]
             _, target = _target(config, figure)
-            active = method["status"] != "archived" and target["status"] != "archived"
+            active = (method["status"] != "archived" and target["status"] != "archived"
+                      and f"{figure}.md" not in hidden)
             if not active and not include_archived:
                 continue
             results.append({

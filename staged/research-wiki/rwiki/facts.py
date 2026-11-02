@@ -208,8 +208,9 @@ def source_facts(config: Config, meta: dict) -> str:
 
 def scenario_facts(config: Config, meta: dict) -> str:
     from .finder import record_for
+    from .curation import visible_picks
     lines = ["\n| 条目 | 级别 | 状态 | 说明 |", "|---|---|---|---|"]
-    for pick in meta.get("picks") or []:
+    for pick in visible_picks(config, meta.get("picks") or []):
         value = pick.get("id") if isinstance(pick, dict) else pick
         note = pick.get("note", "") if isinstance(pick, dict) else ""
         key = str(value) if ":" in str(value) else str(value).split("/", 1)[-1].removesuffix(".md")

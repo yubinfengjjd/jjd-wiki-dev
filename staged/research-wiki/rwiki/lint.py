@@ -340,7 +340,8 @@ def lint(config: Config, ci: bool = False) -> list[str]:
                         report("ERROR", path, f"引用的方法页不存在: {method_id}")
             if meta["type"] == "scenario":
                 from .finder import record_for
-                for pick in meta.get("picks") or []:
+                from .curation import visible_picks
+                for pick in visible_picks(config, meta.get("picks") or []):
                     value = str(pick.get("id") if isinstance(pick, dict) else pick)
                     key = value if ":" in value else value.split("/", 1)[-1].removesuffix(".md")
                     if record_for(config, key) is None:
