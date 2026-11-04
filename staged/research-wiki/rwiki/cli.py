@@ -11,6 +11,7 @@ from .interfaces import add_interface
 from .methods import scaffold_method
 from .lint import lint
 from .layouts import render_layout, verify_layout
+from .read_cache import read_session
 from .store import init, save
 from .suggest import suggest, suggest_methods, suggest_pipeline
 from .templates import attach_template, mark_ready, pending, render, scaffold_template, verify_template
@@ -778,7 +779,8 @@ def main(argv: list[str] | None = None) -> int:
                               project_root=args.project_root, run_id=args.run,
                               note=args.note)
         elif args.command == "lint":
-            diagnostics = lint(config, ci=args.ci)
+            with read_session():
+                diagnostics = lint(config, ci=args.ci)
             for line in diagnostics:
                 print(line)
             if any(line.startswith("ERROR ") for line in diagnostics):
