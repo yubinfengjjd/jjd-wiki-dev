@@ -116,7 +116,7 @@ def v2(wiki_repo, tmp_path, upstream, monkeypatch):
 
 def test_save_commits_on_main(v2):
     config, vault = v2
-    assert git_run(vault, "branch", "--show-current").strip() == "main"
+    assert git_run(vault, "symbolic-ref", "--short", "HEAD").strip() == "main"
     log = git_run(vault, "log", "--format=%s")
     assert "source add demo" in log and "source scan demo" in log
     assert git_run(vault, "status", "--porcelain", "--", "知识库").strip() == ""

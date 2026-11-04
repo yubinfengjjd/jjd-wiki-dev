@@ -419,7 +419,7 @@ def cmd_pr(state, args):
     name = current_repo(state, options)
     repo = repo_state(state, name)
     if verb == "create":
-        head = options.get("--head") or subprocess.run(["git", "branch", "--show-current"],
+        head = options.get("--head") or subprocess.run(["git", "symbolic-ref", "--short", "HEAD"],
                                                         capture_output=True, text=True).stdout.strip()
         if any(pr["headRefName"] == head and pr["state"] == "OPEN" for pr in repo["prs"]):
             fail(f"a pull request for branch \"{head}\" into branch \"{options['--base']}\" already exists")

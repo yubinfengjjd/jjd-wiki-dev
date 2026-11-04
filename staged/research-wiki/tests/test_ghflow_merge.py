@@ -163,7 +163,7 @@ def test_merge_in_main_checkout_returns_to_main(gh_repos, monkeypatch, tmp_path)
     assert checkout == gh_repos.vault and read_lock(checkout)["branch"] == TASK
     pass_review(gh_repos, checkout, pr, tmp_path)
     merge(gh_repos.config, checkout, pr, None)
-    assert git_run(gh_repos.vault, "branch", "--show-current").strip() == "main"
+    assert git_run(gh_repos.vault, "symbolic-ref", "--short", "HEAD").strip() == "main"
     assert read_lock(gh_repos.vault) is None
     assert git_run(gh_repos.vault, "branch", "--list", TASK) == ""
 

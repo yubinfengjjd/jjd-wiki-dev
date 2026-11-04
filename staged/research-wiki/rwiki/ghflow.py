@@ -162,10 +162,17 @@ def parse_task_branch(name: str) -> tuple[str, str, str]:
     return match.groups()
 
 
+def _abs_git_path(repo: Path, *args: str) -> Path:
+    """rev-parse 路径输出转绝对路径（git < 2.31 无 --path-format；相对输出相对 repo 根）。"""
+    out = git(repo, "rev-parse", *args).strip().splitlines()[-1].strip()
+    path = Path(out)
+    return path if path.is_absolute() else (repo / path).resolve()
+
+
 # ---- 分支元数据：<git-common-dir>/rwiki-branches.json（worktree 共享） ----
 
 def meta_path(repo: Path) -> Path:
-    return Path(git(repo, "rev-parse", "--path-format=absolute", "--git-common-dir").strip()) / META_NAME
+    return _abs_git_path(repo, "--git-common-dir") / META_NAME
 
 
 def read_meta(repo: Path) -> dict:
@@ -345,7 +352,7 @@ def render_gate_block(head: str, reasons: list[str], plan: str | None) -> str:
 
 def main_checkout(path: Path) -> Path:
     """主检出：worktree 与主检出共享 git-common-dir，其父目录即主检出。"""
-    return Path(git(path, "rev-parse", "--path-format=absolute", "--git-common-dir").strip()).parent
+    return _abs_git_path(path, "--git-common-dir").parent
 
 
 def toplevel(path: Path) -> Path:
@@ -390,7 +397,15 @@ def branch_exists(repo: Path, branch: str) -> bool:
 
 
 def current_branch(repo: Path) -> str:
-    return git(repo, "branch", "--show-current").strip()
+    """git < 2.22 lacks ``branch --show-current``; symbolic-ref covers older gits and unborn HEAD."""
+    try:
+        return git(repo, "branch", "--show-current").strip()
+    except WikiError:
+        pass
+    try:
+        return git(repo, "symbolic-ref", "--short", "HEAD").strip()
+    except WikiError:
+        return git(repo, "rev-parse", "--abbrev-ref", "HEAD").strip()
 
 
 def find_batch(cfg, batch: str, repo_key: str | None = None) -> tuple[str, Path, dict]:
@@ -1111,7 +1126,7 @@ def tracked_files(repo: Path, rev: str | None = None) -> list[str]:
 
 
 def scratch_index(repo: Path) -> Path:
-    return Path(git(repo, "rev-parse", "--path-format=absolute", "--git-path", "rwiki-bootstrap.index").strip())
+    return _abs_git_path(repo, "--git-path", "rwiki-bootstrap.index")
 
 
 def create_branch_ref(repo: Path, branch: str, sha: str) -> None:
@@ -1203,7 +1218,7 @@ def install_hook(repo: Path, config_path: Path, entry: dict | None = None) -> Pa
     """写 <git-common-dir>/hooks/pre-push：本解释器 + 部署副本（缺失时当前检出）的 gh guard --pre-push
     （hook 不入库，可重复运行）。"""
     entry = entry or hook_entry(config_path)
-    hook = Path(git(repo, "rev-parse", "--path-format=absolute", "--git-path", "hooks").strip()) / "pre-push"
+    hook = _abs_git_path(repo, "--git-path", "hooks") / "pre-push"
     if hook.is_file() and HOOK_MARK not in hook.read_text(encoding="utf-8", errors="replace"):
         raise WikiError(f"{hook} 已存在且不是本工具写入的 hook；请先人工合并或移走它")
     hook.parent.mkdir(parents=True, exist_ok=True)

@@ -5,7 +5,8 @@ from pathlib import Path
 
 import pytest
 
-from conftest import commit_file, fake_repo_entry, gh_writes, git_init, git_run, run_wiki, write_config
+from conftest import (commit_file, fake_repo_entry, gh_writes, git_init, git_init_bare, git_run,
+                      run_wiki, write_config)
 from rwiki.config import load_config
 from rwiki.errors import WikiError
 from rwiki.ghflow import LABELS, LEGACY_BRANCH, bootstrap, read_meta
@@ -51,7 +52,7 @@ def fresh(tmp_path, fake_gh, monkeypatch):
     remotes = {}
     for key in ("dev", "vault"):
         remotes[key] = tmp_path / f"{key}.git"
-        subprocess.run(["git", "init", "-q", "--bare", "-b", "main", str(remotes[key])], check=True)
+        git_init_bare(remotes[key])
     state = fake_gh.state()
     state.update(repos={}, remote_map={str(remotes[key]): NAMES[key] for key in remotes})
     fake_gh.write(state)

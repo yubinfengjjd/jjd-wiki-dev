@@ -53,7 +53,7 @@ def test_two_agents_get_separate_worktrees_and_locks(gh_repos, monkeypatch):
     assert read_lock(a) | {"pid": 0, "timestamp": ""} == {
         "agent": "codex", "branch": "task/scp-wave3-P2-harmony", "pid": 0, "timestamp": ""}
     assert read_lock(b)["agent"] == "claude" and read_lock(gh_repos.vault) is None
-    assert git_run(gh_repos.vault, "branch", "--show-current").strip() == "main"
+    assert git_run(gh_repos.vault, "symbolic-ref", "--short", "HEAD").strip() == "main"
     assert Path(first["RWIKI_WIKI_ROOT"]) == a / "知识库"
     issues = vault_issues(gh_repos)
     assert [(i["number"], i["milestone"], i["labels"]) for i in issues] == [
@@ -86,7 +86,7 @@ def test_main_checkout_carries_only_wiki_changes(gh_repos, monkeypatch):
     assert git_run(vault, "branch", "--list", "task/*") == ""
     git_run(vault, "checkout", "--", "文档/说明.md")
     result = start_task(config, "glaucoma", "P1", "survey", "文献调研", False)
-    assert git_run(vault, "branch", "--show-current").strip() == "task/glaucoma-P1-survey"
+    assert git_run(vault, "symbolic-ref", "--short", "HEAD").strip() == "task/glaucoma-P1-survey"
     assert "作者在 Obsidian 的编辑" in (config.wiki_root / "log.md").read_text(encoding="utf-8")
     assert read_lock(vault)["branch"] == "task/glaucoma-P1-survey" and result["checkout"] == str(vault)
     assert "RWIKI_WIKI_ROOT" not in result

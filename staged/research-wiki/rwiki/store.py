@@ -14,6 +14,18 @@ def git(wiki_root: Path, *args: str) -> str:
     return run(["git", "-C", str(wiki_root), *args], wiki_root).stdout
 
 
+def current_branch(wiki_root: Path) -> str:
+    """git < 2.22 lacks ``branch --show-current``; symbolic-ref covers older gits and unborn HEAD."""
+    try:
+        return git(wiki_root, "branch", "--show-current").strip()
+    except WikiError:
+        pass
+    try:
+        return git(wiki_root, "symbolic-ref", "--short", "HEAD").strip()
+    except WikiError:
+        return git(wiki_root, "rev-parse", "--abbrev-ref", "HEAD").strip()
+
+
 @contextmanager
 def guarded(config: Config, *paths: Path):
     """Restore the listed files (plus index and log) if the block, including save, fails.
@@ -61,7 +73,7 @@ def save(config: Config, message: str) -> None:
     from .facts import refresh_facts
 
     root = config.wiki_root
-    branch = git(root, "branch", "--show-current").strip()
+    branch = current_branch(root)
     policy = save_policy(branch)
     agent = os.environ.get("RWIKI_AGENT")
     issue = None

@@ -53,7 +53,7 @@ def test_save_branch_policy_and_subtree_scope(wiki_repo, monkeypatch):
             continue
         save(config, f"save {iteration}")
         new_head = git_run(vault, "rev-parse", "HEAD").strip()
-        assert git_run(vault, "branch", "--show-current").strip() == branch, info
+        assert git_run(vault, "symbolic-ref", "--short", "HEAD").strip() == branch, info
         if pending_wiki or new_head != head:
             assert new_head != head, info
             changed = git_run(vault, "-c", "core.quotePath=false", "diff-tree", "--no-commit-id", "--name-only",

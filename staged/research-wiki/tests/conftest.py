@@ -78,10 +78,25 @@ def git_run(repo, *args, env=None):
 
 def git_init(path, branch="main"):
     path.mkdir(parents=True, exist_ok=True)
-    git_run(path, "init", "-q", "-b", branch)
+    try:
+        git_run(path, "init", "-q", "-b", branch)
+    except subprocess.CalledProcessError:
+        # git < 2.28 lacks `init -b`: init with default branch, then rename it.
+        git_run(path, "init", "-q")
+        git_run(path, "symbolic-ref", "HEAD", f"refs/heads/{branch}")
     for key, value in (("user.name", "tester"), ("user.email", "tester@localhost"),
                        ("core.autocrlf", "true")):
         git_run(path, "config", key, value)
+    return path
+
+
+def git_init_bare(path, branch="main"):
+    """--bare 远端：git < 2.28 没有 `init -b`，用 symbolic-ref 指定默认分支。"""
+    try:
+        subprocess.run(["git", "init", "-q", "--bare", "-b", branch, str(path)], check=True)
+    except subprocess.CalledProcessError:
+        subprocess.run(["git", "init", "-q", "--bare", str(path)], check=True)
+        git_run(path, "symbolic-ref", "HEAD", f"refs/heads/{branch}")
     return path
 
 
@@ -145,7 +160,7 @@ class GitPair:
 def git_pair(tmp_path):
     """工作仓库 + --bare 远端（origin），core.autocrlf=true，main 已推送。"""
     remote = tmp_path / "remote.git"
-    subprocess.run(["git", "init", "-q", "--bare", "-b", "main", str(remote)], check=True)
+    git_init_bare(remote)
     work = git_init(tmp_path / "work")
     git_run(work, "remote", "add", "origin", str(remote))
     commit_file(work, "README.md", "# 测试仓库\n", "init")
@@ -227,7 +242,7 @@ def gh_repos(wiki_repo, fake_gh, tmp_path, monkeypatch):
     remote_map = {}
     for key, repo in (("vault", vault), ("dev", dev)):
         remote = tmp_path / f"{key}.git"
-        subprocess.run(["git", "init", "-q", "--bare", "-b", "main", str(remote)], check=True)
+        git_init_bare(remote)
         git_run(repo, "remote", "add", "origin", str(remote))
         git_run(repo, "push", "-q", "-u", "origin", "main")
         remote_map[str(remote)] = f"tester/{FAKE_REPO_NAMES[key]}"

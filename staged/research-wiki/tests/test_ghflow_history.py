@@ -1,7 +1,7 @@
 import os
 import subprocess
 
-from conftest import git_init, git_run, write_config
+from conftest import git_init, git_init_bare, git_run, write_config
 from rwiki.ghflow import (LEGACY_BRANCH, ignored_paths, install_hook, replay_filtered, snapshot_files,
                           snapshot_orphan, switch_to_main, tracked_files)
 
@@ -70,7 +70,7 @@ def test_replay_drops_ignored_paths_and_keeps_metadata(tmp_path):
         old_parents = git_run(repo, "log", "-1", "--format=%P", old).split()
         new_parents = git_run(repo, "log", "-1", "--format=%P", new).split()
         assert new_parents == [replayed[originals.index(parent)] for parent in old_parents]
-    assert git_run(repo, "status", "--porcelain") == "" and git_run(repo, "branch", "--show-current") == "master\n"
+    assert git_run(repo, "status", "--porcelain") == "" and git_run(repo, "symbolic-ref", "--short", "HEAD") == "master\n"
 
 
 def test_snapshot_is_single_commit_of_filtered_worktree(tmp_path):
@@ -105,7 +105,7 @@ def test_switch_to_main_keeps_previously_tracked_ignored_files(tmp_path):
 def test_installed_hook_refuses_legacy_branches(tmp_path):
     repo, _ = legacy_repo(tmp_path)
     remote = tmp_path / "remote.git"
-    subprocess.run(["git", "init", "-q", "--bare", "-b", "main", str(remote)], check=True)
+    git_init_bare(remote)
     git_run(repo, "remote", "add", "origin", str(remote))
     git_run(repo, "branch", "-m", "master", LEGACY_BRANCH)
     hook = install_hook(repo, write_config(tmp_path / "c.json", tmp_path / "no-wiki"))
