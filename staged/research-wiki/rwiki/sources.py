@@ -105,6 +105,49 @@ def _git(directory: Path, *args: str, check: bool = True) -> str:
     return result.stdout
 
 
+def _git_dir(target: Path) -> Path:
+    value = Path(_git(target, "rev-parse", "--git-dir").strip())
+    return value if value.is_absolute() else target / value
+
+
+def _sparse_set(target: Path, patterns: list[str]) -> None:
+    """git <2.25 lacks ``sparse-checkout``; use the classic info/sparse-checkout file."""
+    try:
+        _git(target, "sparse-checkout", "set", "--no-cone", *patterns)
+        return
+    except WikiError:
+        pass
+    _git(target, "config", "core.sparseCheckout", "true")
+    info = _git_dir(target) / "info"
+    info.mkdir(parents=True, exist_ok=True)
+    (info / "sparse-checkout").write_text("\n".join(patterns) + "\n", encoding="utf-8", newline="\n")
+    _git(target, "read-tree", "-mu", "HEAD")
+
+
+def _sparse_list(target: Path) -> list[str]:
+    try:
+        out = _git(target, "sparse-checkout", "list")
+    except WikiError:
+        path = _git_dir(target) / "info" / "sparse-checkout"
+        out = path.read_text(encoding="utf-8") if path.is_file() else ""
+    return [line for line in out.splitlines() if line.strip()]
+
+
+def _clone(target: Path, url: str) -> None:
+    """git <2.19 lacks ``clone --filter``; fall back to a plain shallow clone."""
+    try:
+        _git(target.parent, "clone", "--filter=blob:none", "--no-checkout", "--depth", "1",
+             url, target.name)
+        return
+    except WikiError:
+        pass
+    import shutil
+
+    if target.exists():
+        shutil.rmtree(target)
+    _git(target.parent, "clone", "--no-checkout", "--depth", "1", url, target.name)
+
+
 def fetch_source(config: Config, source_id: str, items: list[str] | None = None,
                  update: bool = False) -> dict:
     """Create or extend the partial sparse clone; returns {'commit', 'snapshot', 'added'}.
@@ -121,12 +164,11 @@ def fetch_source(config: Config, source_id: str, items: list[str] | None = None,
     target = snapshot_dir(config, meta)
     if not (target / ".git").exists():
         target.parent.mkdir(parents=True, exist_ok=True)
-        _git(target.parent, "clone", "--filter=blob:none", "--no-checkout", "--depth", "1",
-             meta["url"], target.name)
+        _clone(target, meta["url"])
         _git(target, "config", "core.longpaths", "true")
-        _git(target, "sparse-checkout", "set", "--no-cone", *adapter.BASE_PATTERNS)
+        _sparse_set(target, adapter.BASE_PATTERNS)
         _git(target, "checkout")
-    patterns = [line for line in _git(target, "sparse-checkout", "list").splitlines() if line.strip()]
+    patterns = _sparse_list(target)
     added = []
     for item in items or []:
         if not (target / item).is_dir() and not _git(target, "ls-tree", "-d", "HEAD", "--", item).strip():
@@ -136,7 +178,7 @@ def fetch_source(config: Config, source_id: str, items: list[str] | None = None,
                 patterns.append(pattern)
                 added.append(pattern)
     if added:
-        _git(target, "sparse-checkout", "set", "--no-cone", *patterns)
+        _sparse_set(target, patterns)
     commit = _git(target, "rev-parse", "HEAD").strip()
     if meta.get("commit") and meta["commit"] != commit and not update:
         raise WikiError(f"快照 commit {commit[:12]} 与来源页记录 {meta['commit'][:12]} 不同；"
