@@ -134,17 +134,34 @@ def _sparse_list(target: Path) -> list[str]:
 
 
 def _clone(target: Path, url: str) -> None:
-    """git <2.19 lacks ``clone --filter``; fall back to a plain shallow clone."""
+    """git <2.19 lacks ``clone --filter``; fall back to a plain shallow clone.
+
+    Some old builds accept ``--filter`` yet produce a promisor partial clone whose
+    lazy object fetches are unusable; detect that and redo as a full clone.
+    """
+    import os
+    import shutil
+    import stat
+
+    def is_promisor(repo: Path) -> bool:
+        pack = repo / ".git" / "objects" / "pack"
+        return pack.is_dir() and any(pack.glob("*.promisor"))
+
+    def rmtree(path: Path) -> None:
+        def fix_perm(fn, p, _err):
+            os.chmod(p, stat.S_IWRITE)
+            fn(p)
+        shutil.rmtree(path, onexc=fix_perm)
+
     try:
         _git(target.parent, "clone", "--filter=blob:none", "--no-checkout", "--depth", "1",
              url, target.name)
-        return
+        if not is_promisor(target):
+            return
     except WikiError:
         pass
-    import shutil
-
     if target.exists():
-        shutil.rmtree(target)
+        rmtree(target)
     _git(target.parent, "clone", "--no-checkout", "--depth", "1", url, target.name)
 
 
