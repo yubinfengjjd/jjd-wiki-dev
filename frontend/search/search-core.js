@@ -53,7 +53,23 @@ export function decodeState(hash) {
 
 /** Link to the entry page in the rwiki app (`#/page/<path>`), per-segment encoded. */
 export function pageHref(appBase, page) {
-  if (!page) return '';
+  const base = safeBase(appBase);
+  if (!page || !base) return '';
   const path = page.split('/').map(encodeURIComponent).join('/');
-  return `${appBase || '/'}#/page/${path}`;
+  return `${base.split('#')[0]}#/page/${path}`;
+}
+
+/** Accept web or relative links, including URL-parser protocol normalization. */
+export function safeBase(value) {
+  if (typeof value !== 'string' || !value.trim()) return '';
+  try {
+    const base = value.trim();
+    const url = new URL(base, 'https://rwiki.invalid/');
+    return ['http:', 'https:'].includes(url.protocol) ? base : '';
+  } catch { return ''; }
+}
+
+export function sourceHref(sourceBase, page) {
+  const base = safeBase(sourceBase);
+  return base && page ? base + page.split('/').map(encodeURIComponent).join('/') : '';
 }

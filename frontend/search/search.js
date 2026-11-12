@@ -1,11 +1,11 @@
-import { FACETS, filter, facetCounts, encodeState, decodeState, pageHref } from './search-core.js';
+import { FACETS, filter, facetCounts, encodeState, decodeState, pageHref, sourceHref } from './search-core.js';
 
 // ?index=<json url>   index file (default search-index.json next to this page)
-// ?app=<url>          rwiki app base for entry links (default "/", i.e. rwiki serve)
+// ?app=<url>          optional running rwiki app; default links open source pages
 // ?src=<url prefix>   source browser prefix for the raw page (default GitHub jjd-wiki main)
 const params = new URLSearchParams(location.search);
 const INDEX_URL = params.get('index') || 'search-index.json';
-const APP_BASE = params.get('app') || '/';
+const APP_BASE = params.get('app') || '';
 const SRC_BASE = params.get('src') || 'https://github.com/yubinfengjjd/jjd-wiki/blob/main/知识库/';
 const KIND_LABEL = { recipe: '配方', template: '模板', method: '方法', item: 'L0 条目', scenario: '场景' };
 const PACKAGE_LIMIT = 40;
@@ -67,7 +67,8 @@ function renderResults() {
   const hits = filter(index.entries, state);
   $('#count').textContent = `${hits.length} / ${index.entries.length} 条` + (hits.length > RESULT_LIMIT ? `（显示前 ${RESULT_LIMIT}）` : '');
   $('#results').replaceChildren(...hits.slice(0, RESULT_LIMIT).map((e) => {
-    const href = pageHref(APP_BASE, e.page);
+    const source = sourceHref(SRC_BASE, e.page);
+    const href = pageHref(APP_BASE, e.page) || source;
     const badges = el('div', { class: 'badges' },
       el('span', { class: 'badge', text: [KIND_LABEL[e.kind] || e.kind, e.level, e.status, e.run && `run:${e.run}`].filter(Boolean).join(' · ') }),
       ...e.charts.map((c) => el('span', { class: 'badge chart', text: `图型 ${label('charts', c)}` })),
@@ -78,7 +79,7 @@ function renderResults() {
       el('div', {},
         href ? el('a', { class: 'title', href, text: e.title }) : el('span', { class: 'title', text: e.title }),
         el('span', { class: 'id', text: e.id }),
-        e.page ? el('a', { class: 'src', href: SRC_BASE + e.page, target: '_blank', rel: 'noopener', text: '源文件' }) : null),
+        source ? el('a', { class: 'src', href: source, target: '_blank', rel: 'noopener', text: '源文件' }) : null),
       e.summary ? el('p', { class: 'summary', text: e.summary }) : null,
       badges);
   }));

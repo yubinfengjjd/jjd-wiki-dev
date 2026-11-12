@@ -17,11 +17,13 @@ python3 frontend/search/build_index.py --wiki <jjd-wiki>/知识库 [--rev <jjd-w
 ## 预览
 
 ```bash
-cd frontend/search && python3 -m http.server 8765
-# 打开 http://127.0.0.1:8765/index.html
+cd frontend/search && python3 -m http.server 8766 --bind 127.0.0.1
+# 打开 http://127.0.0.1:8766/index.html，默认结果标题打开 GitHub 源文件
+# 若 rwiki serve 正在 8765 端口运行：
+# http://127.0.0.1:8766/index.html?app=http%3A%2F%2F127.0.0.1%3A8765%2F
 ```
 
-URL 参数：`?index=` 索引地址；`?app=` rwiki 应用根（默认 `/`，条目链到 `<app>#/page/<page>`，与 `rwiki serve` 的路由一致）；`?src=` 源文件前缀（默认 GitHub jjd-wiki main 的 `知识库/`）。筛选状态写在 hash 里，可直接分享，例如 `#charts=heatmap&domains=single-cell`。
+URL 参数：`?index=` 索引地址；`?app=` 可选的 rwiki 应用根（需运行服务，条目链到 `<app>#/page/<page>`）；`?src=` 源文件前缀（默认 GitHub jjd-wiki main 的 `知识库/`）。不提供 app 时标题打开源文件。链接仅允许 HTTP(S) 或相对地址。筛选状态写在 hash 里，可直接分享，例如 `#charts=heatmap&domains=single-cell`。
 
 分面规则：同一分面内多选为“或”，不同分面之间及与关键词为“且”；分面计数按“其余条件都满足”实时计算。
 
@@ -32,3 +34,5 @@ cd frontend/search
 python3 -m unittest -v test_build_index
 node --test search-core.test.mjs
 ```
+
+CI 在前端检查启用时运行 Python 索引测试；`frontend/npm test` 同时运行搜索 Node 测试。

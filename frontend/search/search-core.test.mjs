@@ -1,7 +1,7 @@
 // node --test frontend/search/search-core.test.mjs
 import test from 'node:test';
 import assert from 'node:assert/strict';
-import { filter, facetCounts, encodeState, decodeState, pageHref } from './search-core.js';
+import { filter, facetCounts, encodeState, decodeState, pageHref, sourceHref } from './search-core.js';
 
 const entries = [
   { id: 'a', kind: 'recipe', charts: ['heatmap'], domains: ['single-cell'], packages: ['pheatmap'], _text: 'a 热图 single-cell pheatmap' },
@@ -28,4 +28,19 @@ test('state round-trips through the hash; links encode path segments', () => {
   assert.deepEqual(decodeState('#' + encodeState(state)), state);
   assert.equal(pageHref('/', 'recipes/x y.md'), '/#/page/recipes/x%20y.md');
   assert.equal(pageHref('/', ''), '');
+});
+
+test('rejects executable app and source protocols', () => {
+  for (const base of ['javascript:alert(1)//', 'data:text/html,<svg>', ' java\tscript:alert(1)//']) {
+    assert.equal(pageHref(base, 'recipes/x.md'), '');
+    assert.equal(sourceHref(base, 'recipes/x.md'), '');
+  }
+});
+
+test('standalone results use encoded web source links without an app', () => {
+  assert.equal(pageHref('', 'recipes/x y.md'), '');
+  assert.equal(sourceHref('https://github.com/test/wiki/blob/main/', 'recipes/x y.md'),
+    'https://github.com/test/wiki/blob/main/recipes/x%20y.md');
+  assert.equal(pageHref('http://127.0.0.1:8765/', 'recipes/x.md'),
+    'http://127.0.0.1:8765/#/page/recipes/x.md');
 });
