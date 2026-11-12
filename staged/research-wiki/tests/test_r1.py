@@ -26,7 +26,7 @@ def test_ingest_translates_primary_secondary_and_moves_free_tags_to_keywords(wor
 
 
 @pytest.mark.parametrize('tags, expected', [
-    ([' SHAP ', '模型解释', 'SHAP', ' 模型解释 ', ''], ['SHAP', '模型解释']),
+    ([' 单细胞分析 ', '转录组', '单细胞分析', ' 转录组 ', ''], ['单细胞分析', '转录组']),
     ([], []),
 ])
 def test_tags_api_normalizes_and_persists(ingested, tags, expected):

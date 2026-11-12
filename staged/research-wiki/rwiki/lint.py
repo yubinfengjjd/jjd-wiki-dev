@@ -35,7 +35,13 @@ def _string_list(value) -> bool:
     return isinstance(value, list) and all(isinstance(item, str) and item.strip() for item in value)
 
 
-def metadata_errors(meta: dict) -> list[str]:
+def metadata_errors(meta: dict, vocabulary: frozenset[str] | None = None) -> list[str]:
+    from .tags import tag_errors
+
+    def finish(found: list[str]) -> list[str]:
+        found.extend(tag_errors(meta, vocabulary))
+        return found
+
     page_type = meta.get("type")
     if page_type not in REQUIRED:
         return ["type 缺失或未知"]
@@ -46,13 +52,13 @@ def metadata_errors(meta: dict) -> list[str]:
             errors.append(f"未知适配器: {meta.get('adapter')}")
         if not isinstance(meta.get("trusted"), bool):
             errors.append("trusted 必须为布尔值")
-        return errors
+        return finish(errors)
     if page_type == "scenario":
         if not isinstance(meta.get("picks"), list):
             errors.append("picks 必须为列表")
-        return errors
+        return finish(errors)
     if page_type not in ("layout", "template", "method", "recipe"):
-        return errors
+        return finish(errors)
     status = meta.get("status")
     statuses = {"layout": LAYOUT_STATUSES, "template": TEMPLATE_STATUSES, "method": METHOD_STATUSES,
                 "recipe": STATUSES}[page_type]
@@ -99,9 +105,7 @@ def metadata_errors(meta: dict) -> list[str]:
                 errors.append(f"{key} 必须为接口 slug 字符串列表")
         if not isinstance(meta.get("favorite"), bool):
             errors.append("favorite 必须为布尔值")
-    if not isinstance(meta.get("tags"), list) or any(not isinstance(tag, str) for tag in meta["tags"]):
-        errors.append("tags 必须为字符串列表")
-    return errors
+    return finish(errors)
 
 
 def asset_diagnostics(config: Config, path, meta: dict) -> list[tuple[str, str]]:
@@ -238,8 +242,17 @@ def visual_diagnostics(config: Config, path, meta: dict, body: str,
 
 def lint(config: Config, ci: bool = False) -> list[str]:
     """ci=True：因被 git 忽略（GPL 托管块、画廊、维护记录）而缺失的引用报告为 LOCAL-ONLY。"""
+    from .tags import load_vocabulary
+
     root = config.wiki_root
     diagnostics = []
+    try:
+        vocabulary = load_vocabulary(config)
+        vocab_error = None
+    except WikiError as error:
+        # Keep walking pages, but the run cannot pass without the controlled vocabulary.
+        vocabulary = None
+        vocab_error = str(error)
     valid_pages = []
     derived_pages = []
     parsed_pages = []
@@ -266,7 +279,7 @@ def lint(config: Config, ci: bool = False) -> list[str]:
 
     for path in page_paths(root):
         meta, body, parse_error = parse_page(path.read_text(encoding="utf-8"))
-        errors = [parse_error] if parse_error else metadata_errors(meta)
+        errors = [parse_error] if parse_error else metadata_errors(meta, vocabulary)
         if not parse_error and meta.get("type") == "method":
             errors.extend(relation_errors(config, meta))
         elif "figure_relations" in meta:
@@ -379,6 +392,8 @@ def lint(config: Config, ci: bool = False) -> list[str]:
     from .catalog import readable_pages
     if actual_index != render_index(root, readable_pages(root)):
         report("WARN", index, "index.md 与页面不一致，请运行 save")
+    if vocab_error:
+        diagnostics.append(f"ERROR taxonomy: {vocab_error}")
     from .finder import CATALOG, render_catalog
     catalog = root / CATALOG
     if (catalog.read_text(encoding="utf-8") if catalog.is_file() else "") != render_catalog(config):

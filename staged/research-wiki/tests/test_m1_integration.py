@@ -35,7 +35,10 @@ def page_body(title, applicable="", unsuitable="", note="author note"):
 def tiny_wiki(tmp_path):
     config_path = tmp_path / "config.json"
     taxonomy = tmp_path / "taxonomy.json"
-    write_json(taxonomy, {"scenarios": {}})
+    write_json(taxonomy, {"scenarios": {
+        "single-cell": {"label": "单细胞分析", "aliases": ["单细胞"]},
+        "transcriptomics": {"label": "转录组"},
+    }})
     write_json(config_path, {
         "wiki_root": str(tmp_path / "wiki"), "gallery_root": str(tmp_path / "gallery"),
         "taxonomy": str(taxonomy), "python_exe": sys.executable,
@@ -72,7 +75,7 @@ def tiny_wiki(tmp_path):
                 "entrypoint": "code/run.py:run", "dependencies": [],
                 "verification": "verification/run.json",
             }],
-            "tags": ["单细胞"] if method_id == "rank-a" else ["组织"],
+            "tags": ["单细胞分析"] if method_id == "rank-a" else ["转录组"],
             "inputs": inputs, "outputs": [output],
             "source": {"kind": "project", "path": "source"}, "license": "MIT",
             "cite": [], "favorite": False,
@@ -90,7 +93,7 @@ def tiny_wiki(tmp_path):
     write_page(root / "templates/rank-plot.md", {
         "type": "template", "id": "rank-plot", "title": "rank plot", "status": "ready",
         "language": "python", "layouts": ["src__rank"], "panels": ["A"], "chart_types": ["rank"],
-        "tags": ["单细胞"], "favorite": False,
+        "tags": ["单细胞分析"], "favorite": False,
     }, page_body("rank plot", "rank visualization"))
     # Templates only come from a replicated, signed source (D044).
     write_json(config.gallery_root / "src/figures/rank/meta.json", {
@@ -288,16 +291,16 @@ def test_server_method_draft_ready_return_tags_and_common_actions(tiny_wiki):
         assert client.post("/api/methods/rank-a/return", json={"reason": "again"}).status_code == 409
         for action, payload in (
             ("favorite", {"value": True}), ("note", {"text": "updated author note"}),
-            ("tags", {"tags": [" custom ", "custom", "新标签"]}),
+            ("tags", {"tags": [" 单细胞分析 ", "单细胞分析", "转录组"]}),
             ("archive", None), ("restore", None),
         ):
             response = client.post(f"/api/methods/rank-a/{action}", json=payload)
             assert response.status_code == 200, response.text
         meta, body = read_page(root / "methods/rank-a.md")
         assert meta["status"] == "draft" and meta["favorite"]
-        assert meta["tags"] == ["custom", "新标签"]
+        assert meta["tags"] == ["单细胞分析", "转录组"]
         assert "updated author note" in get_block(body, "user")
-        assert "- 标签：custom、新标签" in get_block(body, "facts")
+        assert "- 标签：单细胞分析、转录组" in get_block(body, "facts")
     assert "return rank-a: expand explanation" in (root / "log.md").read_text(encoding="utf-8")
 
 
