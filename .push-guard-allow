@@ -17,3 +17,5 @@ abs-path staged/research-wiki/tests/test_config.py  # 配置用例中的合成 R
 abs-path staged/research-wiki/tests/test_t3.py  # record-use 用例中的合成输出路径
 abs-path staged/research-wiki/tests/test_code_assets.py  # 拒绝越界与绝对路径的合成用例
 abs-path staged/research-wiki/tests/conftest.py  # 夹具中的合成解释器路径
+abs-path replications/2026-11-12_img07/code/run_all.sh  # img07 archived runner: generic disposable-container conda activation path; no credential or private data; preserve original script/receipt bytes
+size replications/2026-11-12_img07/data/go_enrichment_all.tsv  # img07 public-tutorial GO aggregate: 43,814 GO rows, 17 modules, 8,973,440 bytes; preserve complete enrichment audit data
