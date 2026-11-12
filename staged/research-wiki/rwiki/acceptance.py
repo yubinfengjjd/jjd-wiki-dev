@@ -39,7 +39,8 @@ def entry_errors(config, path, *, replay=True) -> list[str]:
     from .spec import load_spec
     try:
         meta, body = read_page(path)
-        errors = metadata_errors(meta)
+        from .tags import load_vocabulary
+        errors = metadata_errors(meta, load_vocabulary(config))
         for heading in HEADINGS.get(meta.get('type'), ()):
             try:
                 content = section_text(body, heading).strip()

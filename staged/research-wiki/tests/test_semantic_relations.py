@@ -58,7 +58,7 @@ def semantic_wiki(tmp_path):
     for directory in ("methods", "templates", "layouts", "interfaces", "projects", "chart-types"):
         (root / directory).mkdir()
     taxonomy = tmp_path / "taxonomy.json"
-    taxonomy.write_text('{"scenarios": {}}', encoding="utf-8")
+    taxonomy.write_text('{"scenarios": {"same-label": {"label": "同标签"}}}', encoding="utf-8")
     config_path = tmp_path / "config.json"
     config_path.write_text(json.dumps({"wiki_root": str(root), "gallery_root": str(tmp_path / "gallery"),
                                       "taxonomy": str(taxonomy), "python_exe": sys.executable,
