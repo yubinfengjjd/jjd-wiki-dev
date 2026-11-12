@@ -1,7 +1,7 @@
 # 派生或可重建的内容不进版本库
 frontend/node_modules/
 frontend/dist/
-staged/research-wiki/app/
+# Packaged app is versioned for complete skill downloads. Rebuild with frontend/npm run build.
 test-gallery/
 test-gallery-p2/
 test-wiki-r1/
