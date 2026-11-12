@@ -516,8 +516,13 @@ def create_app(config: Config) -> FastAPI:
 
     @app.post("/api/{kind}/{entry_id}/tags")
     def tags(kind: str, entry_id: str, request: TagsBody):
+        from .tags import load_vocabulary, normalize_tags, tag_errors
+
         path, meta, body = visual(kind, entry_id)
-        meta["tags"] = list(dict.fromkeys(tag.strip() for tag in request.tags if tag.strip()))
+        meta["tags"] = normalize_tags(request.tags)
+        findings = tag_errors(meta, load_vocabulary(config))
+        if findings:
+            raise HTTPException(422, "；".join(findings))
         return finish(path, meta, body, f"tags {entry_id}")
 
     @app.post("/api/{kind}/{entry_id}/favorite")

@@ -98,7 +98,7 @@
 - 接口页“含义”：一行代表什么、单位/编码、最容易出错的前提、与相近接口的区别；模板不重算的统计写“上游给定”。
 - 图型页五节：回答什么问题、什么时候选它、什么时候不要用、与相近图型怎么区分、常见误用。
 - 方法—图关系只在方法侧 `figure_relations` 维护（direct / adaptable / candidate），反向自动派生；接口结构匹配不等于可直接接。
-- `tags` 只用受控词表（`config.taxonomy`）；数据集、软件、模型名进 `keywords`；`purposes` 只用于 analysis 方法。
+- `tags` 只用受控词表（`config.taxonomy` 的规范键或中文 label）；别名、数据集、软件、模型名进 `keywords`。非法或重复 tags 为 ERROR，空列表仍可读。`purposes` 只用于 analysis 方法。
 - 命名：id 冻结，是文件名和引用键；title 写中文内容名，约 8–20 字，不拼来源、版本、图型前缀或项目名。
 - 链接用相对 Wiki 根的双链，如 `[[recipes/<id>|显示名]]`；frontmatter 列表存值，不存链接。
 

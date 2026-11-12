@@ -46,7 +46,7 @@
 - 依赖：`packages`（`cran`、`bioc`、`github`、`library`）、`requires`（运行需要的包名，去掉 base R）。
 - 发现：`tags`（自动规则，至多 3 个，`tags_auto: true`）、`chart_hints`、`keywords`、`refs`、`thumb_url`、`language`。
 
-自动 tags 只用于检索；配方页的 tags 由 curation 给出。
+自动 tags 只用于检索；配方页的 tags 由 curation 给出。页面 `tags` 只接受词表规范键或中文 label；API 写入与 `lint` 把词表外的值和重复值报为 ERROR。
 
 ## 配方 `recipes/<id>.md` 与目录
 

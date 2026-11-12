@@ -80,7 +80,7 @@ def test_panel_template_has_no_gallery_or_signoff_and_supports_common_actions(we
         result = client.post(f"/api/templates/{tid}/{action}", json={"reason": "test"})
         assert result.status_code == 404
     for action, payload in (("favorite", {"value": True}), ("note", {"text": "panel note"}),
-                             ("tags", {"tags": ["单细胞"]}),
+                             ("tags", {"tags": ["单细胞分析"]}),
                              ("archive", None), ("restore", None)):
         count = commit_count(config.wiki_root)
         result = client.post(f"/api/templates/{tid}/{action}", json=payload)
@@ -94,7 +94,7 @@ def test_panel_template_has_no_gallery_or_signoff_and_supports_common_actions(we
 
 @pytest.mark.parametrize("action,payload", [
     ("signoff", None), ("reject", {"reason": "需要调整"}),
-    ("tags", {"tags": [" 自定义 ", "自定义", "新标签"]}), ("favorite", {"value": True}),
+    ("tags", {"tags": [" 单细胞分析 ", "单细胞分析", "转录组"]}), ("favorite", {"value": True}),
     ("note", {"text": "我的备注\n## 标题"}), ("archive", None), ("restore", None),
 ])
 def test_write_success_real_commit(web, action, payload):
@@ -127,8 +127,8 @@ def test_write_success_real_commit(web, action, payload):
         assert gallery_path.read_text(encoding="utf-8") == json.dumps(gallery_after, ensure_ascii=False, indent=2) + "\n"
         assert after["status"] == ("pending_template" if action == "signoff" else "pending_signoff")
     elif action == "tags":
-        assert after["tags"] == ["自定义", "新标签"]
-        assert "- 标签：自定义、新标签" in get_block(text, "facts")
+        assert after["tags"] == ["单细胞分析", "转录组"]
+        assert "- 标签：单细胞分析、转录组" in get_block(text, "facts")
         assert not (config.wiki_root / "scenarios").exists()
     elif action == "note":
         assert get_block(text, "user") == f"\n{payload['text']}\n"
@@ -169,15 +169,28 @@ def test_errors_are_4xx_without_commits(web):
     assert client.post(f"/api/layouts/{ENTRY_ID}/reject", json={"reason": "x"}).status_code == 409
 
 
-@pytest.mark.parametrize("tags,expected", [([], []), (["任意未登记标签"], ["任意未登记标签"]),
-                                          ([" a ", "a", " b"], ["a", "b"])])
-def test_tags_are_free_strings_and_allow_empty_list(web, tags, expected):
+@pytest.mark.parametrize("tags,expected", [([], []),
+                                          ([" 单细胞分析 ", "单细胞分析", " single-cell "], ["单细胞分析", "single-cell"])])
+def test_tags_api_accepts_vocabulary_and_normalizes(web, tags, expected):
     config, _, client = web
     response = client.post(f"/api/layouts/{ENTRY_ID}/tags", json={"tags": tags})
     assert response.status_code == 200, response.text
     assert response.json()["meta"]["tags"] == expected
     assert read_page(config.wiki_root / f"layouts/{ENTRY_ID}.md")[0]["tags"] == expected
     assert client.post(f"/api/layouts/{ENTRY_ID}/scenarios", json={"primary": [], "free": []}).status_code in (404, 405)
+
+
+def test_tags_api_rejects_unknown_without_writing(web):
+    config, _, client = web
+    path = config.wiki_root / f"layouts/{ENTRY_ID}.md"
+    before = path.read_bytes()
+    count = commit_count(config.wiki_root)
+    response = client.post(f"/api/layouts/{ENTRY_ID}/tags", json={"tags": ["单细胞分析", "SHAP", "组织"]})
+    assert response.status_code == 422
+    detail = response.json()["detail"]
+    assert "非法领域" in detail and "SHAP" in detail and "组织" in detail
+    assert path.read_bytes() == before
+    assert commit_count(config.wiki_root) == count
 
 
 def test_wiki_error_reaches_client_as_detail(web):
