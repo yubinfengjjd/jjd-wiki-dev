@@ -45,6 +45,9 @@ jobs:
         if: steps.scope.outputs.pytest == 'true'
         working-directory: staged/research-wiki
         run: python -X utf8 -m pytest -m "not r and not compose and not local"
+      - name: 静态搜索索引测试
+        if: steps.scope.outputs.frontend == 'true'
+        run: python -X utf8 -m unittest discover -s frontend/search -p 'test_*.py' -v
       - name: 前端测试
         if: steps.scope.outputs.frontend == 'true'
         working-directory: frontend
