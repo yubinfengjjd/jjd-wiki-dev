@@ -41,6 +41,10 @@ async function main() {
   assert.ok(html.includes('下载资料') && html.includes('未下载'));
   const available = renderToStaticMarkup(<view.SearchResults results={[{...result, asset_availability: 'available'}]} onDownload={() => {}} downloading="" />);
   assert.ok(!available.includes('下载资料'), 'only not_downloaded assets have the fetch action');
+  const item = renderToStaticMarkup(<view.SearchResults results={[{...result, id: 'figureya:Module1', kind: 'item',
+    use: 'wiki.py use figureya:Module1 --project <课题目录>'}]} onDownload={() => {}} downloading="" />);
+  assert.ok(!item.includes('下载资料') && item.includes('rwiki use figureya:Module1'),
+    'L0 sources must use the upstream-aware reuse entry rather than the page-asset endpoint');
   const source = renderToStaticMarkup(<view.SearchResults results={[{...result, source_scope: true, source_path: 'methods/x/source/main.R', evidence_state: 'unknown'}]} onDownload={() => {}} downloading="" />);
   assert.ok(source.includes('来源文件') && source.includes('methods/x/source/main.R'));
   assert.ok(source.includes('尚未核对') && !source.includes('运行证据：unknown'));

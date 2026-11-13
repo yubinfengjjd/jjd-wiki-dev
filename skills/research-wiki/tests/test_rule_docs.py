@@ -30,8 +30,8 @@ REQUIRED = {
         "legacy/master", "RWIKI_WIKI_ROOT", "LOCAL-ONLY", "--local-report", "codex-review", "start-task",
         ".kiro"),
 }
-README_REQUIRED = ("`jjd-wiki-dev`", "`jjd-wiki`", "`main`", "github.com/", "不推送", "wiki.py gh install-hook",
-                   "catalog.jsonl", "rwiki", ".kiro", "限制性许可", "可选", "legacy/master")
+README_REQUIRED = ("jjd-wiki-dev", "jjd-wiki", "github.com/", "rwiki find", "rwiki show", "rwiki use",
+                   "RWIKI-USE.md", "`wiki/`", "`gallery/`", "`docs/`", "`archive/docs/`", "许可证")
 # 已被 v2 取代的说法与改名前的仓库名，不能再出现在任何规则文档里。
 STALE = ("提交到 master", "提交到master", "save 自动提交", "维护文件任务书", "任务书：T1",
          "research-wiki-dev", "research-wiki-vault",
@@ -110,4 +110,5 @@ def test_vault_rule_docs(vault_root):
     assert missing(readme, README_REQUIRED) == []
     assert "RWIKI_WIKI_ROOT" in read(vault_root / "tools/launcher.ps1")
     # 知识库里的规则由 `wiki.py init` 从 assets 同步，必须逐字节相同。
-    assert (vault_root / "知识库/AGENTS.md").read_bytes() == (SKILL_ROOT / "assets/AGENTS.md").read_bytes()
+    rules = next(path for path in (vault_root / 'wiki/AGENTS.md', vault_root / '知识库/AGENTS.md') if path.is_file())
+    assert rules.read_bytes() == (SKILL_ROOT / "assets/AGENTS.md").read_bytes()

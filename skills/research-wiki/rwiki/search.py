@@ -10,8 +10,9 @@ import math
 import re
 import tempfile
 import os
+import subprocess
 from collections import Counter
-from pathlib import Path
+from pathlib import Path, PurePosixPath
 from threading import RLock
 
 from .config import Config
@@ -19,7 +20,7 @@ from .errors import WikiError
 from .pages import read_page
 
 SCHEMA_VERSION = 1
-INDEX_VERSION = 4
+INDEX_VERSION = 5
 LOCK = RLock()
 PAGE_DIRS = ("methods", "recipes", "templates", "scenarios", "interfaces", "chart-types", "projects", "sources", "layouts")
 SOURCE_EXTENSIONS = {".py", ".r", ".rmd", ".qmd", ".md", ".jl", ".sql", ".sh", ".js", ".ts", ".c", ".cpp", ".h"}
@@ -58,7 +59,7 @@ QUERY_ALIASES[1] += ["细胞类型", "cell type"]
 STOPWORDS = ["请帮我", "每一个", "能不能", "请问", "我想", "我需要", "想要", "如何", "怎么", "怎样",
              "可以", "是否", "能否", "应该", "判断", "每个", "属于", "什么", "哪个", "哪些", "的", "给", "做", "一下"]
 RANKING = {"k1": 1.2, "b": .75, "title_weight": 4, "metadata_weight": 2,
-           "section_weight": 1, "secondary_cap": .05}
+           "section_weight": 1, "secondary_cap": .05, "phrase_weight": .5, "phrase_limit": 4, "phrase_max_length": 120}
 BLOCK = re.compile(r"<!--\s*(user|facts):start\s*-->.*?(?:<!--\s*\1:end\s*-->|\Z)", re.S | re.I)
 WORDS = re.compile(r"[a-z0-9]+|[\u3400-\u9fff]+", re.I)
 
@@ -135,6 +136,8 @@ def _record(path: Path, meta: dict, body: str, config: Config) -> dict:
               "use": f"wiki.py {'use' if kind in ('recipe','template') else 'show'} {identity}" + (" --project <课题目录>" if kind in ('recipe','template') else ""),
               "license": meta.get("license", ""),
               **{k:meta.get(k) or [] for k in ("chart_types", "tags", "keywords", "purposes", "inputs", "outputs")}}
+    if isinstance(source, dict) and source.get("id") and source.get("item"):
+        result["source_identity"] = f"{source['id']}:{source['item']}"
     if kind == "method":
         result["method_kind"] = meta.get("method_kind")
     if kind == 'layout':
@@ -198,9 +201,55 @@ def _write_cache(path: Path, config: Config, entries: dict):
         temporary.unlink(missing_ok=True)
 
 
+def _module_parts(value) -> tuple[str, ...]:
+    """Adapter item paths are exact relative directories, never slug substrings."""
+    path = PurePosixPath(str(value or "").replace("\\", "/"))
+    if not str(value or "") or path.is_absolute() or any(p in ("..", ".") or p.startswith(".") for p in path.parts):
+        return ()
+    return path.parts
+
+
+def _blocked_modules(config: Config) -> dict[str, set[tuple[str, ...]]]:
+    from .curation import excluded_paths, removed_ids
+    from .catalog import readable_pages
+    from .read_cache import remember
+    def collect():
+        blocked = {}
+        for identity in removed_ids(config):
+            if ":" in identity:
+                source_id, module = identity.split(":", 1)
+                parts = _module_parts(module)
+                if parts:
+                    blocked.setdefault(source_id, set()).add(parts)
+        hidden = excluded_paths(config)
+        for path, meta in readable_pages(config.wiki_root):
+            if meta.get("type") != "recipe" or not (meta.get("status") == "archived" or path.relative_to(config.wiki_root).as_posix() in hidden):
+                continue
+            source = meta.get("source") or {}
+            if isinstance(source, dict) and source.get("id") and source.get("item"):
+                parts = _module_parts(source["item"])
+                if parts:
+                    blocked.setdefault(str(source["id"]), set()).add(parts)
+        return blocked
+    return remember(("search-blocked-modules", config.wiki_root), collect)
+
+
+def _hidden_path(relative: str, blocked: set[tuple[str, ...]]) -> bool:
+    parts = PurePosixPath(relative).parts
+    return any(parts[:len(module)] == module for module in blocked)
+
+
+def _hidden_identity(identity, blocked) -> bool:
+    if not identity or ":" not in identity:
+        return False
+    source_id, module = identity.split(":", 1)
+    return _hidden_path(module, blocked.get(source_id, set()))
+
+
 def _page_entries(config: Config, cache: dict, scope: str):
     from .curation import excluded_paths, removed_ids
     blocked, removed = excluded_paths(config), removed_ids(config)
+    hidden_modules = _blocked_modules(config)
     entries, pages, coverage = {}, [], {"pages":0, "catalog_items":0, "source_files":0, "excluded":0, "unreadable":0, "not_downloaded":0}
     reused = updated = 0
     for folder in PAGE_DIRS:
@@ -224,7 +273,7 @@ def _page_entries(config: Config, cache: dict, scope: str):
                     entry = {"signature":sig, "document":_document(record,body,_metadata(meta))}
                     updated += 1
                 record = entry["document"]["record"]
-                if record["id"] in removed or record.get("source") in removed:
+                if record["id"] in removed or record.get("source") in removed or _hidden_identity(record.get("source_identity"), hidden_modules):
                     coverage["excluded"] += 1
                     continue
                 pages.append((path, record))
@@ -244,6 +293,7 @@ def _catalog_entries(config: Config, entries: dict, cache: dict, coverage: dict)
     from .curation import removed_ids
     promoted = {v["document"]["record"].get("source") for v in entries.values()}
     removed = removed_ids(config)
+    hidden_modules = _blocked_modules(config)
     for key, entry in list(entries.items()):
         record = entry["document"]["record"]
         if record["kind"] != "source":
@@ -251,7 +301,7 @@ def _catalog_entries(config: Config, entries: dict, cache: dict, coverage: dict)
         try:
             meta = read_page(config.wiki_root / record["page"])[0]
             for item in read_items(config, record["id"]):
-                if item["id"] in promoted or item["id"] in removed:
+                if item["id"] in promoted or item["id"] in removed or _hidden_identity(item["id"], hidden_modules):
                     continue
                 rec = _item_record(item,meta)
                 for field in ("usable","run","missing_packages"):
@@ -269,25 +319,29 @@ def _catalog_entries(config: Config, entries: dict, cache: dict, coverage: dict)
 def _source_entries(config: Config, pages: list, cache: dict, coverage: dict):
     from .sources import snapshot_dir
     entries, seen = {}, set()
+    hidden_modules = _blocked_modules(config)
     for page_path, record in pages:
-        roots = [page_path.with_suffix("") / folder for folder in ("source", "code")]
+        roots = [(page_path.with_suffix("") / folder, set()) for folder in ("source", "code")]
         if record["kind"] == "source" and config.sources_root:
             try:
-                roots.append(snapshot_dir(config,read_page(page_path)[0]))
+                roots.append((snapshot_dir(config,read_page(page_path)[0]), hidden_modules.get(record["id"], set())))
             except (WikiError,KeyError,TypeError):
                 pass
-        if not any(root.is_dir() for root in roots):
+        if not any(root.is_dir() for root, _ in roots):
             coverage["not_downloaded"] += 1
-        for root in roots:
+        for root, module_blocks in roots:
             if not root.is_dir():
                 continue
             base = root.resolve()
             # Prune data/cache trees before traversal, not only after reading.
             for walk_root, dirs, names in os.walk(root, followlinks=False):
-                dirs[:] = sorted(d for d in dirs if d.lower() not in SKIP_DIRS and not d.startswith("."))
+                dirs[:] = sorted(d for d in dirs if d.lower() not in SKIP_DIRS and not d.startswith(".")
+                                 and not _hidden_path((Path(walk_root) / d).relative_to(root).as_posix(), module_blocks))
                 for name in sorted(names):
                     path = Path(walk_root) / name
                     relative = path.relative_to(root).as_posix()
+                    if _hidden_path(relative, module_blocks):
+                        continue
                     if (path.suffix.lower() not in SOURCE_EXTENSIONS or name.startswith(".") or
                             not path.resolve().is_relative_to(base) or path.stat().st_size > MAX_SOURCE_BYTES):
                         continue
@@ -356,6 +410,56 @@ def _snippet(text: str, tokens: set[str]) -> str:
     return ("…" if start else "")+text[start:start+220]+("…" if len(text)>start+220 else "")
 
 
+def _normalized_phrase(text: str, tokenizer: dict) -> str:
+    # Exact phrases preserve internal words/order. Token stopwords may not
+    # concatenate formerly separated words into a spurious exact match.
+    return _plain(str(text)).lower()
+
+
+def query_phrases(query: str, tokenizer: dict, ranking: dict) -> list[str]:
+    """Bounded ordered phrases; quotes preserve the user's requested grouping.
+
+    Otherwise the normalized full query is a phrase only when it contains at
+    least two ASCII words or four CJK characters. No question-specific rewrites.
+    """
+    quoted = [m[0] or m[1] for m in re.findall(r'"([^"\n]+)"|“([^”\n]+)”', query)]
+    values = quoted or [query]
+    result = []
+    for value in values:
+        phrase = _normalized_phrase(value, tokenizer)
+        if not quoted:
+            # Natural instruction prefixes may precede a literal search phrase;
+            # internal Chinese words remain intact, and quoted text is literal.
+            prefixes = sorted(tokenizer.get("stopwords", []), key=len, reverse=True)
+            while phrase:
+                prefix = next((p for p in prefixes if p and phrase.startswith(p)), None)
+                if prefix is None:
+                    break
+                phrase = phrase[len(prefix):].lstrip()
+        if len(phrase) > ranking.get("phrase_max_length", 120):
+            continue
+        if len(re.findall(r"[a-z0-9]+", phrase)) < 2 and len(re.findall(r"[\u3400-\u9fff]", phrase)) < 4:
+            continue
+        if phrase and phrase not in result:
+            result.append(phrase)
+        if len(result) >= ranking.get("phrase_limit", 4):
+            break
+    return result
+
+
+def _matched_phrases(record: dict, section: dict, phrases: list[str], tokenizer: dict) -> list[str]:
+    fields = [_normalized_phrase(str(value), tokenizer) for value in
+              (record.get("title", ""), record.get("summary", ""), section["title"], section["text"])]
+    matched = []
+    for phrase in phrases:
+        pattern = (r"(?<![a-z0-9])" if re.match(r"[a-z0-9]", phrase) else "") + re.escape(phrase)
+        if re.search(r"[a-z0-9]$", phrase):
+            pattern += r"(?![a-z0-9])"
+        if any(re.search(pattern, field) for field in fields):
+            matched.append(phrase)
+    return matched
+
+
 def rank_export(index: dict, query: str, kind=None, level=None, runnable=False, limit=10, scope="knowledge") -> list[dict]:
     """Pure ranking contract shared with the static JavaScript frontend.
 
@@ -365,6 +469,8 @@ def rank_export(index: dict, query: str, kind=None, level=None, runnable=False, 
     if not str(query).strip() or index.get("coverage",{}).get("scope","knowledge")!=scope:
         return []
     tokens=set(tokenize(query,index.get("tokenizer",{}).get("aliases",ALIASES),index.get("tokenizer",{}).get("stopwords",[])))
+    phrases=query_phrases(query,index.get("tokenizer",{}),index["ranking"])
+    phrase_weight=max(0,min(.5,float(index["ranking"].get("phrase_weight",0))))
     stats=index["statistics"]
     n,avg=stats["document_count"],max(1,stats["average_length"])
     k1,b=index["ranking"]["k1"],index["ranking"]["b"]
@@ -375,7 +481,7 @@ def rank_export(index: dict, query: str, kind=None, level=None, runnable=False, 
             continue
         if runnable and not (record.get("usable") or record.get("run")=="pass"):
             continue
-        best_score,best=0.0,None
+        best_score,best,best_phrases=0.0,None,[]
         for section in doc["sections"]:
             score=0.0
             for token in sorted(tokens):
@@ -385,10 +491,12 @@ def rank_export(index: dict, query: str, kind=None, level=None, runnable=False, 
                 df=stats["df"].get(token,0)
                 idf=math.log(1+(n-df+.5)/(df+.5))
                 score+=idf*tf*(k1+1)/(tf+k1*(1-b+b*section["length"]/avg))
+            matched=_matched_phrases(record,section,phrases,index.get("tokenizer",{})) if phrases and phrase_weight else []
+            score *= 1 + phrase_weight * len(matched) / max(1,len(phrases))
             if score>best_score:
-                best_score,best=score,section
+                best_score,best,best_phrases=score,section,matched
         if best is not None:
-            results.append({**record,"score":round(best_score,6),"why":["正文 BM25 · "+best["title"]],
+            results.append({**record,"score":round(best_score,6),"why":["正文 BM25 · "+best["title"]]+(["精确短语 · "+"；".join(best_phrases)] if best_phrases else []),
                             "match_section":best["title"],"snippet":_snippet(best["text"],tokens)})
     results.sort(key=lambda r:(-r["score"],r["id"]))
     return results[:max(0,min(int(limit),1000))]
@@ -401,6 +509,52 @@ def _availability(config: Config, page_path: Path) -> dict:
     except ImportError:
         return {"state":"available" if page_path.with_suffix("").is_dir() else "not_downloaded",
                 "profile":"full","missing":[]}
+
+
+def _snapshot_inventory(snapshot: Path) -> dict[str, str]:
+    """Read the local Git index only; never lazy-fetch missing upstream blobs."""
+    from .read_cache import remember
+    def read():
+        if not snapshot.is_dir():
+            return {}
+        env = {**os.environ, "GIT_TERMINAL_PROMPT":"0", "GIT_NO_LAZY_FETCH":"1"}
+        result = subprocess.run(["git", "--no-optional-locks", "-C", str(snapshot), "ls-files", "-t", "-z"],
+                                capture_output=True, text=True, encoding="utf-8", env=env)
+        return {line[2:]:line[0] for line in result.stdout.split("\0") if len(line)>2} if result.returncode==0 else {}
+    return remember(("search-snapshot-index", snapshot), read)
+
+
+def _item_availability(config: Config, meta: dict, record: dict) -> dict:
+    from .sources import snapshot_dir, find_item
+    page_state = _availability(config,config.wiki_root / record["page"])
+    details = {"state":"not_downloaded", "profile":page_state.get("profile","full"),
+               "missing":[], "reason":"upstream_not_downloaded"}
+    if not config.sources_root or not meta.get("snapshot"):
+        details["reason"] = "upstream_location_unknown"
+        return details
+    identity = record.get("source") or record["id"]
+    source_id, item_name = identity.split(":",1)
+    item = find_item(config,source_id,item_name)
+    parts = _module_parts(item.get("item"))
+    if not parts:
+        details["reason"] = "invalid_item_path"
+        return details
+    snapshot = snapshot_dir(config,meta).resolve()
+    module = snapshot.joinpath(*parts).resolve()
+    if not snapshot.is_relative_to(config.sources_root.resolve()) or not module.is_relative_to(snapshot):
+        details["reason"] = "invalid_item_path"
+        return details
+    inventory = _snapshot_inventory(snapshot)
+    expected = [(name,tag) for name,tag in inventory.items() if _hidden_path(name,{parts})]
+    missing = [(name,tag) for name,tag in expected if not (snapshot / name).is_file()]
+    details["expected_files"] = len(expected)
+    details["missing"] = [name for name,_ in missing]
+    if missing:
+        details["state"] = "not_downloaded" if all(tag=="S" for _,tag in missing) else "missing"
+        details["reason"] = "sparse_upstream_omission" if details["state"]=="not_downloaded" else "tracked_upstream_missing"
+    elif module.is_dir() and any(p.is_file() for p in module.rglob("*")):
+        details.update(state="available",reason="downloaded_item")
+    return details
 
 
 def _fresh(config: Config, record: dict) -> dict | None:
@@ -423,7 +577,7 @@ def _fresh(config: Config, record: dict) -> dict | None:
             current.update(usable=False,run="none")
         elif kind == 'layout':
             current.update(usable=False, run='none', reference_only=True)
-        availability=_availability(config,path)
+        availability=_item_availability(config,meta,record) if kind=="item" else _availability(config,path)
         current["asset_availability"]=availability.get("state", "missing")
         current["asset_details"]=availability
         if availability.get("state")!="available":

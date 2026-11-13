@@ -24,3 +24,17 @@ test('query normalization honors case, CJK bigrams and bounded English aliases',
   assert.ok(!full.queryTokens('degree', {aliases: [['差异表达', 'DEG']]}).has('@0'));
   assert.deepEqual([...full.queryTokens('判断每个细胞属于什么类型', {stopwords: ['每个', '属于', '判断', '什么']})], ['细胞', '胞类', '类型']);
 });
+
+
+test('exact phrases reward order and enforce ASCII word boundaries', () => {
+  const index = {tokenizer:{aliases:[]}, ranking:{k1:1.2,b:.75,phrase_weight:.5},
+    statistics:{document_count:3,average_length:4,df:{alpha:3,beta:3}},documents:[
+      {record:{id:'a-reversed',title:'Order'},sections:[{title:'原理',text:'beta alpha',length:4,tf:{alpha:1,beta:1}}]},
+      {record:{id:'z-ordered',title:'Order'},sections:[{title:'原理',text:'alpha beta',length:4,tf:{alpha:1,beta:1}}]},
+      {record:{id:'substring',title:'Order'},sections:[{title:'原理',text:'unalpha betaextra alpha separately beta',length:4,tf:{alpha:1,beta:1}}]},
+    ]};
+  const hits=full.rankExport(index,'"alpha beta"');
+  assert.equal(hits[0].id,'z-ordered');
+  assert.ok(hits[0].why.some(x=>x.includes('精确短语')));
+  assert.ok(!hits.find(x=>x.id==='substring').why.some(x=>x.includes('精确短语')));
+});

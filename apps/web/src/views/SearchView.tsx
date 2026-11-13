@@ -27,7 +27,9 @@ export function SearchResults({results, onDownload, downloading}: {
         <span>{AVAILABILITY[result.asset_availability] ?? '资料状态未知'}</span>
         <span>运行证据：{EVIDENCE[result.evidence_state] || EVIDENCE[result.run] || '尚未核对'}</span>
         <span>{result.usable ? '可进入复用流程' : '使用前需核对前提与证据'}</span>
-        {result.asset_availability === 'not_downloaded' && <button type="button" className="small" disabled={!!downloading}
+        {result.asset_availability === 'not_downloaded' && result.kind === 'item' &&
+          <span>获取来源并复用：<code>rwiki use {result.id} --project &lt;课题目录&gt;</code></span>}
+        {result.asset_availability === 'not_downloaded' && result.kind !== 'item' && <button type="button" className="small" disabled={!!downloading}
           onClick={() => onDownload(result)}>{downloading === result.id ? '正在下载…' : '下载资料'}</button>}
       </div>
     </li>;

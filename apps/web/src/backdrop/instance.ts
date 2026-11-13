@@ -11,6 +11,7 @@ const GALLERY_HERO = 420;
  */
 export function useBackdropZone(view: string) {
   useEffect(() => {
+    backdrop.setPaused(view === 'search' || view === 'page');
     const update = () => {
       if (view === 'gallery') backdrop.setIntensity(scrollY < GALLERY_HERO ? 1 : 0.75);
       else if (view === 'graph') backdrop.setIntensity(0.45);

@@ -22,7 +22,7 @@ description: Use when the author wants a template, figure or analysis method fro
 
 ## 日常：找到并调用（find → show → use）
 
-1. `rwiki find <场景/图型/分析名…> [--kind recipe|template|method|scenario|item] [--runnable]`：读 `catalog.jsonl`，场景首选排前，每条带下一步命令。
+1. `rwiki find <场景/图型/分析名…> [--kind method|template|recipe|scenario|interface|chart-type|project|layout|source|item] [--scope knowledge|source] [--runnable]`：默认对完整知识正文按章节做离线 BM25 检索，页面合并后显示命中章节、片段和匹配原因；相关性优先。`source` 只搜索本机已下载的代码和来源说明。
 2. `rwiki show <id>`：用途、适用/不适用、输入、许可、最近运行。读完再给作者 1–3 个候选与差异，等作者选；已有选择就复用。
 3. `rwiki use <id> --project <课题目录>`：代码复制到 `<课题>\wiki-use\<名>\`，不改 Wiki。L0 条目要求来源 trusted。
 4. 按副本里的 `RWIKI-USE.md` 换数据：配方替换同名输入文件、保持列格式；模板把 `bindings.draft.json` 改成 `bindings.json`（内部字段 → 作者列）。含义、单位、粒度不清先问。
@@ -31,6 +31,14 @@ description: Use when the author wants a template, figure or analysis method fro
 7. 任务授权包含正式 Wiki 写入时才回写：`rwiki record-use <模板 id> --project <slug> --title … --output <png>`；只做了分析用 `record-method-use`。只记路径与判断。
 
 medfig-render、medpaper-pipeline 出图前先 `rwiki find`：有可用模板或通过的配方就给作者候选，没有就照常出图。按列名或研究问题初筛也可用 `suggest` / `suggest-methods` / `suggest-pipeline` / `discover-methods`；课题状态与证据用 `project …`（只写 `<课题>\wiki-use\_project\`）。见 references/project-reuse.md、references/project-state.md。
+
+### 统一检索与轻量检出
+
+`catalog.jsonl` 继续用于目录、分类浏览和旧入口；`find` 同时检索正式知识正文，不再仅限目录摘要。
+
+`find --json`、网页全库搜索和 `GET /api/search` 使用同一检索核心。静态检索使用同源导出快照；其中的运行资格有导出时间，复用前必须通过本机重新核对。图样仅供参考，不因搜到它而获得可运行资格。
+
+区分“未下载”“文件缺失”和“当前运行证据无效”；未下载不能记作算法或科学验证失败。搜索和打开页面均不下载资产或运行科研代码。作者明确调用 `rwiki assets fetch <id>`、网页“下载资料”或 `rwiki use` 时，才补齐条目及声明依赖；不自动安装包。轻量检出只做查找和课题复用，正式写入、保存和确认前运行 `rwiki checkout --profile full`。详细边界见 [search-and-checkout.md](references/search-and-checkout.md)。
 
 ## 入库：开源库与复刻图（画廊是来源之一）
 

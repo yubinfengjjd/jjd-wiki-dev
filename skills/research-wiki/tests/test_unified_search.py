@@ -212,3 +212,75 @@ def test_layout_is_reference_knowledge_and_never_executable(config,monkeypatch):
     assert hits[0]["reference_only"] is True
     assert hits[0]["usable"] is False and hits[0]["evidence_state"]=="unverified"
     assert not search(config,"uniquelayoutknowledge",runnable=True)["results"]
+
+
+def test_ordered_exact_phrase_bonus_is_bounded_and_respects_ascii_boundaries(config):
+    from rwiki.search import search
+    page(config,"a-reversed","## 原理\nbeta alpha",title="Order probe")
+    page(config,"z-ordered","## 原理\nalpha beta",title="Order probe")
+    page(config,"substring","## 原理\nunalpha betaextra alpha separately beta",title="Order probe")
+    hits=search(config,'"alpha beta"')["results"]
+    assert hits[0]["id"]=="z-ordered"
+    assert any("精确短语" in why for why in hits[0]["why"])
+    substring=next(r for r in hits if r["id"]=="substring")
+    assert not any("精确短语" in why for why in substring["why"])
+    from rwiki.search import export_index,rank_export
+    index=export_index(config)
+    without={**index,"ranking":{**index["ranking"],"phrase_weight":0}}
+    plain=next(r for r in rank_export(without,'"alpha beta"') if r["id"]=="z-ordered")
+    assert plain["score"] < hits[0]["score"] <= plain["score"]*1.500001
+
+
+def upstream_catalog(config, modules):
+    p=page(config,"public","## 这是什么\n公开来源",kind="source",snapshot="snap",adapter="figureya",license="MIT")
+    p.with_suffix("").mkdir(exist_ok=True)
+    items=[{"id":"public:"+name,"item":name,"title":title,"requires":[],"inputs":[]} for name,title in modules]
+    (p.with_suffix("")/"items.jsonl").write_text("".join(json.dumps(i)+"\n" for i in items),encoding="utf-8")
+    return config.sources_root/"snap"
+
+
+def test_l0_availability_checks_actual_item_and_never_fetches(config,monkeypatch):
+    from rwiki.search import search
+    from rwiki import sources
+    snapshot=upstream_catalog(config,[("Example","l0availabilityterm")])
+    monkeypatch.setattr(sources,"fetch_source",lambda *a,**k: pytest.fail("search must never fetch"))
+    missing=search(config,"l0availabilityterm")["results"][0]
+    assert missing["asset_availability"]=="not_downloaded" and missing["usable"] is False
+    module=snapshot/"Example";module.mkdir(parents=True)
+    (module/"run.R").write_text("real downloaded code",encoding="utf-8")
+    present=search(config,"l0availabilityterm")["results"][0]
+    assert present["asset_availability"]=="available" and present["usable"] is False
+
+
+def test_l0_sparse_omission_differs_from_unexpected_tracked_missing(config):
+    from rwiki.search import search
+    from conftest import git_init,git_run
+    snapshot=upstream_catalog(config,[("Example","l0trackedterm")])
+    git_init(snapshot)
+    module=snapshot/"Example";module.mkdir()
+    code=module/"run.R";code.write_text("code",encoding="utf-8")
+    (snapshot/"README.md").write_text("description",encoding="utf-8")
+    git_run(snapshot,"add","-A");git_run(snapshot,"commit","-qm","fixture")
+    code.unlink()
+    assert search(config,"l0trackedterm")["results"][0]["asset_availability"]=="missing"
+    git_run(snapshot,"checkout","--","Example/run.R")
+    git_run(snapshot,"sparse-checkout","set","--no-cone","README.md")
+    assert search(config,"l0trackedterm")["results"][0]["asset_availability"]=="not_downloaded"
+
+
+def test_upstream_source_respects_exact_removed_and_archived_module_paths(config):
+    from rwiki.search import search
+    snapshot=upstream_catalog(config,[("Gone","removeditemterm"),("GoneExtra","keptitemterm"),("Archived","archiveditemterm")])
+    for name,word in [("Gone","gonecodeterm"),("GoneExtra","keptcodeterm"),("Archived","archivedcodeterm")]:
+        module=snapshot/name;module.mkdir(parents=True)
+        (module/"run.R").write_text(word,encoding="utf-8")
+    assert search(config,"gonecodeterm",scope="source")["results"]
+    (config.wiki_root/"sources/figureya-curation.json").write_text(json.dumps({"schema_version":1,"decisions":{"public:Gone":{"decision":"removed"}}}),encoding="utf-8")
+    page(config,"custom-archived-slug","## 用途\narchiveditemterm",kind="recipe",status="archived",source={"id":"public","item":"Archived"})
+    assert not search(config,"gonecodeterm",scope="source")["results"]
+    assert not search(config,"archivedcodeterm",scope="source")["results"]
+    retained=search(config,"keptcodeterm",scope="source")["results"]
+    assert retained and retained[0]["source_path"].endswith("GoneExtra/run.R")
+    assert not search(config,"removeditemterm")["results"]
+    assert not search(config,"archiveditemterm")["results"]
+    assert search(config,"keptitemterm")["results"]

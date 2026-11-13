@@ -77,6 +77,9 @@ export function App() {
   const [checking, setChecking] = useState(true);
   const [backgroundErrors, setBackgroundErrors] = useState<string[]>([]);
   const generation = useRef(0);
+  // Search and detail fetch their own current evidence; neither needs a full
+  // background graph and every other page's verification before it can be read.
+  const hydrateLibrary = route.view !== 'search' && route.view !== 'page';
 
   const reload = useCallback(async () => {
     const own = ++generation.current;
@@ -86,13 +89,13 @@ export function App() {
     setBackgroundErrors([]);
     try {
       await loadLibrary({pages: setPages, graph: setGraph, taxonomy: setTaxonomy,
-        error: message => setBackgroundErrors(previous => [...previous, message])}, current);
+        error: message => setBackgroundErrors(previous => [...previous, message])}, current, hydrateLibrary);
     } catch (failure) {
       if (current()) setError((failure as Error).message);
     } finally {
       if (current()) setChecking(false);
     }
-  }, []);
+  }, [hydrateLibrary]);
 
   useEffect(() => {
     void reload();

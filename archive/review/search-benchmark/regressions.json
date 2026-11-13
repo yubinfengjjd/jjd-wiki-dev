@@ -115,11 +115,11 @@
         "differential-expression",
         "figureya-120multiclassedger",
         "figureya-149rankheatmap",
-        "figureya-59plus-geo2deg",
         "scp-de-enrichment-dynamic",
-        "differential-enrichment",
-        "2026-10-22-scp-example__fig01-volcano--volcano",
-        "figureya-59volcanov2"
+        "figureya-59plus-geo2deg",
+        "scp-local-source",
+        "scp-visualization-interface",
+        "differential-enrichment"
       ]
     },
     {
@@ -232,7 +232,7 @@
         "scp-annotation-projection",
         "figureya-310cpdbchordgramv2",
         "asthma-lactylation-workflow",
-        "asthma-lactylation-source-catalog"
+        "2026-10-22-scp-example__fig08-group-heatmap"
       ]
     },
     {
@@ -341,14 +341,15 @@
         "cell-type-annotation",
         "scrna-marker-annotation",
         "scp-annotation-projection",
+        "2026-10-22-scp-example__fig08-group-heatmap",
+        "2026-10-22-scp-example__fig14-feature-heatmap",
+        "2026-10-22-scp-example__fig17-group-heatmap-dot",
         "scp-integration",
         "figureya-194pyscenic",
         "2026-10-22-scp-example__fig15-cell-cor-heatmap--heatmap",
-        "figureya-275scaucell",
-        "2026-10-22-glaucoma-scrna__fig03-topjournal-bubble--dotplot",
-        "2026-10-22-glaucoma-scrna__fig01-cns-umap--umap",
-        "figureya-320clontypeheatmap"
+        "2026-10-22-glaucoma-scrna__fig03-topjournal-bubble--dotplot"
       ]
     }
-  ]
+  ],
+  "engine": "section BM25 index v5"
 }

@@ -76,6 +76,18 @@ def test_none_found_returns_none(isolated):
 
 
 def test_config_candidates_include_main_checkout():
-    # worktree 中 staged/research-wiki/config.json 被忽略而不存在，需回到主检出的配置。
+    # 两种布局的本机 config.json 都被忽略；worktree 可回到主检出的配置。
     names = [p.as_posix() for p in conftest.vault_config_candidates()]
-    assert names and all(name.endswith("staged/research-wiki/config.json") for name in names)
+    assert names and all(name.endswith(("skills/research-wiki/config.json", "staged/research-wiki/config.json")) for name in names)
+
+
+@pytest.mark.parametrize('via_env', [True, False])
+def test_canonical_vault_detected(isolated, monkeypatch, via_env):
+    root = isolated / 'canonical'
+    (root / 'wiki').mkdir(parents=True)
+    (root / 'wiki/AGENTS.md').write_text('rules', encoding='utf-8')
+    if via_env:
+        monkeypatch.setenv('RWIKI_VAULT_ROOT', str(root))
+    else:
+        (isolated / 'config.json').write_text(json.dumps({'github': {'vault_root': str(root)}}), encoding='utf-8')
+    assert find_vault_root() == root

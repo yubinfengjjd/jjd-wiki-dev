@@ -88,6 +88,14 @@ async function main() {
   await apiModule['loadLibrary']({pages: () => seen.push('pages'), graph: () => seen.push('graph'),
     taxonomy: () => seen.push('taxonomy')}, () => false);
   assert.deepEqual(seen, [], 'superseded loads must never overwrite a newer snapshot');
+  const requested: string[] = [];
+  globalThis.fetch = (async (url: string) => {
+    requested.push(url);
+    return {ok: true, json: async () => []};
+  }) as any;
+  await apiModule.loadLibrary({pages: () => {}, graph: () => {}, taxonomy: () => {}}, () => true, false);
+  assert.deepEqual(requested, ['/api/pages?light=true'],
+    'global search must not compete with unrelated full-library evidence and graph hydration');
   console.log('discovery/loading: source search, pending evidence, staged loading and stale-load checks passed');
 }
 main().catch(error => {console.error(error); process.exit(1);});

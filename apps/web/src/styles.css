@@ -1202,8 +1202,11 @@ button.chip.toggle.on {
 }
 
 .page-main {
+  min-width: 0;
   padding: 32px 40px 40px;
 }
+
+.page-main img { max-width: 100%; height: auto; }
 
 .page-main h1 {
   font-size: 32px;
@@ -1344,6 +1347,7 @@ button.chip.toggle.on {
 
 .prose {
   max-width: 42em;
+  overflow-wrap: anywhere;
 }
 
 .prose h2 {
@@ -1944,14 +1948,14 @@ a.chain-item:hover {
 .links .graph-neighbour { display: flex; flex-direction: column; align-items: flex-start; padding-bottom: 7px; }
 
 .code-backdrop { position: fixed; inset: 0; z-index: 1100; background: #18243388; display: flex; align-items: center; justify-content: center; padding: 24px; }
-.code-dialog { width: min(1180px, 100%); max-height: calc(100dvh - 48px); padding: 22px; overflow: auto; box-shadow: var(--lift); }
+.code-dialog { width: min(1180px, 100%); min-width: 0; max-width: 100%; max-height: calc(100dvh - 48px); padding: 22px; overflow: auto; box-shadow: var(--lift); }
 .code-dialog h2 { font-size: 20px; margin: 0; }
 .code-dialog > p { margin: 12px 0; }
 .code-tabs { display: flex; }
 .code-browser { display: grid; grid-template-columns: 220px minmax(0, 1fr); gap: 20px; }
 .code-browser > .notice { grid-column: 1 / -1; }
 .code-file-list { display: flex; flex-direction: column; gap: 6px; max-height: 65vh; overflow-y: auto; align-self: start; }
-.code-file-list button { text-align: left; padding: 8px 10px; min-width: 0; overflow-wrap: anywhere; }
+.code-file-list button { flex-shrink: 0; text-align: left; padding: 8px 10px; min-width: 0; overflow-wrap: anywhere; }
 .code-file-list button small { display: block; color: var(--muted); font-size: 11px; }
 .code-file-list button.active { border-color: var(--ink); box-shadow: inset 3px 0 0 var(--plum); background: var(--paper); }
 .code-current { min-width: 0; }
@@ -2085,7 +2089,7 @@ a.chain-item:hover {
 .global-search-query { display: flex; gap: .7rem; }
 .global-search-query input { min-width: 0; flex: 1; }
 .global-search-controls { display: flex; flex-wrap: wrap; gap: 1rem 1.5rem; margin-top: 1rem; align-items: center; }
-.global-search-controls label { display: flex; gap: .5rem; align-items: center; font-size: .9rem; }
+.global-search-controls label { display: flex; gap: .5rem; align-items: center; font-size: .9rem; white-space: nowrap; }
 .global-search-results { list-style: none; padding: 0; display: grid; gap: 1rem; }
 .search-result { padding: 1.25rem 1.5rem; }
 .search-result h2 { font-size: 1.2rem; margin: 0; }

@@ -25,6 +25,7 @@ export class FlowField {
   private pointer = { x: -1e4, y: -1e4 };
   private time = 0;
   private last = 0;
+  private paused = false;
   private reduced = matchMedia('(prefers-reduced-motion: reduce)');
 
   constructor(private canvas: HTMLCanvasElement) {
@@ -40,6 +41,11 @@ export class FlowField {
   /** 0–1; eased by a CSS transition on the canvas. */
   setIntensity(value: number) {
     this.canvas.style.opacity = String(value);
+  }
+
+  /** Reading and retrieval keep the current frame without competing for CPU. */
+  setPaused(value: boolean) {
+    this.paused = value;
   }
 
   private resize = () => {
@@ -144,7 +150,7 @@ export class FlowField {
     const dt = Math.min((now - (this.last || now)) / 1000, 0.05);
     this.last = now;
     // A hidden tab or reduced motion keeps the last frame instead of simulating 2400 strokes.
-    if (this.reduced.matches || document.hidden) return;
+    if (this.paused || this.reduced.matches || document.hidden) return;
     this.step(dt);
     this.draw();
   };

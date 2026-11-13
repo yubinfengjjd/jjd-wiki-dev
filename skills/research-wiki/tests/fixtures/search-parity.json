@@ -152,242 +152,24 @@
       "title_weight": 4,
       "metadata_weight": 2,
       "section_weight": 1,
-      "secondary_cap": 0.05
+      "secondary_cap": 0.05,
+      "phrase_weight": 0.5,
+      "phrase_limit": 4,
+      "phrase_max_length": 120
     },
     "documents": [
-      {
-        "record": {
-          "id": "equal-a",
-          "kind": "interface",
-          "level": "-",
-          "title": "Equal",
-          "status": "draft",
-          "summary": "",
-          "not_for": "",
-          "page": "interfaces/equal-a.md",
-          "use": "wiki.py show equal-a",
-          "license": "",
-          "chart_types": [],
-          "tags": [],
-          "keywords": [],
-          "purposes": [],
-          "inputs": [],
-          "outputs": [],
-          "asset_availability": "available",
-          "asset_details": {
-            "state": "available",
-            "profile": "full",
-            "missing": []
-          },
-          "evidence_state": "unverified"
-        },
-        "sections": [
-          {
-            "title": "正文",
-            "text": "identical term",
-            "tf": {
-              "equal": 8,
-              "a": 4,
-              "正文": 1,
-              "identical": 1,
-              "term": 1
-            },
-            "length": 15
-          }
-        ]
-      },
-      {
-        "record": {
-          "id": "equal-b",
-          "kind": "interface",
-          "level": "-",
-          "title": "Equal",
-          "status": "draft",
-          "summary": "",
-          "not_for": "",
-          "page": "interfaces/equal-b.md",
-          "use": "wiki.py show equal-b",
-          "license": "",
-          "chart_types": [],
-          "tags": [],
-          "keywords": [],
-          "purposes": [],
-          "inputs": [],
-          "outputs": [],
-          "asset_availability": "available",
-          "asset_details": {
-            "state": "available",
-            "profile": "full",
-            "missing": []
-          },
-          "evidence_state": "unverified"
-        },
-        "sections": [
-          {
-            "title": "正文",
-            "text": "identical term",
-            "tf": {
-              "equal": 8,
-              "b": 4,
-              "正文": 1,
-              "identical": 1,
-              "term": 1
-            },
-            "length": 15
-          }
-        ]
-      },
-      {
-        "record": {
-          "id": "cell-annotation",
-          "kind": "method",
-          "level": "note",
-          "title": "细胞类型注释",
-          "status": "draft",
-          "summary": "",
-          "not_for": "",
-          "page": "methods/cell-annotation.md",
-          "use": "wiki.py show cell-annotation",
-          "license": "",
-          "chart_types": [],
-          "tags": [],
-          "keywords": [],
-          "purposes": [],
-          "inputs": [],
-          "outputs": [],
-          "method_kind": null,
-          "usable": false,
-          "asset_availability": "available",
-          "asset_details": {
-            "state": "available",
-            "profile": "full",
-            "missing": []
-          },
-          "evidence_state": "unverified"
-        },
-        "sections": [
-          {
-            "title": "输入",
-            "text": "参考表达与 marker 标签。",
-            "tf": {
-              "cell": 4,
-              "annotation": 4,
-              "细胞": 4,
-              "胞类": 4,
-              "类型": 4,
-              "型注": 4,
-              "注释": 4,
-              "@1": 4,
-              "输入": 1,
-              "参考": 1,
-              "考表": 1,
-              "表达": 1,
-              "达与": 1,
-              "marker": 1,
-              "标签": 1
-            },
-            "length": 39
-          },
-          {
-            "title": "注意",
-            "text": "SingleR 需要合适 reference。",
-            "tf": {
-              "cell": 4,
-              "annotation": 4,
-              "细胞": 4,
-              "胞类": 4,
-              "类型": 4,
-              "型注": 4,
-              "注释": 4,
-              "@1": 4,
-              "注意": 1,
-              "singler": 1,
-              "需要": 1,
-              "要合": 1,
-              "合适": 1,
-              "reference": 1
-            },
-            "length": 38
-          }
-        ]
-      },
-      {
-        "record": {
-          "id": "coexpression",
-          "kind": "method",
-          "level": "note",
-          "title": "基因共表达",
-          "status": "draft",
-          "summary": "",
-          "not_for": "",
-          "page": "methods/coexpression.md",
-          "use": "wiki.py show coexpression",
-          "license": "",
-          "chart_types": [],
-          "tags": [],
-          "keywords": [],
-          "purposes": [],
-          "inputs": [],
-          "outputs": [],
-          "method_kind": null,
-          "usable": false,
-          "asset_availability": "available",
-          "asset_details": {
-            "state": "available",
-            "profile": "full",
-            "missing": []
-          },
-          "evidence_state": "unverified"
-        },
-        "sections": [
-          {
-            "title": "原理",
-            "text": "Coexpression prediction approximation co-expression network。",
-            "tf": {
-              "coexpression": 5,
-              "基因": 4,
-              "因共": 4,
-              "共表": 4,
-              "表达": 4,
-              "@21": 5,
-              "原理": 1,
-              "prediction": 1,
-              "approximation": 1,
-              "co": 1,
-              "expression": 1,
-              "network": 1
-            },
-            "length": 32
-          }
-        ]
-      },
       {
         "record": {
           "id": "differential-expression",
           "kind": "method",
           "level": "note",
           "title": "差异表达分析",
-          "status": "draft",
           "summary": "",
-          "not_for": "",
-          "page": "methods/differential-expression.md",
-          "use": "wiki.py show differential-expression",
-          "license": "",
-          "chart_types": [],
-          "tags": [],
-          "keywords": [],
-          "purposes": [],
-          "inputs": [],
-          "outputs": [],
-          "method_kind": null,
           "usable": false,
+          "run": "none",
+          "status": "draft",
           "asset_availability": "available",
-          "asset_details": {
-            "state": "available",
-            "profile": "full",
-            "missing": []
-          },
-          "evidence_state": "unverified"
+          "evidence_state": "fixture_only"
         },
         "sections": [
           {
@@ -450,31 +232,110 @@
       },
       {
         "record": {
+          "id": "cell-annotation",
+          "kind": "method",
+          "level": "note",
+          "title": "细胞类型注释",
+          "summary": "",
+          "usable": false,
+          "run": "none",
+          "status": "draft",
+          "asset_availability": "available",
+          "evidence_state": "fixture_only"
+        },
+        "sections": [
+          {
+            "title": "输入",
+            "text": "参考表达与 marker 标签。",
+            "tf": {
+              "cell": 4,
+              "annotation": 4,
+              "细胞": 4,
+              "胞类": 4,
+              "类型": 4,
+              "型注": 4,
+              "注释": 4,
+              "@1": 4,
+              "输入": 1,
+              "参考": 1,
+              "考表": 1,
+              "表达": 1,
+              "达与": 1,
+              "marker": 1,
+              "标签": 1
+            },
+            "length": 39
+          },
+          {
+            "title": "注意",
+            "text": "SingleR 需要合适 reference。",
+            "tf": {
+              "cell": 4,
+              "annotation": 4,
+              "细胞": 4,
+              "胞类": 4,
+              "类型": 4,
+              "型注": 4,
+              "注释": 4,
+              "@1": 4,
+              "注意": 1,
+              "singler": 1,
+              "需要": 1,
+              "要合": 1,
+              "合适": 1,
+              "reference": 1
+            },
+            "length": 38
+          }
+        ]
+      },
+      {
+        "record": {
+          "id": "coexpression",
+          "kind": "method",
+          "level": "note",
+          "title": "基因共表达",
+          "summary": "",
+          "usable": false,
+          "run": "none",
+          "status": "draft",
+          "asset_availability": "available",
+          "evidence_state": "fixture_only"
+        },
+        "sections": [
+          {
+            "title": "原理",
+            "text": "Coexpression prediction approximation co-expression network。",
+            "tf": {
+              "coexpression": 5,
+              "基因": 4,
+              "因共": 4,
+              "共表": 4,
+              "表达": 4,
+              "@21": 5,
+              "原理": 1,
+              "prediction": 1,
+              "approximation": 1,
+              "co": 1,
+              "expression": 1,
+              "network": 1
+            },
+            "length": 32
+          }
+        ]
+      },
+      {
+        "record": {
           "id": "precision-recall",
           "kind": "method",
           "level": "note",
           "title": "精确率召回率",
-          "status": "draft",
           "summary": "",
-          "not_for": "",
-          "page": "methods/precision-recall.md",
-          "use": "wiki.py show precision-recall",
-          "license": "",
-          "chart_types": [],
-          "tags": [],
-          "keywords": [],
-          "purposes": [],
-          "inputs": [],
-          "outputs": [],
-          "method_kind": null,
-          "usable": false,
+          "usable": true,
+          "run": "none",
+          "status": "draft",
           "asset_availability": "available",
-          "asset_details": {
-            "state": "available",
-            "profile": "full",
-            "missing": []
-          },
-          "evidence_state": "unverified"
+          "evidence_state": "fixture_only"
         },
         "sections": [
           {
@@ -506,82 +367,16 @@
       },
       {
         "record": {
-          "id": "annotation-scenario",
-          "kind": "scenario",
-          "level": "-",
-          "title": "细胞注释场景",
-          "status": "draft",
-          "summary": "细胞注释 marker 参考标签。",
-          "not_for": "",
-          "page": "scenarios/annotation-scenario.md",
-          "use": "wiki.py show annotation-scenario",
-          "license": "",
-          "chart_types": [],
-          "tags": [],
-          "keywords": [],
-          "purposes": [],
-          "inputs": [],
-          "outputs": [],
-          "picks": [],
-          "asset_availability": "available",
-          "asset_details": {
-            "state": "available",
-            "profile": "full",
-            "missing": []
-          },
-          "evidence_state": "unverified"
-        },
-        "sections": [
-          {
-            "title": "什么时候用",
-            "text": "细胞注释 marker 参考标签。",
-            "tf": {
-              "annotation": 4,
-              "scenario": 4,
-              "细胞": 5,
-              "胞注": 5,
-              "注释": 5,
-              "释场": 4,
-              "场景": 4,
-              "@1": 5,
-              "时候": 1,
-              "候用": 1,
-              "marker": 1,
-              "参考": 1,
-              "考标": 1,
-              "标签": 1
-            },
-            "length": 42
-          }
-        ]
-      },
-      {
-        "record": {
           "id": "volcano",
           "kind": "template",
           "level": "L2",
           "title": "差异基因火山图",
-          "status": "draft",
           "summary": "",
-          "not_for": "",
-          "page": "templates/volcano.md",
-          "use": "wiki.py use volcano --project <课题目录>  # 或 wiki.py render volcano --data <数据目录> --out <输出目录> [--bindings bindings.json]",
-          "license": "",
-          "chart_types": [],
-          "tags": [],
-          "keywords": [],
-          "purposes": [],
-          "inputs": [],
-          "outputs": [],
           "usable": false,
-          "language": null,
+          "run": "none",
+          "status": "draft",
           "asset_availability": "available",
-          "asset_details": {
-            "state": "available",
-            "profile": "full",
-            "missing": []
-          },
-          "evidence_state": "unverified"
+          "evidence_state": "fixture_only"
         },
         "sections": [
           {
@@ -610,53 +405,205 @@
             "length": 49
           }
         ]
+      },
+      {
+        "record": {
+          "id": "annotation-scenario",
+          "kind": "scenario",
+          "level": "note",
+          "title": "细胞注释场景",
+          "summary": "",
+          "usable": false,
+          "run": "none",
+          "status": "draft",
+          "asset_availability": "available",
+          "evidence_state": "fixture_only"
+        },
+        "sections": [
+          {
+            "title": "什么时候用",
+            "text": "细胞注释 marker 参考标签。",
+            "tf": {
+              "annotation": 4,
+              "scenario": 4,
+              "细胞": 5,
+              "胞注": 5,
+              "注释": 5,
+              "释场": 4,
+              "场景": 4,
+              "@1": 5,
+              "时候": 1,
+              "候用": 1,
+              "marker": 1,
+              "参考": 1,
+              "考标": 1,
+              "标签": 1
+            },
+            "length": 42
+          }
+        ]
+      },
+      {
+        "record": {
+          "id": "equal-a",
+          "kind": "interface",
+          "level": "note",
+          "title": "Equal",
+          "summary": "",
+          "usable": false,
+          "run": "none",
+          "status": "draft",
+          "asset_availability": "available",
+          "evidence_state": "fixture_only"
+        },
+        "sections": [
+          {
+            "title": "正文",
+            "text": "identical term",
+            "tf": {
+              "equal": 8,
+              "a": 4,
+              "正文": 1,
+              "identical": 1,
+              "term": 1
+            },
+            "length": 15
+          }
+        ]
+      },
+      {
+        "record": {
+          "id": "equal-b",
+          "kind": "interface",
+          "level": "note",
+          "title": "Equal",
+          "summary": "",
+          "usable": false,
+          "run": "none",
+          "status": "draft",
+          "asset_availability": "available",
+          "evidence_state": "fixture_only"
+        },
+        "sections": [
+          {
+            "title": "正文",
+            "text": "identical term",
+            "tf": {
+              "equal": 8,
+              "b": 4,
+              "正文": 1,
+              "identical": 1,
+              "term": 1
+            },
+            "length": 15
+          }
+        ]
+      },
+      {
+        "record": {
+          "id": "phrase-a-reversed",
+          "kind": "method",
+          "level": "note",
+          "title": "Order probe",
+          "summary": "",
+          "usable": false,
+          "run": "none",
+          "status": "draft",
+          "asset_availability": "available",
+          "evidence_state": "fixture_only"
+        },
+        "sections": [
+          {
+            "title": "原理",
+            "text": "beta alpha",
+            "tf": {
+              "phrase": 4,
+              "a": 4,
+              "reversed": 4,
+              "order": 4,
+              "probe": 4,
+              "原理": 1,
+              "beta": 1,
+              "alpha": 1
+            },
+            "length": 23
+          }
+        ]
+      },
+      {
+        "record": {
+          "id": "phrase-z-ordered",
+          "kind": "method",
+          "level": "note",
+          "title": "Order probe",
+          "summary": "",
+          "usable": false,
+          "run": "none",
+          "status": "draft",
+          "asset_availability": "available",
+          "evidence_state": "fixture_only"
+        },
+        "sections": [
+          {
+            "title": "原理",
+            "text": "alpha beta",
+            "tf": {
+              "phrase": 4,
+              "z": 4,
+              "ordered": 4,
+              "order": 4,
+              "probe": 4,
+              "原理": 1,
+              "alpha": 1,
+              "beta": 1
+            },
+            "length": 23
+          }
+        ]
+      },
+      {
+        "record": {
+          "id": "phrase-substring",
+          "kind": "method",
+          "level": "note",
+          "title": "Order probe",
+          "summary": "",
+          "usable": false,
+          "run": "none",
+          "status": "draft",
+          "asset_availability": "available",
+          "evidence_state": "fixture_only"
+        },
+        "sections": [
+          {
+            "title": "原理",
+            "text": "unalpha betaextra alpha separately beta",
+            "tf": {
+              "phrase": 4,
+              "substring": 4,
+              "order": 4,
+              "probe": 4,
+              "原理": 1,
+              "unalpha": 1,
+              "betaextra": 1,
+              "alpha": 1,
+              "separately": 1,
+              "beta": 1
+            },
+            "length": 22
+          }
+        ]
       }
     ],
     "statistics": {
-      "document_count": 10,
-      "average_length": 36.9,
+      "document_count": 13,
+      "average_length": 33.61538461538461,
       "df": {
-        "equal": 2,
-        "a": 1,
-        "正文": 2,
-        "identical": 2,
-        "term": 2,
-        "b": 1,
-        "cell": 2,
-        "annotation": 3,
-        "细胞": 4,
-        "胞类": 2,
-        "类型": 2,
-        "型注": 2,
-        "注释": 3,
-        "@1": 3,
-        "输入": 1,
-        "参考": 2,
-        "考表": 1,
-        "表达": 5,
-        "达与": 1,
-        "marker": 2,
-        "标签": 2,
-        "注意": 1,
-        "singler": 1,
-        "需要": 1,
-        "要合": 1,
-        "合适": 1,
-        "reference": 1,
-        "coexpression": 1,
-        "基因": 3,
-        "因共": 1,
-        "共表": 1,
-        "@21": 1,
-        "原理": 2,
-        "prediction": 1,
-        "approximation": 1,
-        "co": 1,
-        "expression": 3,
-        "network": 1,
         "differential": 2,
+        "expression": 3,
         "差异": 3,
         "异表": 3,
+        "表达": 5,
         "达分": 2,
         "分析": 2,
         "@0": 3,
@@ -669,10 +616,12 @@
         "比较": 1,
         "较差": 1,
         "达基": 1,
+        "基因": 3,
         "de": 1,
         "findmarkers": 1,
         "不适": 1,
         "适用": 2,
+        "细胞": 4,
         "胞级": 1,
         "p": 1,
         "值不": 1,
@@ -684,6 +633,34 @@
         "本级": 1,
         "级推": 1,
         "推断": 1,
+        "cell": 2,
+        "annotation": 3,
+        "胞类": 2,
+        "类型": 2,
+        "型注": 2,
+        "注释": 3,
+        "@1": 3,
+        "输入": 1,
+        "参考": 2,
+        "考表": 1,
+        "达与": 1,
+        "marker": 2,
+        "标签": 2,
+        "注意": 1,
+        "singler": 1,
+        "需要": 1,
+        "要合": 1,
+        "合适": 1,
+        "reference": 1,
+        "coexpression": 1,
+        "因共": 1,
+        "共表": 1,
+        "@21": 1,
+        "原理": 5,
+        "prediction": 1,
+        "approximation": 1,
+        "co": 1,
+        "network": 1,
         "precision": 1,
         "recall": 1,
         "精确": 1,
@@ -701,13 +678,6 @@
         "分类": 1,
         "类模": 1,
         "模型": 1,
-        "scenario": 1,
-        "胞注": 1,
-        "释场": 1,
-        "场景": 1,
-        "时候": 1,
-        "候用": 1,
-        "考标": 1,
         "volcano": 1,
         "异基": 1,
         "因火": 1,
@@ -719,29 +689,41 @@
         "示差": 1,
         "达效": 1,
         "效应": 1,
-        "应量": 1
+        "应量": 1,
+        "scenario": 1,
+        "胞注": 1,
+        "释场": 1,
+        "场景": 1,
+        "时候": 1,
+        "候用": 1,
+        "考标": 1,
+        "equal": 2,
+        "a": 2,
+        "正文": 2,
+        "identical": 2,
+        "term": 2,
+        "b": 1,
+        "phrase": 3,
+        "reversed": 1,
+        "order": 3,
+        "probe": 3,
+        "beta": 3,
+        "alpha": 3,
+        "z": 1,
+        "ordered": 1,
+        "substring": 1,
+        "unalpha": 1,
+        "betaextra": 1,
+        "separately": 1
       }
     },
     "coverage": {
-      "pages": 8,
-      "catalog_items": 0,
-      "source_files": 0,
-      "excluded": 0,
-      "unreadable": 0,
-      "not_downloaded": 0,
       "scope": "knowledge",
-      "source_search": "explicit-source-scope-required",
-      "evidence": "export_snapshot",
-      "source_available": false,
-      "exported_at": "2026-11-13T08:39:57+00:00"
+      "evidence": "synthetic_fixture",
+      "source_available": false
     },
     "index": {
-      "version": 4,
-      "scope": "knowledge",
-      "reused": 0,
-      "updated": 8,
-      "documents": 8,
-      "cache": "derivative"
+      "version": 5
     }
   },
   "cases": [
@@ -754,30 +736,16 @@
           "kind": "method",
           "level": "note",
           "title": "差异表达分析",
-          "status": "draft",
           "summary": "",
-          "not_for": "",
-          "page": "methods/differential-expression.md",
-          "use": "wiki.py show differential-expression",
-          "license": "",
-          "chart_types": [],
-          "tags": [],
-          "keywords": [],
-          "purposes": [],
-          "inputs": [],
-          "outputs": [],
-          "method_kind": null,
           "usable": false,
+          "run": "none",
+          "status": "draft",
           "asset_availability": "available",
-          "asset_details": {
-            "state": "available",
-            "profile": "full",
-            "missing": []
-          },
-          "evidence_state": "unverified",
-          "score": 7.018369,
+          "evidence_state": "fixture_only",
+          "score": 12.761741,
           "why": [
-            "正文 BM25 · 用途"
+            "正文 BM25 · 用途",
+            "精确短语 · 差异表达"
           ],
           "match_section": "用途",
           "snippet": "明确分组后比较差异表达基因，DE FindMarkers。"
@@ -787,30 +755,16 @@
           "kind": "template",
           "level": "L2",
           "title": "差异基因火山图",
-          "status": "draft",
           "summary": "",
-          "not_for": "",
-          "page": "templates/volcano.md",
-          "use": "wiki.py use volcano --project <课题目录>  # 或 wiki.py render volcano --data <数据目录> --out <输出目录> [--bindings bindings.json]",
-          "license": "",
-          "chart_types": [],
-          "tags": [],
-          "keywords": [],
-          "purposes": [],
-          "inputs": [],
-          "outputs": [],
           "usable": false,
-          "language": null,
+          "run": "none",
+          "status": "draft",
           "asset_availability": "available",
-          "asset_details": {
-            "state": "available",
-            "profile": "full",
-            "missing": []
-          },
-          "evidence_state": "unverified",
-          "score": 5.499592,
+          "evidence_state": "fixture_only",
+          "score": 9.85096,
           "why": [
-            "正文 BM25 · 适用"
+            "正文 BM25 · 适用",
+            "精确短语 · 差异表达"
           ],
           "match_section": "适用",
           "snippet": "volcano 图展示差异表达效应量。"
@@ -820,28 +774,13 @@
           "kind": "method",
           "level": "note",
           "title": "基因共表达",
-          "status": "draft",
           "summary": "",
-          "not_for": "",
-          "page": "methods/coexpression.md",
-          "use": "wiki.py show coexpression",
-          "license": "",
-          "chart_types": [],
-          "tags": [],
-          "keywords": [],
-          "purposes": [],
-          "inputs": [],
-          "outputs": [],
-          "method_kind": null,
           "usable": false,
+          "run": "none",
+          "status": "draft",
           "asset_availability": "available",
-          "asset_details": {
-            "state": "available",
-            "profile": "full",
-            "missing": []
-          },
-          "evidence_state": "unverified",
-          "score": 1.200612,
+          "evidence_state": "fixture_only",
+          "score": 1.5944,
           "why": [
             "正文 BM25 · 原理"
           ],
@@ -853,28 +792,13 @@
           "kind": "method",
           "level": "note",
           "title": "细胞类型注释",
-          "status": "draft",
           "summary": "",
-          "not_for": "",
-          "page": "methods/cell-annotation.md",
-          "use": "wiki.py show cell-annotation",
-          "license": "",
-          "chart_types": [],
-          "tags": [],
-          "keywords": [],
-          "purposes": [],
-          "inputs": [],
-          "outputs": [],
-          "method_kind": null,
           "usable": false,
+          "run": "none",
+          "status": "draft",
           "asset_availability": "available",
-          "asset_details": {
-            "state": "available",
-            "profile": "full",
-            "missing": []
-          },
-          "evidence_state": "unverified",
-          "score": 0.677377,
+          "evidence_state": "fixture_only",
+          "score": 0.87685,
           "why": [
             "正文 BM25 · 输入"
           ],
@@ -890,29 +814,15 @@
         {
           "id": "annotation-scenario",
           "kind": "scenario",
-          "level": "-",
+          "level": "note",
           "title": "细胞注释场景",
+          "summary": "",
+          "usable": false,
+          "run": "none",
           "status": "draft",
-          "summary": "细胞注释 marker 参考标签。",
-          "not_for": "",
-          "page": "scenarios/annotation-scenario.md",
-          "use": "wiki.py show annotation-scenario",
-          "license": "",
-          "chart_types": [],
-          "tags": [],
-          "keywords": [],
-          "purposes": [],
-          "inputs": [],
-          "outputs": [],
-          "picks": [],
           "asset_availability": "available",
-          "asset_details": {
-            "state": "available",
-            "profile": "full",
-            "missing": []
-          },
-          "evidence_state": "unverified",
-          "score": 9.003499,
+          "evidence_state": "fixture_only",
+          "score": 10.514892,
           "why": [
             "正文 BM25 · 什么时候用"
           ],
@@ -924,28 +834,13 @@
           "kind": "method",
           "level": "note",
           "title": "细胞类型注释",
-          "status": "draft",
           "summary": "",
-          "not_for": "",
-          "page": "methods/cell-annotation.md",
-          "use": "wiki.py show cell-annotation",
-          "license": "",
-          "chart_types": [],
-          "tags": [],
-          "keywords": [],
-          "purposes": [],
-          "inputs": [],
-          "outputs": [],
-          "method_kind": null,
           "usable": false,
+          "run": "none",
+          "status": "draft",
           "asset_availability": "available",
-          "asset_details": {
-            "state": "available",
-            "profile": "full",
-            "missing": []
-          },
-          "evidence_state": "unverified",
-          "score": 5.360788,
+          "evidence_state": "fixture_only",
+          "score": 6.466818,
           "why": [
             "正文 BM25 · 注意"
           ],
@@ -957,28 +852,13 @@
           "kind": "method",
           "level": "note",
           "title": "差异表达分析",
-          "status": "draft",
           "summary": "",
-          "not_for": "",
-          "page": "methods/differential-expression.md",
-          "use": "wiki.py show differential-expression",
-          "license": "",
-          "chart_types": [],
-          "tags": [],
-          "keywords": [],
-          "purposes": [],
-          "inputs": [],
-          "outputs": [],
-          "method_kind": null,
           "usable": false,
+          "run": "none",
+          "status": "draft",
           "asset_availability": "available",
-          "asset_details": {
-            "state": "available",
-            "profile": "full",
-            "missing": []
-          },
-          "evidence_state": "unverified",
-          "score": 0.811907,
+          "evidence_state": "fixture_only",
+          "score": 0.986324,
           "why": [
             "正文 BM25 · 不适用"
           ],
@@ -996,28 +876,13 @@
           "kind": "method",
           "level": "note",
           "title": "细胞类型注释",
-          "status": "draft",
           "summary": "",
-          "not_for": "",
-          "page": "methods/cell-annotation.md",
-          "use": "wiki.py show cell-annotation",
-          "license": "",
-          "chart_types": [],
-          "tags": [],
-          "keywords": [],
-          "purposes": [],
-          "inputs": [],
-          "outputs": [],
-          "method_kind": null,
           "usable": false,
+          "run": "none",
+          "status": "draft",
           "asset_availability": "available",
-          "asset_details": {
-            "state": "available",
-            "profile": "full",
-            "missing": []
-          },
-          "evidence_state": "unverified",
-          "score": 8.421741,
+          "evidence_state": "fixture_only",
+          "score": 9.874749,
           "why": [
             "正文 BM25 · 注意"
           ],
@@ -1027,29 +892,15 @@
         {
           "id": "annotation-scenario",
           "kind": "scenario",
-          "level": "-",
+          "level": "note",
           "title": "细胞注释场景",
+          "summary": "",
+          "usable": false,
+          "run": "none",
           "status": "draft",
-          "summary": "细胞注释 marker 参考标签。",
-          "not_for": "",
-          "page": "scenarios/annotation-scenario.md",
-          "use": "wiki.py show annotation-scenario",
-          "license": "",
-          "chart_types": [],
-          "tags": [],
-          "keywords": [],
-          "purposes": [],
-          "inputs": [],
-          "outputs": [],
-          "picks": [],
           "asset_availability": "available",
-          "asset_details": {
-            "state": "available",
-            "profile": "full",
-            "missing": []
-          },
-          "evidence_state": "unverified",
-          "score": 3.546342,
+          "evidence_state": "fixture_only",
+          "score": 4.316924,
           "why": [
             "正文 BM25 · 什么时候用"
           ],
@@ -1061,28 +912,13 @@
           "kind": "method",
           "level": "note",
           "title": "差异表达分析",
-          "status": "draft",
           "summary": "",
-          "not_for": "",
-          "page": "methods/differential-expression.md",
-          "use": "wiki.py show differential-expression",
-          "license": "",
-          "chart_types": [],
-          "tags": [],
-          "keywords": [],
-          "purposes": [],
-          "inputs": [],
-          "outputs": [],
-          "method_kind": null,
           "usable": false,
+          "run": "none",
+          "status": "draft",
           "asset_availability": "available",
-          "asset_details": {
-            "state": "available",
-            "profile": "full",
-            "missing": []
-          },
-          "evidence_state": "unverified",
-          "score": 0.811907,
+          "evidence_state": "fixture_only",
+          "score": 0.986324,
           "why": [
             "正文 BM25 · 不适用"
           ],
@@ -1100,28 +936,13 @@
           "kind": "method",
           "level": "note",
           "title": "精确率召回率",
-          "status": "draft",
           "summary": "",
-          "not_for": "",
-          "page": "methods/precision-recall.md",
-          "use": "wiki.py show precision-recall",
-          "license": "",
-          "chart_types": [],
-          "tags": [],
-          "keywords": [],
-          "purposes": [],
-          "inputs": [],
-          "outputs": [],
-          "method_kind": null,
-          "usable": false,
+          "usable": true,
+          "run": "none",
+          "status": "draft",
           "asset_availability": "available",
-          "asset_details": {
-            "state": "available",
-            "profile": "full",
-            "missing": []
-          },
-          "evidence_state": "unverified",
-          "score": 5.254047,
+          "evidence_state": "fixture_only",
+          "score": 5.738923,
           "why": [
             "正文 BM25 · 原理"
           ],
@@ -1139,28 +960,13 @@
           "kind": "method",
           "level": "note",
           "title": "基因共表达",
-          "status": "draft",
           "summary": "",
-          "not_for": "",
-          "page": "methods/coexpression.md",
-          "use": "wiki.py show coexpression",
-          "license": "",
-          "chart_types": [],
-          "tags": [],
-          "keywords": [],
-          "purposes": [],
-          "inputs": [],
-          "outputs": [],
-          "method_kind": null,
           "usable": false,
+          "run": "none",
+          "status": "draft",
           "asset_availability": "available",
-          "asset_details": {
-            "state": "available",
-            "profile": "full",
-            "missing": []
-          },
-          "evidence_state": "unverified",
-          "score": 7.208873,
+          "evidence_state": "fixture_only",
+          "score": 7.981325,
           "why": [
             "正文 BM25 · 原理"
           ],
@@ -1180,28 +986,13 @@
           "kind": "template",
           "level": "L2",
           "title": "差异基因火山图",
-          "status": "draft",
           "summary": "",
-          "not_for": "",
-          "page": "templates/volcano.md",
-          "use": "wiki.py use volcano --project <课题目录>  # 或 wiki.py render volcano --data <数据目录> --out <输出目录> [--bindings bindings.json]",
-          "license": "",
-          "chart_types": [],
-          "tags": [],
-          "keywords": [],
-          "purposes": [],
-          "inputs": [],
-          "outputs": [],
           "usable": false,
-          "language": null,
+          "run": "none",
+          "status": "draft",
           "asset_availability": "available",
-          "asset_details": {
-            "state": "available",
-            "profile": "full",
-            "missing": []
-          },
-          "evidence_state": "unverified",
-          "score": 6.748674,
+          "evidence_state": "fixture_only",
+          "score": 7.431908,
           "why": [
             "正文 BM25 · 适用"
           ],
@@ -1219,31 +1010,18 @@
         {
           "id": "annotation-scenario",
           "kind": "scenario",
-          "level": "-",
+          "level": "note",
           "title": "细胞注释场景",
+          "summary": "",
+          "usable": false,
+          "run": "none",
           "status": "draft",
-          "summary": "细胞注释 marker 参考标签。",
-          "not_for": "",
-          "page": "scenarios/annotation-scenario.md",
-          "use": "wiki.py show annotation-scenario",
-          "license": "",
-          "chart_types": [],
-          "tags": [],
-          "keywords": [],
-          "purposes": [],
-          "inputs": [],
-          "outputs": [],
-          "picks": [],
           "asset_availability": "available",
-          "asset_details": {
-            "state": "available",
-            "profile": "full",
-            "missing": []
-          },
-          "evidence_state": "unverified",
-          "score": 4.690437,
+          "evidence_state": "fixture_only",
+          "score": 7.729936,
           "why": [
-            "正文 BM25 · 什么时候用"
+            "正文 BM25 · 什么时候用",
+            "精确短语 · 参考标签"
           ],
           "match_section": "什么时候用",
           "snippet": "细胞注释 marker 参考标签。"
@@ -1253,28 +1031,13 @@
           "kind": "method",
           "level": "note",
           "title": "细胞类型注释",
-          "status": "draft",
           "summary": "",
-          "not_for": "",
-          "page": "methods/cell-annotation.md",
-          "use": "wiki.py show cell-annotation",
-          "license": "",
-          "chart_types": [],
-          "tags": [],
-          "keywords": [],
-          "purposes": [],
-          "inputs": [],
-          "outputs": [],
-          "method_kind": null,
           "usable": false,
+          "run": "none",
+          "status": "draft",
           "asset_availability": "available",
-          "asset_details": {
-            "state": "available",
-            "profile": "full",
-            "missing": []
-          },
-          "evidence_state": "unverified",
-          "score": 2.89579,
+          "evidence_state": "fixture_only",
+          "score": 3.233635,
           "why": [
             "正文 BM25 · 输入"
           ],
@@ -1290,30 +1053,18 @@
         {
           "id": "equal-a",
           "kind": "interface",
-          "level": "-",
+          "level": "note",
           "title": "Equal",
-          "status": "draft",
           "summary": "",
-          "not_for": "",
-          "page": "interfaces/equal-a.md",
-          "use": "wiki.py show equal-a",
-          "license": "",
-          "chart_types": [],
-          "tags": [],
-          "keywords": [],
-          "purposes": [],
-          "inputs": [],
-          "outputs": [],
+          "usable": false,
+          "run": "none",
+          "status": "draft",
           "asset_availability": "available",
-          "asset_details": {
-            "state": "available",
-            "profile": "full",
-            "missing": []
-          },
-          "evidence_state": "unverified",
-          "score": 3.913345,
+          "evidence_state": "fixture_only",
+          "score": 6.682092,
           "why": [
-            "正文 BM25 · 正文"
+            "正文 BM25 · 正文",
+            "精确短语 · identical term"
           ],
           "match_section": "正文",
           "snippet": "identical term"
@@ -1321,30 +1072,18 @@
         {
           "id": "equal-b",
           "kind": "interface",
-          "level": "-",
+          "level": "note",
           "title": "Equal",
-          "status": "draft",
           "summary": "",
-          "not_for": "",
-          "page": "interfaces/equal-b.md",
-          "use": "wiki.py show equal-b",
-          "license": "",
-          "chart_types": [],
-          "tags": [],
-          "keywords": [],
-          "purposes": [],
-          "inputs": [],
-          "outputs": [],
+          "usable": false,
+          "run": "none",
+          "status": "draft",
           "asset_availability": "available",
-          "asset_details": {
-            "state": "available",
-            "profile": "full",
-            "missing": []
-          },
-          "evidence_state": "unverified",
-          "score": 3.913345,
+          "evidence_state": "fixture_only",
+          "score": 6.682092,
           "why": [
-            "正文 BM25 · 正文"
+            "正文 BM25 · 正文",
+            "精确短语 · identical term"
           ],
           "match_section": "正文",
           "snippet": "identical term"
@@ -1361,11 +1100,300 @@
       "options": {
         "runnable": true
       },
-      "results": []
+      "results": [
+        {
+          "id": "precision-recall",
+          "kind": "method",
+          "level": "note",
+          "title": "精确率召回率",
+          "summary": "",
+          "usable": true,
+          "run": "none",
+          "status": "draft",
+          "asset_availability": "available",
+          "evidence_state": "fixture_only",
+          "score": 5.738923,
+          "why": [
+            "正文 BM25 · 原理"
+          ],
+          "match_section": "原理",
+          "snippet": "PR precision recall 用于不平衡分类模型。"
+        }
+      ]
     },
     {
       "query": "",
       "options": {},
+      "results": []
+    },
+    {
+      "query": "\"alpha beta\"",
+      "options": {},
+      "results": [
+        {
+          "id": "phrase-z-ordered",
+          "kind": "method",
+          "level": "note",
+          "title": "Order probe",
+          "summary": "",
+          "usable": false,
+          "run": "none",
+          "status": "draft",
+          "asset_availability": "available",
+          "evidence_state": "fixture_only",
+          "score": 4.77586,
+          "why": [
+            "正文 BM25 · 原理",
+            "精确短语 · alpha beta"
+          ],
+          "match_section": "原理",
+          "snippet": "alpha beta"
+        },
+        {
+          "id": "phrase-substring",
+          "kind": "method",
+          "level": "note",
+          "title": "Order probe",
+          "summary": "",
+          "usable": false,
+          "run": "none",
+          "status": "draft",
+          "asset_availability": "available",
+          "evidence_state": "fixture_only",
+          "score": 3.229033,
+          "why": [
+            "正文 BM25 · 原理"
+          ],
+          "match_section": "原理",
+          "snippet": "unalpha betaextra alpha separately beta"
+        },
+        {
+          "id": "phrase-a-reversed",
+          "kind": "method",
+          "level": "note",
+          "title": "Order probe",
+          "summary": "",
+          "usable": false,
+          "run": "none",
+          "status": "draft",
+          "asset_availability": "available",
+          "evidence_state": "fixture_only",
+          "score": 3.183907,
+          "why": [
+            "正文 BM25 · 原理"
+          ],
+          "match_section": "原理",
+          "snippet": "beta alpha"
+        }
+      ]
+    },
+    {
+      "query": "alpha beta",
+      "options": {},
+      "results": [
+        {
+          "id": "phrase-z-ordered",
+          "kind": "method",
+          "level": "note",
+          "title": "Order probe",
+          "summary": "",
+          "usable": false,
+          "run": "none",
+          "status": "draft",
+          "asset_availability": "available",
+          "evidence_state": "fixture_only",
+          "score": 4.77586,
+          "why": [
+            "正文 BM25 · 原理",
+            "精确短语 · alpha beta"
+          ],
+          "match_section": "原理",
+          "snippet": "alpha beta"
+        },
+        {
+          "id": "phrase-substring",
+          "kind": "method",
+          "level": "note",
+          "title": "Order probe",
+          "summary": "",
+          "usable": false,
+          "run": "none",
+          "status": "draft",
+          "asset_availability": "available",
+          "evidence_state": "fixture_only",
+          "score": 3.229033,
+          "why": [
+            "正文 BM25 · 原理"
+          ],
+          "match_section": "原理",
+          "snippet": "unalpha betaextra alpha separately beta"
+        },
+        {
+          "id": "phrase-a-reversed",
+          "kind": "method",
+          "level": "note",
+          "title": "Order probe",
+          "summary": "",
+          "usable": false,
+          "run": "none",
+          "status": "draft",
+          "asset_availability": "available",
+          "evidence_state": "fixture_only",
+          "score": 3.183907,
+          "why": [
+            "正文 BM25 · 原理"
+          ],
+          "match_section": "原理",
+          "snippet": "beta alpha"
+        }
+      ]
+    },
+    {
+      "query": "“细胞类型”",
+      "options": {},
+      "results": [
+        {
+          "id": "cell-annotation",
+          "kind": "method",
+          "level": "note",
+          "title": "细胞类型注释",
+          "summary": "",
+          "usable": false,
+          "run": "none",
+          "status": "draft",
+          "asset_availability": "available",
+          "evidence_state": "fixture_only",
+          "score": 14.812124,
+          "why": [
+            "正文 BM25 · 注意",
+            "精确短语 · 细胞类型"
+          ],
+          "match_section": "注意",
+          "snippet": "SingleR 需要合适 reference。"
+        },
+        {
+          "id": "annotation-scenario",
+          "kind": "scenario",
+          "level": "note",
+          "title": "细胞注释场景",
+          "summary": "",
+          "usable": false,
+          "run": "none",
+          "status": "draft",
+          "asset_availability": "available",
+          "evidence_state": "fixture_only",
+          "score": 4.316924,
+          "why": [
+            "正文 BM25 · 什么时候用"
+          ],
+          "match_section": "什么时候用",
+          "snippet": "细胞注释 marker 参考标签。"
+        },
+        {
+          "id": "differential-expression",
+          "kind": "method",
+          "level": "note",
+          "title": "差异表达分析",
+          "summary": "",
+          "usable": false,
+          "run": "none",
+          "status": "draft",
+          "asset_availability": "available",
+          "evidence_state": "fixture_only",
+          "score": 0.986324,
+          "why": [
+            "正文 BM25 · 不适用"
+          ],
+          "match_section": "不适用",
+          "snippet": "细胞级 p 值不能替代样本级推断。"
+        }
+      ]
+    },
+    {
+      "query": "\"alpha beta\" \"precision recall\"",
+      "options": {},
+      "results": [
+        {
+          "id": "precision-recall",
+          "kind": "method",
+          "level": "note",
+          "title": "精确率召回率",
+          "summary": "",
+          "usable": true,
+          "run": "none",
+          "status": "draft",
+          "asset_availability": "available",
+          "evidence_state": "fixture_only",
+          "score": 14.164248,
+          "why": [
+            "正文 BM25 · 原理",
+            "精确短语 · precision recall"
+          ],
+          "match_section": "原理",
+          "snippet": "PR precision recall 用于不平衡分类模型。"
+        },
+        {
+          "id": "phrase-z-ordered",
+          "kind": "method",
+          "level": "note",
+          "title": "Order probe",
+          "summary": "",
+          "usable": false,
+          "run": "none",
+          "status": "draft",
+          "asset_availability": "available",
+          "evidence_state": "fixture_only",
+          "score": 3.979884,
+          "why": [
+            "正文 BM25 · 原理",
+            "精确短语 · alpha beta"
+          ],
+          "match_section": "原理",
+          "snippet": "alpha beta"
+        },
+        {
+          "id": "phrase-substring",
+          "kind": "method",
+          "level": "note",
+          "title": "Order probe",
+          "summary": "",
+          "usable": false,
+          "run": "none",
+          "status": "draft",
+          "asset_availability": "available",
+          "evidence_state": "fixture_only",
+          "score": 3.229033,
+          "why": [
+            "正文 BM25 · 原理"
+          ],
+          "match_section": "原理",
+          "snippet": "unalpha betaextra alpha separately beta"
+        },
+        {
+          "id": "phrase-a-reversed",
+          "kind": "method",
+          "level": "note",
+          "title": "Order probe",
+          "summary": "",
+          "usable": false,
+          "run": "none",
+          "status": "draft",
+          "asset_availability": "available",
+          "evidence_state": "fixture_only",
+          "score": 3.183907,
+          "why": [
+            "正文 BM25 · 原理"
+          ],
+          "match_section": "原理",
+          "snippet": "beta alpha"
+        }
+      ]
+    },
+    {
+      "query": "\"alpha beta\"",
+      "options": {
+        "scope": "source"
+      },
       "results": []
     }
   ]

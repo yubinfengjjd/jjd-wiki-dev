@@ -22,6 +22,11 @@ sys.path.insert(0, str(SKILL_ROOT))
 # 这些夹具复制 DEV_ROOT/test-gallery（受版权的画廊副本，不入库），依赖它的测试只在本机运行。
 LOCAL_FIXTURES = {"workspace"}
 VAULT_MARKER = Path("知识库/AGENTS.md")
+VAULT_MARKERS = (Path("wiki/AGENTS.md"), VAULT_MARKER)
+
+
+def is_vault_root(root: Path) -> bool:
+    return any((root / marker).is_file() for marker in VAULT_MARKERS)
 
 
 def vault_config_candidates() -> list[Path]:
@@ -40,7 +45,7 @@ def find_vault_root() -> Path | None:
     """vault 根：RWIKI_VAULT_ROOT → config.json 的 github.vault_root → DEV_ROOT.parent；都不是 vault 时返回 None。"""
     explicit = os.environ.get("RWIKI_VAULT_ROOT")
     if explicit:
-        if not (Path(explicit) / VAULT_MARKER).is_file():
+        if not is_vault_root(Path(explicit)):
             pytest.fail(f"RWIKI_VAULT_ROOT={explicit} 下没有 {VAULT_MARKER.as_posix()}")
         return Path(explicit)
     for config in vault_config_candidates():
@@ -48,10 +53,10 @@ def find_vault_root() -> Path | None:
             root = json.loads(config.read_text(encoding="utf-8")).get("github", {}).get("vault_root")
         except (OSError, ValueError, AttributeError):
             continue
-        if root and (Path(root) / VAULT_MARKER).is_file():
+        if root and is_vault_root(Path(root)):
             return Path(root)
     fallback = DEV_ROOT.parent
-    return fallback if (fallback / VAULT_MARKER).is_file() else None
+    return fallback if is_vault_root(fallback) else None
 
 
 @pytest.fixture

@@ -595,14 +595,14 @@ export async function loadLibrary(observer: {
   graph: (graph: GraphData) => void;
   taxonomy: (taxonomy: MethodTaxonomy) => void;
   error?: (message: string) => void;
-}, current: () => boolean = () => true): Promise<void> {
+}, current: () => boolean = () => true, hydrate = true): Promise<void> {
   const publish = (pages: PageSummary[]) => {
     if (!current()) return;
     cachePages(pages);
     observer.pages(pages);
   };
   publish(await api.pages(true, false));
-  if (!current()) return;
+  if (!current() || !hydrate) return;
   await Promise.all([
     api.pages(false, false).then(publish),
     api.graph().then(graph => { if (current()) observer.graph(graph); }),
