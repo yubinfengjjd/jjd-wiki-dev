@@ -51,7 +51,7 @@ class BuildIndexTest(unittest.TestCase):
         for layout in ("frontend/search", "apps/web/search"):
             script = self.wiki / layout / "build_index.py"
             with patch.object(build_index, "__file__", str(script)), patch.object(export_full_index, "__file__", str(script)):
-                self.assertEqual(build_index.default_taxonomy(), spec)
+                self.assertEqual(build_index.default_taxonomy().resolve(), spec.resolve())
                 self.assertEqual(export_full_index.engine_root(), canonical)
 
     def test_entry_count_follows_catalog(self):
