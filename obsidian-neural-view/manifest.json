@@ -1,9 +1,0 @@
-{
-  "id": "research-wiki-neural-view",
-  "name": "科研知识库 · 神经图谱",
-  "version": "0.1.0",
-  "minAppVersion": "1.6.0",
-  "description": "本地图谱辅助阅读：原版光球、水母、扇形笔记和原生笔记打开。只读，不管理业务状态。",
-  "author": "Research Wiki local integration; visual upstream luoluo-121",
-  "isDesktopOnly": true
-}

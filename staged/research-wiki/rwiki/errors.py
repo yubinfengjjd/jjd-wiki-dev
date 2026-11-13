@@ -1,2 +1,0 @@
-class WikiError(Exception):
-    pass
