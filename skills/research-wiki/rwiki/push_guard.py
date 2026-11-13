@@ -353,14 +353,25 @@ def scan(repo: Path, rev_range: str, rules: Rules) -> list[dict]:
             # Legacy head selection is by blob, across the entire range. A text
             # path sharing a code blob must receive that same head as before.
             code_blobs = set()
+            in_commit, in_hunk = False, False
             for line in lines:
-                if line.startswith(":") and "\t" in line:
+                if line.startswith("\x01"):
+                    in_commit, in_hunk = True, False
+                elif not in_commit:
+                    continue
+                elif line.startswith("diff --git "):
+                    in_hunk = False
+                elif in_hunk:
+                    continue  # Bare CRs can expose colon/tab text inside a hunk.
+                elif line.startswith(":") and "\t" in line:
                     fields, path = line.removesuffix("\n").split("\t", 1)
                     _, new_mode, _, sha, status = fields[1:].split()
                     name = PurePosixPath(_unquote(path))
                     if (status != "D" and new_mode != "160000"
                             and (name.suffix.lower() in CODE_SUFFIXES or name.name.upper().startswith("LICENSE"))):
                         code_blobs.add(sha)
+                elif line.startswith("@@"):
+                    in_hunk = True
             lines.seek(0)
             batches = {}
 

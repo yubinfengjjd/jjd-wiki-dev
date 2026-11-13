@@ -112,6 +112,15 @@ def test_invalid_range_fails_closed(tmp_path):
         guard.scan(repo, "missing-revision..HEAD", RULES)
 
 
+def test_bare_cr_hunk_text_is_not_raw_metadata(tmp_path):
+    repo = git_init(tmp_path / "repo")
+    git_run(repo, "config", "core.autocrlf", "false")
+    commit_file(repo, "notes.md", b"safe\r:\ttext\n")
+    expected = legacy_findings(repo, "HEAD", RULES)
+    assert expected == []
+    assert guard.scan(repo, "HEAD", RULES) == expected
+
+
 @pytest.mark.parametrize("failure", [None, "log", "cat-file", "inspect"])
 def test_scan_closes_tempfiles_and_reaps_processes(tmp_path, monkeypatch, failure):
     repo = git_init(tmp_path / "repo")
