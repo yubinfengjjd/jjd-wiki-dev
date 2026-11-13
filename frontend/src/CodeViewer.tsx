@@ -55,6 +55,8 @@ export function CodeDialog({ meta, onClose }: { meta: ItemMeta; onClose: () => v
   const [selected, setSelected] = useState('');
   const [loaded, setLoaded] = useState<{ key: string; value?: CodeText; error?: string } | null>(null);
   const [copyState, setCopyState] = useState('');
+  const [fetching, setFetching] = useState(false);
+  const [assetRevision, setAssetRevision] = useState(0);
   const kind = KIND_OF[meta.type];
   const files = (listing?.files ?? []).filter((f) => f.variant === variant);
   const current = files.find((f) => codeFileKey(f) === selected) ?? files[0];
@@ -100,7 +102,7 @@ export function CodeDialog({ meta, onClose }: { meta: ItemMeta; onClose: () => v
       if (preferred) setSelected(codeFileKey(preferred));
     }, (e: Error) => { if (!controller.signal.aborted) setListError(e.message); });
     return () => controller.abort();
-  }, [kind, meta.id]);
+  }, [kind, meta.id, assetRevision]);
 
   useEffect(() => {
     setCopyState('');
@@ -128,6 +130,13 @@ export function CodeDialog({ meta, onClose }: { meta: ItemMeta; onClose: () => v
       <p id={`${id}-hint`} className="muted small">只读浏览条目已有文件。复制到课题环境后按前提适配；页面不执行代码。代码存在与页面可用均不表示已运行验证。</p>
       {listError ? <p className="notice error" role="alert">代码清单加载失败：{listError}</p> : !listing ? <p role="status">正在加载代码清单…</p> : <>
         {listing.note && <p className="small muted">{listing.note}</p>}
+        {listing.asset_availability === 'not_downloaded' && <p className="notice">代码资料尚未下载到本机。<button type="button" disabled={fetching} onClick={async () => {
+          setFetching(true); setListError('');
+          try { await api.fetchAsset(listing.asset_id || meta.id); setAssetRevision(value => value + 1); }
+          catch (error) { setListError(`资料下载失败：${(error as Error).message}`); }
+          finally { setFetching(false); }
+        }}>{fetching ? '正在下载…' : '下载资料'}</button></p>}
+        {listing.asset_availability === 'missing' && <p className="notice">代码资料缺失；请核对来源登记和本机文件。</p>}
         <div className="tabs code-tabs" role="tablist" aria-label="代码版本">
           {VARIANTS.map((v) => <button type="button" key={v} id={`${id}-${v}`} role="tab" aria-controls={`${id}-files`} aria-selected={variant === v} className={variant === v ? 'active' : ''} onClick={() => { setVariant(v); setSelected(''); setLoaded(null); setCopyState(''); }}>{VARIANT_LABEL[v]} <span className="count">{listing.files.filter((f) => f.variant === v).length}</span></button>)}
         </div>

@@ -46,3 +46,12 @@ test-gallery*/
 *.pfx
 *.p12
 *.key
+
+# Canonical layout generated/local exclusions.
+apps/web/node_modules/
+apps/web/dist/
+tests/e2e/shots/
+skills/research-wiki/config.json
+
+# Local migration journals contain machine paths and Git metadata backups.
+/.layout-migrations/

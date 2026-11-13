@@ -9,7 +9,7 @@ const root = resolve(fileURLToPath(new URL('..', import.meta.url)));
 const require = createRequire(join(root, 'package.json'));
 const { build } = require('esbuild');
 // Each suite runs in its own process: the API caches are module singletons.
-const suites = ['methods.test.tsx', 'v2-pages.test.tsx', 'discovery-loading.test.tsx'];
+const suites = ['methods.test.tsx', 'v2-pages.test.tsx', 'discovery-loading.test.tsx', 'global-search.test.tsx'];
 const dir = await mkdtemp(join(tmpdir(), 'rwiki-methods-'));
 try {
   for (const suite of suites) {

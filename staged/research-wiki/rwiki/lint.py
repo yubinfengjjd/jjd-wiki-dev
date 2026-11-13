@@ -243,6 +243,18 @@ def visual_diagnostics(config: Config, path, meta: dict, body: str,
 def lint(config: Config, ci: bool = False) -> list[str]:
     """ci=True：因被 git 忽略（GPL 托管块、画廊、维护记录）而缺失的引用报告为 LOCAL-ONLY。"""
     from .tags import load_vocabulary
+    from .asset_checkout import profile
+    if profile(config) == 'light':
+        # Missing sparse assets are deliberately not execution failures. Full
+        # lint remains the unchanged scientific/receipt maintenance workflow.
+        result = ['INFO checkout: 轻量检出仅核对页面结构；未核对完整资产和科学/执行证据，维护请切换 full。']
+        vocabulary = load_vocabulary(config)
+        for path in page_paths(config.wiki_root):
+            meta, body, error = parse_page(path.read_text(encoding='utf-8'))
+            findings = [error] if error else metadata_errors(meta, vocabulary)
+            result.extend(f'ERROR {path.relative_to(config.wiki_root).as_posix()}: {message}'
+                          for message in findings)
+        return result
 
     root = config.wiki_root
     diagnostics = []

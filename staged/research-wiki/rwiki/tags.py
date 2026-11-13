@@ -29,7 +29,9 @@ def taxonomy_file(config: Config) -> Path:
     configured = config.taxonomy
     if configured.is_file():
         return configured
-    candidates = [Path(__file__).resolve().parents[3] / "spec" / "scenario_taxonomy.yaml"]
+    dev = Path(__file__).resolve().parents[3]
+    candidates = [dev / 'docs' / 'scenario_taxonomy.yaml',
+                  dev / "spec" / "scenario_taxonomy.yaml"]
     try:
         relative = configured.resolve().relative_to(Path.cwd().resolve())
     except ValueError:

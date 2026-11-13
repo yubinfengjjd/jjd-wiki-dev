@@ -6,21 +6,18 @@ catalog.jsonl 由 save 重建，一行一个条目（L0 目录项、L1 配方、
 """
 import csv
 import json
-import re
 import shutil
 from datetime import datetime, timezone
 from pathlib import Path
 
-from .adapters import CHART_RULES, required_packages
-from .config import Config, load_taxonomy
+from .adapters import required_packages
+from .config import Config
 from .errors import WikiError
 from .pages import read_page, section_text
 from .curation import excluded_paths, filter_records, removed_ids
 
 CATALOG = "catalog.jsonl"
 KIND_ORDER = {"scenario": 0, "template": 1, "recipe": 2, "method": 3, "item": 4}
-CJK = re.compile(r"[\u4e00-\u9fff]")
-SPLIT = re.compile(r"[\s,，、;；/|]+")
 HEADER_LIMIT = 30
 
 
@@ -70,6 +67,7 @@ def _recipe_record(config: Config, path: Path, meta: dict, body: str) -> dict:
     return {"id": meta["id"], "kind": "recipe", "level": "L1", "title": meta["title"],
             "status": meta.get("status"), "usable": _usable(config, path, meta),
             "run": receipt["state"] if receipt else "none",
+            "run_scope": receipt.get("scope") if receipt else None,
             "missing_packages": (receipt or {}).get("missing_packages", []),
             "summary": _line(_section(body, "用途")), "scenario": _line(_section(body, "适用")),
             "not_for": _line(_section(body, "不适用")),
@@ -187,94 +185,10 @@ def load_catalog(config: Config) -> list[dict]:
 
 # ---------------------------------------------------------------- find
 
-def _terms(query: str) -> list[str]:
-    return [term for term in SPLIT.split(query.strip().lower()) if term]
-
-
-def _expansions(config: Config, terms: list[str]) -> tuple[set, set]:
-    charts = {name for name, pattern in CHART_RULES for term in terms if re.search(pattern, term, re.I)}
-    tags = set()
-    try:
-        taxonomy = load_taxonomy(config.taxonomy)
-    except WikiError:
-        taxonomy = {}
-    for key, value in taxonomy.items():
-        names = [key, value.get("label", ""), *value.get("aliases", [])]
-        for term in terms:
-            for name in (str(name).lower() for name in names if name):
-                if term == name or (len(term) >= 2 and len(name) >= 2 and (term in name or name in term)):
-                    tags.add(key)
-    return charts, tags
-
-
-def _score(record: dict, terms: list[str], charts: set, tags: set, boosted: set) -> tuple[float, list[str]]:
-    title = f"{record['id']} {record['title']}".lower()
-    main = " ".join(str(record.get(key) or "") for key in ("summary", "scenario")).lower()
-    minor = " ".join([*record.get("keywords", []), *record.get("inputs", []), *record.get("requires", []),
-                      *record.get("chart_types", []), *record.get("purposes", [])]).lower()
-    score, why = 0.0, []
-    for term in terms:
-        for text, weight, label in ((title, 3, "标题"), (main, 2, "用途/场景"), (minor, 1, "关键词")):
-            if term in text:
-                score += weight
-                why.append(f"{label}含“{term}”")
-                break
-        else:
-            if not (CJK.search(term) and len(term) >= 3):
-                continue
-            grams = {term[index:index + 2] for index in range(len(term) - 1)}
-            hits = sum(gram in title or gram in main for gram in grams)
-            if hits:
-                score += min(1.5, 0.5 * hits)
-                why.append(f"部分匹配“{term}”")
-    matched_charts = charts & set(record.get("chart_types", []))
-    if matched_charts:
-        score += min(4, 2 * len(matched_charts))
-        why.append("图型 " + "、".join(sorted(matched_charts)))
-    matched_tags = tags & set(record.get("tags", []))
-    if matched_tags:
-        score += min(3, 1.5 * len(matched_tags))
-        why.append("领域 " + "、".join(sorted(matched_tags)))
-    if score and record["id"] in boosted:
-        score += 3
-        why.append("场景首选")
-    if score:
-        if record.get("usable"):
-            score += 1.5
-        elif record.get("run") == "pass":
-            score += 1
-    return score, why
-
-
-def _pick_id(pick) -> str:
-    value = pick.get("id") if isinstance(pick, dict) else pick
-    return str(value or "").split("/", 1)[-1].removesuffix(".md")
-
-
 def find(config: Config, query: str, kind: str | None = None, level: str | None = None,
-         runnable: bool = False, limit: int = 10) -> list[dict]:
-    terms = _terms(query)
-    if not terms:
-        raise WikiError("给出关键词，例如：find 生存曲线 风险表")
-    records = load_catalog(config)
-    charts, tags = _expansions(config, terms)
-    boosted = set()
-    for record in records:
-        if record["kind"] == "scenario":
-            text = " ".join([record["title"], record.get("summary", ""), *record.get("keywords", [])]).lower()
-            if any(term in text for term in terms) or tags & set(record.get("tags", [])):
-                boosted |= {_pick_id(pick) for pick in record.get("picks", [])}
-    results = []
-    for record in records:
-        if kind and record["kind"] != kind or level and record["level"] != level:
-            continue
-        if runnable and not (record.get("usable") or record.get("run") == "pass"):
-            continue
-        score, why = _score(record, terms, charts, tags, boosted)
-        if score > 0:
-            results.append({**record, "score": round(score, 2), "why": why})
-    results.sort(key=lambda record: (-record["score"], KIND_ORDER.get(record["kind"], 9), record["id"]))
-    return results[:limit]
+         runnable: bool = False, limit: int = 10, scope: str = "knowledge") -> list[dict]:
+    from .search import search
+    return search(config, query, kind=kind, level=level, runnable=runnable, limit=limit, scope=scope)["results"]
 
 
 def format_find(results: list[dict]) -> str:
@@ -306,7 +220,7 @@ def format_find(results: list[dict]) -> str:
 
 # ---------------------------------------------------------------- show
 
-PAGE_KINDS = ("recipes", "templates", "methods", "scenarios", "sources", "interfaces")
+PAGE_KINDS = ("recipes", "templates", "methods", "scenarios", "sources", "interfaces", "chart-types", "projects", "layouts")
 
 
 def _page(config: Config, entry_id: str) -> Path:
@@ -336,19 +250,30 @@ def show(config: Config, entry_id: str) -> dict:
     sections = {title: _section(body, title) for title in
                 {"recipe": ("用途", "适用", "不适用", "输入", "怎么用", "输出"),
                  "template": ("适用", "不适用", "数据要求"),
+                 "layout": ("适用", "不适用", "知识关联检查"),
                  "method": ("用途", "适用", "不适用", "输入", "怎么做", "代码", "输出"),
                  "scenario": ("什么时候用", "首选组合", "注意"),
                  "source": ("这是什么", "怎么用", "许可与引用"),
-                 "interface": ("含义",)}.get(kind, ())}
+                 "interface": ("含义",),
+                 "chart-type": ("回答什么问题", "什么时候选它", "什么时候不要用", "与相近图型怎么区分", "常见误用"),
+                 "project": ("用途", "使用记录")}.get(kind, ())}
     result = {"kind": kind, "path": path.relative_to(config.wiki_root).as_posix(), "meta": meta,
               "sections": {key: value for key, value in sections.items() if value}}
+    from .asset_checkout import assets_state, profile
+    transport = assets_state(config, path)
+    result.update(asset_availability=transport['state'], asset_details=transport)
+    sparse = profile(config) == 'light'
+    if sparse:
+        result['evidence_state'] = 'not_checked'
     if kind == "recipe":
         from .recipes import current_run, license_notice
-        receipt = current_run(config, path)
+        receipt = current_run(config, path) if profile(config) != 'light' else None
         result["last_run"] = {key: receipt.get(key) for key in
                               ("state", "scope", "started_at", "duration_s", "missing_packages", "error",
                                "missing_outputs")} if receipt else None
         result["license_notice"] = license_notice(meta.get("license", ""))
+        if profile(config) == 'light':
+            result['evidence_state'] = 'not_checked'
         result["next"] = [f"wiki.py use {entry_id} --project <课题目录>", "wiki.py run --dir <副本目录>"]
     elif kind == "template":
         from .interfaces import load_interface
@@ -362,14 +287,14 @@ def show(config: Config, entry_id: str) -> dict:
                                               "description": column["description"]}
                                        for name, column in columns.items()}}
         result["tables"] = tables
-        result["usable"] = _usable(config, path, meta)
+        result["usable"] = False if sparse else _usable(config, path, meta)
         result["next"] = [f"wiki.py use {entry_id} --project <课题目录>",
                           f"wiki.py render {entry_id} --data <数据目录> --out <输出目录> --bindings <bindings.json>"]
     elif kind == "method":
         from .method_implementations import implementation_status
         result["implementations"] = [{key: item.get(key) for key in ("id", "state", "entrypoint")}
-                                     for item in implementation_status(path, meta)]
-        result["usable"] = _usable(config, path, meta)
+                                     for item in ([] if sparse else implementation_status(path, meta))]
+        result["usable"] = False if sparse else _usable(config, path, meta)
     return result
 
 
@@ -389,6 +314,8 @@ def format_show(detail: dict) -> str:
     meta = detail["meta"]
     head = f"{meta.get('id', meta.get('slug'))}  {meta['title']}  [{detail['kind']} · {meta.get('status', '-')}]"
     lines = [head]
+    if detail.get('evidence_state') == 'not_checked':
+        lines.append('资产：' + str(detail.get('asset_availability')) + '；轻量检出尚未核对完整证据（not_checked），不表示验证失败。')
     if detail.get("license_notice"):
         lines.append(f"许可：{detail['license_notice']}")
     for title, text in detail["sections"].items():
@@ -398,7 +325,7 @@ def format_show(detail: dict) -> str:
         lines.append(f"最近运行：{run['state']}（{run['scope']}，{run['started_at']}，{run['duration_s']} 秒）"
                      + (f"；缺包 {'、'.join(run['missing_packages'])}" if run.get("missing_packages") else "")
                      + (f"；错误 {run['error'][:200]}" if run.get("error") and run["state"] != "pass" else ""))
-    elif detail["kind"] == "recipe":
+    elif detail["kind"] == "recipe" and detail.get('evidence_state') != 'not_checked':
         lines.append("最近运行：尚无当前原字节的运行收据")
     if detail.get("tables"):
         for key, table in detail["tables"].items():
@@ -462,6 +389,9 @@ def use(config: Config, entry_id: str, project: Path, name: str | None = None) -
     from .recipes import HARNESS, license_notice, tree_hashes
 
     project = _check_project(config, project)
+    if ':' not in entry_id:
+        from .asset_checkout import fetch_assets
+        fetch_assets(config, entry_id)
     copied_at = datetime.now(timezone.utc).isoformat(timespec="seconds")
     if ":" in entry_id:
         from .sources import fetch_source, find_item, load_source, snapshot_dir

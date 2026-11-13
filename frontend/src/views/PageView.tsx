@@ -12,6 +12,7 @@ import { RelationList } from '../RelationList';
 import { adaptableTemplateRelations } from '../relations';
 import { MethodOverview, MethodImplementations } from './MethodOverview';
 import { allPackages, conditionFacts, entryKindLabel, pageTypeLabel, portabilityLabel, runtimeModeLabel } from '../methods';
+import { sectionTargets } from '../search';
 
 /** The list a page belongs to, for the breadcrumb; figures and hubs fall back to the gallery. */
 const SECTION: Partial<Record<PageType, [string, string]>> = {
@@ -22,7 +23,7 @@ const SECTION: Partial<Record<PageType, [string, string]>> = {
   scenario: ['#/scenarios', '场景'],
 };
 
-export function PageView({ path, data }: { path: string; data: AppData }) {
+export function PageView({ path, data, query = '' }: { path: string; data: AppData; query?: string }) {
   // A page opened from a card was prefetched, so it paints in the transition's first frame.
   const [page, setPage] = useState<PageDetail | null>(() => pageCache.get(path) ?? null);
   const [error, setError] = useState('');
@@ -31,6 +32,20 @@ export function PageView({ path, data }: { path: string; data: AppData }) {
   useEffect(() => {
     api.page(path).then(setPage, (e: Error) => setError(e.message));
   }, [path]);
+
+  useEffect(() => {
+    if (!page) return;
+    const section = new URLSearchParams(query).get('section');
+    if (!section) return;
+    const headings = document.querySelectorAll<HTMLElement>('.page h1, .page h2, .page h3, .page h4, .page summary');
+    const targets = sectionTargets(section);
+    const target = [...headings].find(heading => targets.includes(heading.textContent?.trim() ?? ''));
+    if (!target) return;
+    let parent = target.parentElement;
+    while (parent) { if (parent instanceof HTMLDetailsElement) parent.open = true; parent = parent.parentElement; }
+    target.scrollIntoView({block: 'start'});
+    target.tabIndex = -1; target.focus({preventScroll: true});
+  }, [page, query]);
 
   /** Resolves true only when the write succeeded, so forms keep their input on failure. */
   const run = useCallback(

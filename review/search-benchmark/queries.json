@@ -1,0 +1,326 @@
+{
+  "frozen_before_implementation": true,
+  "label_basis": "Canonical existing page purposes and limitations; software retrieval relevance only.",
+  "cases": [
+    {
+      "category": "method",
+      "query": "我想做差异表达分析",
+      "expected_ids": [
+        "differential-expression"
+      ],
+      "kind": null
+    },
+    {
+      "category": "method",
+      "query": "我想给细胞做注释",
+      "expected_ids": [
+        "cell-type-annotation"
+      ],
+      "kind": null
+    },
+    {
+      "category": "method",
+      "query": "批次整合 Harmony",
+      "expected_ids": [
+        "batch-integration"
+      ],
+      "kind": null
+    },
+    {
+      "category": "method",
+      "query": "双细胞检测",
+      "expected_ids": [
+        "doublet-detection"
+      ],
+      "kind": null
+    },
+    {
+      "category": "method",
+      "query": "细胞质量控制",
+      "expected_ids": [
+        "cell-quality-control"
+      ],
+      "kind": null
+    },
+    {
+      "category": "method",
+      "query": "细胞聚类分析",
+      "expected_ids": [
+        "cell-clustering"
+      ],
+      "kind": null
+    },
+    {
+      "category": "method",
+      "query": "降维 PCA UMAP",
+      "expected_ids": [
+        "dimensionality-reduction"
+      ],
+      "kind": null
+    },
+    {
+      "category": "method",
+      "query": "通路富集 GSEA",
+      "expected_ids": [
+        "gene-set-enrichment"
+      ],
+      "kind": null
+    },
+    {
+      "category": "method",
+      "query": "基因集打分 AddModuleScore",
+      "expected_ids": [
+        "gene-set-scoring"
+      ],
+      "kind": null
+    },
+    {
+      "category": "method",
+      "query": "参考映射标签转移",
+      "expected_ids": [
+        "reference-mapping"
+      ],
+      "kind": null
+    },
+    {
+      "category": "method",
+      "query": "RNA velocity",
+      "expected_ids": [
+        "rna-velocity"
+      ],
+      "kind": null
+    },
+    {
+      "category": "method",
+      "query": "拟时序轨迹推断",
+      "expected_ids": [
+        "trajectory-inference"
+      ],
+      "kind": null
+    },
+    {
+      "category": "method",
+      "query": "动态基因特征分析",
+      "expected_ids": [
+        "dynamic-feature-analysis"
+      ],
+      "kind": null
+    },
+    {
+      "category": "method",
+      "query": "模型解释 SHAP",
+      "expected_ids": [
+        "shap-explanation"
+      ],
+      "kind": null
+    },
+    {
+      "category": "method",
+      "query": "回归模型折外预测",
+      "expected_ids": [
+        "regression-resampling-evaluation"
+      ],
+      "kind": null
+    },
+    {
+      "category": "template",
+      "query": "SHAP 蜂群图",
+      "expected_ids": [
+        "2026-08-17-shap-feature-mechanism__fig01-shap-a-f--beeswarm"
+      ],
+      "kind": "template"
+    },
+    {
+      "category": "template",
+      "query": "SHAP 平均绝对值条形图",
+      "expected_ids": [
+        "2026-08-17-shap-feature-mechanism__fig01-shap-a-f--bar"
+      ],
+      "kind": "template"
+    },
+    {
+      "category": "template",
+      "query": "单细胞 UMAP 分组着色",
+      "expected_ids": [
+        "2026-10-22-glaucoma-scrna__fig01-cns-umap--umap"
+      ],
+      "kind": "template"
+    },
+    {
+      "category": "template",
+      "query": "marker 表达气泡点图",
+      "expected_ids": [
+        "2026-10-22-glaucoma-scrna__fig03-topjournal-bubble--dotplot"
+      ],
+      "kind": "template"
+    },
+    {
+      "category": "template",
+      "query": "细胞比例堆叠流带",
+      "expected_ids": [
+        "2026-10-22-glaucoma-scrna__fig04-cell-proportion-flow--stacked-bar-flow"
+      ],
+      "kind": "template"
+    },
+    {
+      "category": "template",
+      "query": "通路评分小提琴图",
+      "expected_ids": [
+        "2026-10-22-glaucoma-scrna__fig06-pathway-violin--violin"
+      ],
+      "kind": "template"
+    },
+    {
+      "category": "template",
+      "query": "差异基因火山图",
+      "expected_ids": [
+        "2026-10-22-scp-example__fig01-volcano--volcano"
+      ],
+      "kind": "template"
+    },
+    {
+      "category": "template",
+      "query": "分组同心环比例图",
+      "expected_ids": [
+        "2026-10-22-scp-example__fig02-ring--ring"
+      ],
+      "kind": "template"
+    },
+    {
+      "category": "template",
+      "query": "分组流向桑基图",
+      "expected_ids": [
+        "2026-10-22-scp-example__fig10-sankey--sankey"
+      ],
+      "kind": "template"
+    },
+    {
+      "category": "template",
+      "query": "生存曲线风险表",
+      "expected_ids": [
+        "figureya-1survivalcurve-update--km-curve"
+      ],
+      "kind": "template"
+    },
+    {
+      "category": "theory",
+      "query": "细胞级 p 值和样本级推断",
+      "expected_ids": [
+        "differential-expression"
+      ],
+      "kind": null
+    },
+    {
+      "category": "theory",
+      "query": "SingleR 参考标签与 marker 路线区别",
+      "expected_ids": [
+        "cell-type-annotation"
+      ],
+      "kind": null
+    },
+    {
+      "category": "theory",
+      "query": "spliced unspliced 计数输入",
+      "expected_ids": [
+        "rna-velocity"
+      ],
+      "kind": null
+    },
+    {
+      "category": "theory",
+      "query": "不同打分方法的量纲和假设",
+      "expected_ids": [
+        "gene-set-scoring"
+      ],
+      "kind": null
+    },
+    {
+      "category": "theory",
+      "query": "ORA 与 GSEA 输入区别",
+      "expected_ids": [
+        "gene-set-enrichment"
+      ],
+      "kind": null
+    },
+    {
+      "category": "theory",
+      "query": "聚类分辨率的意义",
+      "expected_ids": [
+        "cell-clustering"
+      ],
+      "kind": null
+    },
+    {
+      "category": "theory",
+      "query": "拟时序不是真实时间",
+      "expected_ids": [
+        "trajectory-inference"
+      ],
+      "kind": null
+    },
+    {
+      "category": "theory",
+      "query": "折间相关性和重复交叉验证",
+      "expected_ids": [
+        "regression-resampling-evaluation"
+      ],
+      "kind": null
+    },
+    {
+      "category": "theory",
+      "query": "SHAP 背景分布和输出单位",
+      "expected_ids": [
+        "shap-explanation"
+      ],
+      "kind": null
+    },
+    {
+      "category": "theory",
+      "query": "批次与生物条件混杂",
+      "expected_ids": [
+        "batch-integration"
+      ],
+      "kind": null
+    },
+    {
+      "category": "limitations",
+      "query": "没有 unspliced 能不能做速度分析",
+      "expected_ids": [
+        "rna-velocity"
+      ],
+      "kind": null
+    },
+    {
+      "category": "limitations",
+      "query": "SingleR 没有合适 reference",
+      "expected_ids": [
+        "cell-type-annotation"
+      ],
+      "kind": null
+    },
+    {
+      "category": "limitations",
+      "query": "通路分数不能当绝对活性",
+      "expected_ids": [
+        "gene-set-scoring"
+      ],
+      "kind": null
+    },
+    {
+      "category": "limitations",
+      "query": "DE 不能把细胞当患者",
+      "expected_ids": [
+        "differential-expression"
+      ],
+      "kind": null
+    },
+    {
+      "category": "limitations",
+      "query": "五种分数相加是否通用标准",
+      "expected_ids": [
+        "scrna-pathway-signature-ensemble"
+      ],
+      "kind": null
+    }
+  ]
+}

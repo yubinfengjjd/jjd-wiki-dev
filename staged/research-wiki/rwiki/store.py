@@ -69,6 +69,8 @@ def trailers(issue: int | None, agent: str | None, pages: list[str]) -> str:
 
 
 def save(config: Config, message: str) -> None:
+    from .asset_checkout import assert_writable
+    assert_writable(config)
     from . import push_guard, writer_lock
     from .facts import refresh_facts
 

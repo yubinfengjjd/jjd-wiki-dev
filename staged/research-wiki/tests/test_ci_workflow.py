@@ -59,8 +59,8 @@ def reference(paths, event):
         return {"pytest": False, "frontend": False}
     if not paths or any(p.startswith((".github/workflows/", "ci/")) for p in paths):
         return {"pytest": True, "frontend": True}
-    docs = lambda p: p.startswith("review/") or ("/" not in p and p.endswith(".md"))
-    front = lambda p: p.startswith("frontend/")
+    docs = lambda p: p.startswith(("review/", "archive/")) or (p.startswith('docs/') and p.endswith('.md')) or ("/" not in p and p.endswith(".md"))
+    front = lambda p: p.startswith(("frontend/", "apps/web/"))
     return {"pytest": any(not docs(p) and not front(p) for p in paths), "frontend": any(front(p) for p in paths)}
 
 
@@ -84,7 +84,8 @@ def test_property_scope_matches_reference():
 FIXED = {
     "staged/research-wiki/SKILL.md": (True, False), "staged/research-wiki/references/x.md": (True, False),
     "spec/x.yaml": (True, False), "qa/x.mjs": (True, False), ".gitignore": (True, False),
-    ".push-guard-allow": (True, False), "obsidian-neural-view/x.js": (True, False), "docs/x.md": (True, False),
+    ".push-guard-allow": (True, False), "obsidian-neural-view/x.js": (True, False), "docs/x.md": (False, False),
+    "docs/scenario_taxonomy.yaml": (True, False), "apps/web/src/App.tsx": (False, True),
     ".github/pull_request_template.md": (True, False), ".github/ISSUE_TEMPLATE/task.md": (True, False),
     "review/x.md": (False, False), "README.md": (False, False), "frontend/src/x.tsx": (False, True),
     ".github/workflows/ci.yml": (True, True), "ci/config.ci.json": (True, True),

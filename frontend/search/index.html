@@ -8,7 +8,7 @@
 </head>
 <body>
 <header class="top">
-  <h1>Research Wiki · 条目检索</h1>
+  <h1>Research Wiki · 检索</h1>
   <p class="meta" id="meta">加载索引…</p>
 </header>
 <div class="layout">
@@ -25,8 +25,12 @@
     <button id="reset" type="button">清空筛选</button>
   </aside>
   <main>
+    <div class="search-mode"><label>检索方式 <select id="mode"><option value="facets">目录分面</option><option value="full">全库正文</option></select></label>
+      <label id="scope-label" hidden>范围 <select id="scope"><option value="knowledge">知识条目</option><option value="source">来源全文</option></select></label>
+      <label id="runnable-label" hidden><input type="checkbox" id="runnable"> 仅含可运行证据</label></div>
     <input id="q" type="search" placeholder="关键词：标题、摘要、ID、关键词、包名、领域…" aria-label="关键词搜索" autofocus>
     <p class="count" id="count"></p>
+    <p class="meta" id="full-status" role="status" hidden></p>
     <ol class="results" id="results"></ol>
   </main>
 </div>

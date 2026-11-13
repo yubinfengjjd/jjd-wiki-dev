@@ -44,3 +44,15 @@ test('standalone results use encoded web source links without an app', () => {
   assert.equal(pageHref('http://127.0.0.1:8765/', 'recipes/x.md'),
     'http://127.0.0.1:8765/#/page/recipes/x.md');
 });
+
+test('canonical source link and complete full-text kind filters', async () => {
+  const {DEFAULT_SOURCE_BASE, kindOptions} = await import('./search-core.js');
+  assert.equal(sourceHref(DEFAULT_SOURCE_BASE, 'interfaces/units.md'),
+    'https://github.com/yubinfengjjd/jjd-wiki/blob/main/wiki/interfaces/units.md');
+  const legacy = {facets: {kinds: [{value: 'method', count: 1}]}};
+  const full = {documents: ['method', 'interface', 'chart-type', 'project', 'layout', 'source']
+    .map(kind => ({record: {kind}}))};
+  assert.equal(kindOptions(legacy, full, 'facets').length, 1);
+  assert.deepEqual(new Set(kindOptions(legacy, full, 'full').map(k => k.value)),
+    new Set(['method', 'interface', 'chart-type', 'project', 'layout', 'source']));
+});

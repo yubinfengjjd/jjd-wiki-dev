@@ -359,6 +359,11 @@ def _branch_verification(branches: list[dict]) -> dict:
 def code_files(config: Config, page_path: str) -> dict:
     """List only existing entry-owned assets and explicitly linked gallery code."""
     page, meta = _page(config, page_path)
+    from .asset_checkout import assets_state
+    availability = assets_state(config, page)
+    if availability['state'] == 'not_downloaded':
+        return {'files': [], 'note': '资产尚未下载；可显式获取后查看，不代表代码或验证失败。',
+                'runtime': None, 'asset_availability': 'not_downloaded', 'asset_id': meta['id']}
     branches_by_file = _implementation_branches(page, meta)
     files = []
     for asset in _discover(config, page_path):
@@ -377,7 +382,8 @@ def code_files(config: Config, page_path: str) -> dict:
     if meta.get("type") == "template":
         from .runtime_contract import runtime_facts
         runtime = runtime_facts(page.with_suffix(''), meta['id'], 'template')
-    return {"files": files, "note": note, "runtime": runtime}
+    return {"files": files, "note": note, "runtime": runtime,
+            'asset_availability': availability['state'], 'asset_id': meta['id']}
 
 
 def read_code(config: Config, page_path: str, variant: str, path: str) -> dict:

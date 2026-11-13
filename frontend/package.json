@@ -4,7 +4,7 @@
   "version": "0.1.0",
   "type": "module",
   "scripts": {
-    "test": "node tests/figure-models.mjs && node tests/methods.mjs && node tests/figureya-review.mjs && node --test search/search-core.test.mjs",
+    "test": "node tests/figure-models.mjs && node tests/methods.mjs && node tests/figureya-review.mjs && node --test tests/build-paths.test.mjs search/search-core.test.mjs search/full-search.test.mjs search/parity.test.mjs",
     "dev": "vite",
     "typecheck": "tsc --noEmit",
     "build": "tsc --noEmit && vite build"

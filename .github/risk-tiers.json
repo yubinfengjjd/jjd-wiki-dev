@@ -14,10 +14,20 @@
     ".push-guard-allow",
     "staged/research-wiki/assets/AGENTS.md",
     "staged/research-wiki/SKILL.md",
-    "staged/research-wiki/references/github-workflow.md"
+    "staged/research-wiki/references/github-workflow.md",
+    "skills/research-wiki/rwiki/ghflow.py",
+    "skills/research-wiki/rwiki/push_guard.py",
+    "skills/research-wiki/rwiki/writer_lock.py",
+    "skills/research-wiki/rwiki/store.py",
+    "skills/research-wiki/rwiki/risk.py",
+    "skills/research-wiki/assets/AGENTS.md",
+    "skills/research-wiki/SKILL.md",
+    "skills/research-wiki/references/github-workflow.md"
   ],
   "low": [
     "review/**/*.md",
-    "*.md"
+    "*.md",
+    "archive/review/**/*.md",
+    "docs/**/*.md"
   ]
 }

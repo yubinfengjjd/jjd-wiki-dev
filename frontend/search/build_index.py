@@ -191,12 +191,21 @@ def build_index(catalog: Path, taxonomy: Path, chart_dir: Path | None = None,
     }
 
 
+def default_taxonomy() -> Path:
+    for parent in Path(__file__).resolve().parents:
+        for folder in ('docs', 'spec'):
+            candidate = parent / folder / "scenario_taxonomy.yaml"
+            if candidate.is_file():
+                return candidate
+    raise FileNotFoundError("Cannot locate spec/scenario_taxonomy.yaml; pass --taxonomy")
+
+
 def main(argv: list[str] | None = None) -> int:
     parser = argparse.ArgumentParser(description=__doc__.splitlines()[0])
     parser.add_argument("--wiki", type=Path, required=True,
                         help="Wiki 子树目录（含 catalog.jsonl，如 jjd-wiki/知识库）")
     parser.add_argument("--taxonomy", type=Path,
-                        default=Path(__file__).resolve().parents[2] / "spec" / "scenario_taxonomy.yaml")
+                        default=default_taxonomy())
     parser.add_argument("--out", type=Path, default=Path(__file__).resolve().parent / "search-index.json")
     parser.add_argument("--rev", default="", help="可选：catalog 所在仓库的提交号，写入 source.rev")
     args = parser.parse_args(argv)

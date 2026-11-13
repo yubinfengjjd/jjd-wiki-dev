@@ -2079,3 +2079,21 @@ a.chain-item:hover {
 .method-code-actions { display: flex; flex-wrap: wrap; align-items: center; gap: 1rem; margin-top: auto; padding-top: .8rem; }
 .theory-links a { display: inline-block; margin-right: .8rem; }
 .library-refresh { flex-shrink: 0; white-space: nowrap; margin-left: auto; }
+
+/* Global retrieval shares the library's paper, rules and text hierarchy. */
+.global-search-form { padding: 1.2rem; margin-bottom: 1.5rem; }
+.global-search-query { display: flex; gap: .7rem; }
+.global-search-query input { min-width: 0; flex: 1; }
+.global-search-controls { display: flex; flex-wrap: wrap; gap: 1rem 1.5rem; margin-top: 1rem; align-items: center; }
+.global-search-controls label { display: flex; gap: .5rem; align-items: center; font-size: .9rem; }
+.global-search-results { list-style: none; padding: 0; display: grid; gap: 1rem; }
+.search-result { padding: 1.25rem 1.5rem; }
+.search-result h2 { font-size: 1.2rem; margin: 0; }
+.search-result-path { overflow-wrap: anywhere; margin: .5rem 0; }
+.search-match-section { margin-bottom: .25rem; color: var(--indigo); }
+.search-snippet { white-space: pre-wrap; overflow-wrap: anywhere; max-width: 80ch; }
+.search-result-facts { display: flex; gap: .7rem 1.2rem; flex-wrap: wrap; align-items: center; padding-top: .6rem; border-top: 1px solid var(--rule); }
+.search-coverage { margin: 1.5rem 0; color: var(--muted); }
+.search-coverage pre { max-height: 18rem; overflow: auto; font-size: .8rem; }
+.page :is(h1,h2,h3,h4,summary) { scroll-margin-top: 6rem; }
+@media (max-width: 600px) { .global-search-controls { align-items: stretch; flex-direction: column; gap: .7rem; } .search-result { padding: 1rem; } }

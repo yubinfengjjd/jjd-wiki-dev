@@ -40,22 +40,22 @@ jobs:
           git config --global user.name "ci"
           git config --global user.email "ci@localhost"
       - name: 安装依赖
-        run: pip install -r staged/research-wiki/requirements.lock.txt
+        run: pip install -r skills/research-wiki/requirements.lock.txt
       - name: pytest
         if: steps.scope.outputs.pytest == 'true'
-        working-directory: staged/research-wiki
+        working-directory: skills/research-wiki
         run: python -X utf8 -m pytest -m "not r and not compose and not local"
       - name: 静态搜索索引测试
         if: steps.scope.outputs.frontend == 'true'
-        run: python -X utf8 -m unittest discover -s frontend/search -p 'test_*.py' -v
+        run: python -X utf8 -m unittest discover -s apps/web/search -p 'test_*.py' -v
       - name: 前端测试
         if: steps.scope.outputs.frontend == 'true'
-        working-directory: frontend
+        working-directory: apps/web
         run: npm ci && npm test
       - name: 夹具 wiki init + lint
         run: |
-          python -X utf8 staged/research-wiki/wiki.py --config ci/config.ci.json --wiki-root $RUNNER_TEMP/w init
-          python -X utf8 staged/research-wiki/wiki.py --config ci/config.ci.json --wiki-root $RUNNER_TEMP/w lint
+          python -X utf8 skills/research-wiki/wiki.py --config ci/config.ci.json --wiki-root $RUNNER_TEMP/w init
+          python -X utf8 skills/research-wiki/wiki.py --config ci/config.ci.json --wiki-root $RUNNER_TEMP/w lint
       - name: 推送防泄漏检查
         if: github.event_name == 'pull_request'
-        run: python -X utf8 staged/research-wiki/wiki.py --config ci/config.ci.json gh guard --range origin/${{ github.base_ref }}..HEAD
+        run: python -X utf8 skills/research-wiki/wiki.py --config ci/config.ci.json gh guard --range origin/${{ github.base_ref }}..HEAD

@@ -3,6 +3,18 @@
 
 export const FACETS = ['charts', 'domains', 'packages'];
 
+export const DEFAULT_SOURCE_BASE = 'https://github.com/yubinfengjjd/jjd-wiki/blob/main/wiki/';
+
+export function kindOptions(index, fullIndex, mode) {
+  if (mode !== 'full' || !fullIndex) return index?.facets?.kinds ?? [];
+  const counts = new Map();
+  for (const document of fullIndex.documents ?? []) {
+    const kind = document.record?.kind;
+    if (kind) counts.set(kind, (counts.get(kind) ?? 0) + 1);
+  }
+  return [...counts].sort(([a], [b]) => a.localeCompare(b)).map(([value, count]) => ({value, count}));
+}
+
 /** Whitespace-separated terms; every term must appear in the entry text. */
 export function terms(query) {
   return String(query || '').toLowerCase().split(/\s+/).filter(Boolean);

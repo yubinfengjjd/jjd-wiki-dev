@@ -2,9 +2,11 @@
 import json
 import tempfile
 import unittest
+from unittest.mock import patch
 from pathlib import Path
 
 import build_index
+import export_full_index
 
 TAXONOMY = {"version": 2, "scenarios": {
     "single-cell": {"label": "单细胞分析", "aliases": ["单细胞", "Seurat"]},
@@ -36,6 +38,21 @@ class BuildIndexTest(unittest.TestCase):
         lines = [json.dumps(r, ensure_ascii=False) for r in rows] + list(raw_lines)
         (self.wiki / "catalog.jsonl").write_text("\n".join(lines) + "\n", encoding="utf-8")
         return build_index.build_index(self.wiki / "catalog.jsonl", self.taxonomy, self.wiki / "chart-types")
+
+    def test_old_and_canonical_layout_resolve_engine_and_taxonomy(self):
+        legacy = self.wiki / "staged" / "research-wiki"
+        canonical = self.wiki / "skills" / "research-wiki"
+        for engine in (legacy, canonical):
+            (engine / "rwiki").mkdir(parents=True)
+            (engine / "rwiki" / "config.py").write_text("", encoding="utf-8")
+        spec = self.wiki / "spec" / "scenario_taxonomy.yaml"
+        spec.parent.mkdir()
+        spec.write_text("{}", encoding="utf-8")
+        for layout in ("frontend/search", "apps/web/search"):
+            script = self.wiki / layout / "build_index.py"
+            with patch.object(build_index, "__file__", str(script)), patch.object(export_full_index, "__file__", str(script)):
+                self.assertEqual(build_index.default_taxonomy(), spec)
+                self.assertEqual(export_full_index.engine_root(), canonical)
 
     def test_entry_count_follows_catalog(self):
         for n in (3, 17):  # count is read, never assumed; growth shows up after rebuild

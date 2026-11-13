@@ -106,7 +106,21 @@ export interface CodeFile {
   /** Present for reusable files whose entrypoint belongs to one or more declared branches. */
   branches?: ImplementationBranch[];
 }
-export interface CodeListing { files: CodeFile[]; note: string }
+export interface CodeListing { files: CodeFile[]; note: string; asset_availability?: AssetAvailability; asset_id?: string }
+export type AssetAvailability = 'available' | 'not_downloaded' | 'missing';
+export interface SearchResult {
+  id: string; kind: string; title: string; page: string; summary: string;
+  score: number; why: string[]; usable: boolean; run: string;
+  match_section: string; snippet: string;
+  asset_availability: AssetAvailability; evidence_state: string;
+  source_path?: string; file_path?: string; asset_id?: string;
+  source_scope?: boolean;
+}
+export interface SearchResponse {
+  results: SearchResult[];
+  coverage: Record<string, unknown>;
+  index: Record<string, unknown>;
+}
 export interface CodeText {
   path: string;
   variant: CodeVariant;
@@ -461,6 +475,10 @@ export function cachePages(pages: PageSummary[]) {
 }
 
 export const api = {
+  search: (params: URLSearchParams, signal?: AbortSignal) => request<SearchResponse>(`/api/search?${params}`, {signal}),
+  fetchAsset: (id: string) => request<{state?: string; note?: string}>('/api/assets/fetch', {
+    method: 'POST', headers: {'Content-Type': 'application/json'}, body: JSON.stringify({id}),
+  }),
   pages: async (light = false, cache = true) => {
     const pages = await request<PageSummary[]>(light ? '/api/pages?light=true' : '/api/pages');
     if (cache) cachePages(pages);
@@ -548,6 +566,7 @@ export function methodNoteLabel(meta: MethodMeta, workflow?: Workflow | null): s
 /** Workflow stage → the status colour it stands for; one mapping for badges, graph rings, census and filters. */
 const STAGE_STATUS: Record<string, Status> = {
   checking: 'pending_template',
+  unknown: 'pending_template',
   archived: 'archived', complete: 'ready', signoff: 'pending_signoff',
   template_confirm: 'draft', method_confirm: 'draft',
   template_work: 'pending_template', method_work: 'pending_template',

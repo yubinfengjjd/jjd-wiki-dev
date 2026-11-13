@@ -55,6 +55,10 @@ class CurationBody(BaseModel):
     revision: StrictStr
 
 
+class AssetFetchBody(BaseModel):
+    id: StrictStr = Field(min_length=1, max_length=240)
+
+
 # Loopback names only; "testserver" is Starlette TestClient's default Host.
 LOCAL_HOSTS = {"127.0.0.1", "localhost", "[::1]", "testserver"}
 
@@ -94,6 +98,10 @@ def create_app(config: Config) -> FastAPI:
                 origin == "null" or _host_name(urlsplit(origin).netloc) not in LOCAL_HOSTS)
             if foreign or request.headers.get("sec-fetch-site") == "cross-site":
                 return JSONResponse(status_code=403, content={"detail": "拒绝跨站写请求"})
+            from .asset_checkout import profile
+            if request.url.path != '/api/assets/fetch' and profile(config) == 'light':
+                return JSONResponse(status_code=409, content={
+                    'detail': '轻量检出不修改正式知识；请先运行 rwiki checkout --profile full。'})
         with read_session() if request.method == "GET" else nullcontext():
             return await call_next(request)
 
@@ -107,6 +115,26 @@ def create_app(config: Config) -> FastAPI:
         detail = "; ".join(f"{'.'.join(map(str, item['loc']))}: {item['msg']}"
                            for item in error.errors())
         return JSONResponse(status_code=422, content={"detail": detail})
+
+    @app.get("/api/search")
+    def search_knowledge(q: str, kind: str | None = None, scope: str = "knowledge",
+                         limit: int = 10, runnable: bool = False):
+        from .search import search
+        if not q.strip():
+            raise HTTPException(422, "q 不能为空")
+        if scope not in ("knowledge", "source"):
+            raise HTTPException(422, "scope 必须是 knowledge 或 source")
+        if not 1 <= limit <= 100:
+            raise HTTPException(422, "limit 必须在 1–100 之间")
+        return search(config, q, kind=kind, scope=scope, limit=limit, runnable=runnable)
+
+    @app.post('/api/assets/fetch')
+    def get_assets(request: AssetFetchBody):
+        from .asset_checkout import fetch_assets
+        try:
+            return fetch_assets(config, request.id)
+        except WikiError as error:
+            raise HTTPException(409, str(error)) from error
 
     def pages() -> list[Path]:
         # An unreadable page is reported by lint; it must not take the whole UI down.
@@ -156,6 +184,12 @@ def create_app(config: Config) -> FastAPI:
                 "kind": "source", "label": label}
 
     def preview(meta: dict) -> dict | None:
+        from .asset_checkout import profile
+        if profile(config) == 'light' and meta['type'] in ('method', 'template', 'recipe', 'layout'):
+            saved = root / (meta['type'] + 's') / meta['id'] / (
+                'thumb.png' if meta['type'] == 'layout' else 'preview.png')
+            return {'url': '/files/wiki/' + quote(saved.relative_to(root).as_posix()) if saved.is_file() else None,
+                    'kind': 'pending', 'label': '已保存预览；轻量检出不核对完整回放证据'}
         if meta["type"] == "recipe":
             path = root / "recipes" / meta["id"] / "preview.png"
             return ({"url": "/files/wiki/" + quote(path.relative_to(root).as_posix()), "kind": "replay",
@@ -204,6 +238,9 @@ def create_app(config: Config) -> FastAPI:
 
     def response(path: Path) -> dict:
         meta, body = read_page(path)
+        from .asset_checkout import assets_state, profile
+        sparse = profile(config) == 'light'
+        transport = assets_state(config, path)
         reuse = None
         input_contract = None
         if meta["type"] == "template":
@@ -243,17 +280,20 @@ def create_app(config: Config) -> FastAPI:
         from .method_implementations import implementation_status
         from .runtime_contract import runtime_facts
         runtime = None
-        if meta['type'] == 'template':
+        if meta['type'] == 'template' and not sparse:
             runtime = runtime_facts(path.with_suffix(''), meta['id'], 'template')
         return {"path": path.relative_to(root).as_posix(), "meta": curation.visible_meta(config, meta), "body": body,
-                "implementation_status": implementation_status(path, meta) if meta['type'] == 'method' else [],
-                "runtime": runtime,
+                "implementation_status": implementation_status(path, meta) if meta['type'] == 'method' and not sparse else [],
+                "runtime": runtime if not sparse else None,
                 "backlinks": sorted(backlinks, key=lambda item: item["title"]),
-                "gallery": read_json(gallery_file(meta)) if meta["type"] == "layout" else None,
+                "gallery": read_json(gallery_file(meta)) if meta["type"] == "layout" and not sparse else None,
                 "reuse": reuse, "input_contract": input_contract,
                 "figure_refs": figure_refs(meta, body), "preview": preview(meta),
-                "workflow": workflow_snapshot(config).get(path.relative_to(root).as_posix()),
-                "relations": relations_for(config, path.relative_to(root).as_posix())}
+                "workflow": ({'stage': 'checking', 'queue': None, 'label': '轻量检出 · 未核对完整证据',
+                              'reason': '请获取资产或切换 full；不据部分下载判断验证失败。', 'templates': []}
+                             if sparse else workflow_snapshot(config).get(path.relative_to(root).as_posix())),
+                "asset_availability": transport['state'], 'asset_id': meta.get('id'),
+                "relations": [] if sparse else relations_for(config, path.relative_to(root).as_posix())}
 
     def visual(kind: str, entry_id: str) -> tuple[Path, dict, str]:
         if kind not in ("layouts", "templates", "methods", "recipes"):
@@ -290,6 +330,8 @@ def create_app(config: Config) -> FastAPI:
 
     @app.get("/api/pages")
     def list_pages(light: bool = False):
+        from .asset_checkout import profile
+        light = light or profile(config) == 'light'
         records = []
         workflow = {} if light else workflow_snapshot(config)
         relations = [] if light else all_relations(config)
@@ -402,10 +444,12 @@ def create_app(config: Config) -> FastAPI:
         feed_pairs = {tuple(sorted((a, b))) for a, b in feeds}
         links = [{"source": a, "target": b, "kind": "feeds"} for a, b in sorted(feeds)]
         links.extend({"source": a, "target": b, "kind": "link"} for a, b in sorted(edges - feed_pairs))
+        from .asset_checkout import profile
+        semantic = [] if profile(config) == 'light' else all_relations(config)
         links.extend({"source": item["method"], "target": item["figure"], "kind": "relation",
                       "compatibility": item["compatibility"], "verification": item["verification"],
                       "active": item["active"]}
-                     for item in all_relations(config) if item["method"] in ids and item["figure"] in ids)
+                     for item in semantic if item["method"] in ids and item["figure"] in ids)
         return {"nodes": nodes, "links": links}
 
     @app.get("/api/discover-methods")
@@ -419,6 +463,9 @@ def create_app(config: Config) -> FastAPI:
 
     @app.get("/api/relations")
     def semantic_relations(path: str | None = None):
+        from .asset_checkout import profile
+        if profile(config) == 'light':
+            return []
         if path is not None:
             page_file(path)
             return relations_for(config, path)

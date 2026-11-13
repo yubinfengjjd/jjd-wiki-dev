@@ -15,6 +15,7 @@ import { RecipesView } from './views/RecipesView';
 import { ScenariosView } from './views/ScenariosView';
 import { SourcesView } from './views/SourcesView';
 import { FigureYaReview } from './views/FigureYaReview';
+import { SearchView } from './views/SearchView';
 import { pendingCount as countPending } from './workflow';
 
 // The force-graph engine is the heaviest module; load it only when the network is opened.
@@ -54,6 +55,7 @@ function withEffectiveStatus(graph: GraphData, pages: PageSummary[]): GraphData 
 }
 
 const NAV = [
+  ['search', '全库搜索'],
   ['gallery', '图库'],
   ['recipes', '配方'],
   ['sources', '来源目录'],
@@ -111,7 +113,8 @@ export function App() {
     const data: AppData = { pages: visible.pages,
       hiddenPages: pages.filter(page => visible.hiddenSources.has(page.path)),
       graph: displayedGraph, flow, env, taxonomy, reload };
-    if (route.view === 'page') content = <PageView key={route.arg} path={route.arg} data={data} />;
+    if (route.view === 'page') content = <PageView key={route.arg} path={route.arg} query={route.query} data={data} />;
+    else if (route.view === 'search') content = <SearchView query={route.query} />;
     else if (route.view === 'methods') content = <MethodsView data={data} query={route.query} />;
     else if (route.view === 'recipes') content = <RecipesView data={data} />;
     else if (route.view === 'sources') content = <SourcesView data={data} query={route.query} />;

@@ -8,6 +8,15 @@ from .acceptance import entry_errors, acceptance_stale
 def workflow_snapshot(config) -> dict[str, dict]:
     root = config.wiki_root
     records = {p.relative_to(root).as_posix(): meta for p, meta in readable_pages(root)}
+    from .asset_checkout import profile
+    if profile(config) == 'light':
+        return {path: {'stage': 'archived' if meta.get('status') == 'archived' else 'checking',
+                       'queue': None,
+                       'label': '已归档' if meta.get('status') == 'archived' else '轻量检出 · 未核对完整证据',
+                       'reason': '轻量检出不据资产省略判断科学或回放失败；正式维护请切换 full。',
+                       'templates': []}
+                for path, meta in records.items()
+                if meta.get('type') in ('method', 'template', 'recipe', 'layout')}
     result = {}
 
     def put(path, stage, queue, label, reason, templates=()):

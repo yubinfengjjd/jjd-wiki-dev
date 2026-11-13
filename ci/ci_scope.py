@@ -18,12 +18,12 @@ FULL = {"pytest": True, "frontend": True}
 LIGHT = {"pytest": False, "frontend": False}
 ALWAYS_FULL = (".github/workflows/", "ci/")
 # PR/Issue 模板不算文档：test_repo_files 校验它们的小节，与 ghflow 生成的正文对应。
-DOC_PREFIXES = ("review/",)
-FRONTEND = "frontend/"
+DOC_PREFIXES = ("review/", "archive/", "docs/")
+FRONTEND = ("frontend/", "apps/web/")
 
 
 def is_doc(path: str) -> bool:
-    return path.startswith(DOC_PREFIXES) or ("/" not in path and path.endswith(".md"))
+    return (path.startswith(DOC_PREFIXES) and path.endswith('.md')) or ("/" not in path and path.endswith(".md"))
 
 
 def scope(paths: list[str], event: str) -> dict:

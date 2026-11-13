@@ -36,3 +36,18 @@ node --test search-core.test.mjs
 ```
 
 CI 在前端检查启用时运行 Python 索引测试；`frontend/npm test` 同时运行搜索 Node 测试。
+
+## 全库正文与本地应用一致
+
+原有目录分面保留。切换“全库正文”后，使用引擎导出的分节正文、词频、别名和 BM25 参数排序；索引不包含用户备注、运行日志或数据。无需服务器即可在浏览器计算相关性。
+
+```powershell
+D:\anaconda\python.exe -X utf8 frontend/search/export_full_index.py --config staged/research-wiki/config.json
+# 布局迁移后：D:\anaconda\python.exe -X utf8 apps/web/search/export_full_index.py --config skills/research-wiki/config.json
+```
+
+导出程序自动寻找引擎，也可指定 `--engine <rwiki包所在目录>`；`--out` 默认同目录 `full-search-index.json`。页面 `?fullindex=<URL>` 可覆盖索引地址。hash 中 `mode=full&q=差异表达&scope=knowledge&runnable=true` 可分享全文查询。
+
+静态索引中的运行证据是带导出时间的快照，使用前应在本地应用重新核对。静态导出不复制来源代码，来源全文只在本地 API/CLI 搜索本机已下载文件。静态页面不会下载资源；本地应用只有点击“下载资料”才发起下载。
+
+`full-search.js` 与 Python `rank_export` 的排名、分数、摘要和筛选通过 `parity.test.mjs` 对同一固定语料核对；`search-core.test.mjs` 继续检查原分面逻辑。

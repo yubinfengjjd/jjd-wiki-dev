@@ -19,3 +19,22 @@ abs-path staged/research-wiki/tests/test_code_assets.py  # 拒绝越界与绝对
 abs-path staged/research-wiki/tests/conftest.py  # 夹具中的合成解释器路径
 abs-path replications/2026-11-12_img07/code/run_all.sh  # img07 archived runner: generic disposable-container conda activation path; no credential or private data; preserve original script/receipt bytes
 size replications/2026-11-12_img07/data/go_enrichment_all.tsv  # img07 public-tutorial GO aggregate: 43,814 GO rows, 17 modules, 8,973,440 bytes; preserve complete enrichment audit data
+
+# Canonical layout equivalents; historical rules above remain for history checks.
+abs-path skills/research-wiki/tests/**  # 测试夹具：合成假路径、越界路径用例与本机工具默认路径（local 测试）
+abs-path skills/research-wiki/rwiki/contact_sheet.py  # Windows 系统字体目录，非个人数据
+size plugins/obsidian-neural-view/media/orb.mp4  # 插件背景视频（约 8 MB），属于插件构建所需资产
+abs-path skills/research-wiki/SKILL.md  # 技能运行说明：本机解释器与临时目录是操作指引
+abs-path skills/research-wiki/assets/AGENTS.md  # 规则文档：限定 Obsidian vault 位置
+abs-path apps/web/tests/real-taxonomy.ts  # 本机 taxonomy 快照，只供 local 测试，路径为方法代码来源记录
+abs-path tests/e2e/cdp.mjs  # 浏览器检查脚本：Chrome 系统安装路径
+abs-path plugins/obsidian-neural-view/README.md  # 插件构建说明：本机检出位置
+abs-path archive/review/**  # 历史评审与验收记录：路径即证据定位
+abs-path skills/research-wiki/tests/test_adaptive.py  # 历史版本写死绘图解释器默认路径（本机 venv），现行版本改用 Path.home()
+abs-path skills/research-wiki/tests/test_layouts.py  # 历史版本写死绘图解释器默认路径（本机 venv），现行版本改用 Path.home()
+abs-path skills/research-wiki/tests/test_config.py  # 配置用例中的合成 Rscript 路径
+abs-path skills/research-wiki/tests/test_t3.py  # record-use 用例中的合成输出路径
+abs-path skills/research-wiki/tests/test_code_assets.py  # 拒绝越界与绝对路径的合成用例
+abs-path skills/research-wiki/tests/conftest.py  # 夹具中的合成解释器路径
+abs-path examples/replications/2026-11-12_img07/code/run_all.sh  # img07 archived runner: generic disposable-container conda activation path; no credential or private data; preserve original script/receipt bytes
+size examples/replications/2026-11-12_img07/data/go_enrichment_all.tsv  # img07 public-tutorial GO aggregate: 43,814 GO rows, 17 modules, 8,973,440 bytes; preserve complete enrichment audit data

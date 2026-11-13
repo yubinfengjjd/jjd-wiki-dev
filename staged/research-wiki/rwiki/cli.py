@@ -51,6 +51,11 @@ def parser() -> argparse.ArgumentParser:
     selection.add_argument("entry_id", nargs="?")
     selection.add_argument("--all", action="store_true")
     commands.add_parser("save").add_argument("message")
+    checkout = commands.add_parser('checkout', help='切换轻量或完整 Git 检出')
+    checkout.add_argument('--profile', required=True, choices=('light', 'full'))
+    assets = commands.add_parser('assets', help='显式获取条目资产，不安装依赖')
+    assets_sub = assets.add_subparsers(dest='asset_command', required=True)
+    assets_sub.add_parser('fetch').add_argument('entry_id')
     commands.add_parser("lint").add_argument(
         "--ci", action="store_true", help="被 git 忽略而缺失的引用报告为 LOCAL-ONLY，不计为错误")
     github = commands.add_parser("gh", help="GitHub 结构化工作流（git 与 gh CLI 的薄封装）")
@@ -100,9 +105,10 @@ def parser() -> argparse.ArgumentParser:
                       ).add_argument("--repo", choices=("dev", "vault"),
                                      help="按 config.json 的 github.dev_root / vault_root 选仓库；缺省为当前目录所在仓库")
     # ---- v2（2026-10-27）：检索与调用、来源、配方
-    finding = commands.add_parser("find", help="按场景/图型/关键词检索 L0–L2 条目（读 catalog.jsonl）")
+    finding = commands.add_parser("find", help="全文检索知识页面与 L0 目录；源码搜索需 --scope source")
     finding.add_argument("query", nargs="+")
-    finding.add_argument("--kind", choices=("scenario", "template", "recipe", "method", "item"))
+    finding.add_argument("--kind", choices=("scenario", "template", "recipe", "method", "item", "source", "interface", "chart-type", "project", "layout"))
+    finding.add_argument("--scope", choices=("knowledge", "source"), default="knowledge")
     finding.add_argument("--level", choices=("L0", "L1", "L2"))
     finding.add_argument("--runnable", action="store_true", help="只列可用模板与原样运行通过的配方")
     finding.add_argument("--limit", type=int, default=8)
@@ -610,7 +616,7 @@ def _v2_dispatch(args, config) -> int:
     from . import finder, recipes, sources
 
     if args.command == "find":
-        results = finder.find(config, " ".join(args.query), args.kind, args.level, args.runnable, args.limit)
+        results = finder.find(config, " ".join(args.query), args.kind, args.level, args.runnable, args.limit, scope=args.scope)
         if args.json:
             _print(results)
         else:
@@ -674,6 +680,32 @@ def main(argv: list[str] | None = None) -> int:
                   if args.command != 'project' or args.config.is_file() else None)
         if config is not None:
             prepare_env(config)
+        if args.command == 'checkout':
+            from .asset_checkout import set_profile
+            _print(set_profile(config, args.profile))
+            return 0
+        if args.command == 'assets':
+            from .asset_checkout import fetch_assets
+            _print(fetch_assets(config, args.entry_id))
+            return 0
+        if config is not None and args.command not in {
+                'project', 'find', 'show', 'use', 'serve', 'lint', 'pending',
+                'suggest', 'suggest-methods', 'suggest-pipeline', 'discover-methods',
+                'contact-sheet', 'render', 'render-layout', 'check-entry'}:
+            from .asset_checkout import assert_writable
+            # run --dir writes only the already copied project directory.
+            if not (args.command == 'run' and getattr(args, 'dir', None)):
+                assert_writable(config)
+        if args.command == 'check-entry':
+            from .asset_checkout import assets_state, assert_writable, profile
+            if args.record:
+                assert_writable(config)
+            elif profile(config) == 'light':
+                from .pages import visual_path
+                _print({'page': args.entry_id, 'passed': None, 'evidence_state': 'not_checked',
+                        'assets': assets_state(config, visual_path(config.wiki_root, args.entry_id)),
+                        'scope': '轻量检出不进行科学或完整回放核查；请切换 full 后检查。'})
+                return 0
         if args.command == "project":
             _project_dispatch(args, config)
             return 0
