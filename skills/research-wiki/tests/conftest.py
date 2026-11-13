@@ -11,6 +11,10 @@ import pytest
 
 SKILL_ROOT = Path(__file__).resolve().parents[1]
 DEV_ROOT = SKILL_ROOT.parents[1]
+TAXONOMY_SOURCE = next((path for path in (DEV_ROOT / 'docs/scenario_taxonomy.yaml',
+                                       DEV_ROOT / 'spec/scenario_taxonomy.yaml',
+                                       SKILL_ROOT / 'assets/scenario_taxonomy.json') if path.is_file()),
+                       DEV_ROOT / 'docs/scenario_taxonomy.yaml')
 ENTRY_ID = "2026-08-17-shap-feature-mechanism__fig01-shap-a-f"
 FAKE_GH_DIR = Path(__file__).resolve().parent / "fake_gh"
 FAKE_REPO_NAMES = {"dev": "jjd-wiki-dev", "vault": "jjd-wiki"}
@@ -380,7 +384,7 @@ def workspace(tmp_path):
                                    "D": "bar", "E": "beeswarm", "F": "radial_bar"}
     path.write_text(json.dumps(meta, ensure_ascii=False), encoding="utf-8", newline="\n")
     taxonomy = tmp_path / "taxonomy.yaml"
-    shutil.copyfile(DEV_ROOT / "spec/scenario_taxonomy.yaml", taxonomy)
+    shutil.copyfile(TAXONOMY_SOURCE, taxonomy)
     config_path = tmp_path / "config.json"
     config_path.write_text(json.dumps({
         "wiki_root": str(tmp_path / "wiki"),

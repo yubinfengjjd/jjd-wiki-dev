@@ -4,7 +4,7 @@ import shutil
 
 from fastapi.testclient import TestClient
 
-from conftest import DEV_ROOT, commit_count
+from conftest import DEV_ROOT, TAXONOMY_SOURCE, commit_count
 from rwiki.config import load_config
 from rwiki.lint import lint
 from rwiki.pages import read_page, write_page
@@ -40,7 +40,7 @@ def _method(root, mid, tags):
 
 def test_vocabulary_is_keys_and_labels_not_aliases(tmp_path):
     taxonomy = tmp_path / "taxonomy.yaml"
-    shutil.copyfile(DEV_ROOT / "spec/scenario_taxonomy.yaml", taxonomy)
+    shutil.copyfile(TAXONOMY_SOURCE, taxonomy)
     words = load_vocabulary(_config(tmp_path, str(taxonomy)))
     assert "single-cell" in words and "单细胞分析" in words
     assert "SHAP" not in words and "单细胞" not in words
@@ -64,7 +64,7 @@ def test_missing_taxonomy_file_uses_the_repo_spec(tmp_path):
 
 def test_lint_rejects_illegal_and_duplicate_tags(wiki_repo):
     config, _, _ = wiki_repo
-    shutil.copyfile(DEV_ROOT / "spec/scenario_taxonomy.yaml", config.taxonomy)
+    shutil.copyfile(TAXONOMY_SOURCE, config.taxonomy)
     root = config.wiki_root
     _method(root, "ok", ["single-cell", "转录组"])
     _method(root, "empty", [])
@@ -87,7 +87,7 @@ def test_lint_rejects_illegal_and_duplicate_tags(wiki_repo):
 
 def test_tags_api_rejects_unknown_and_keeps_vocabulary(wiki_repo):
     config, _, _ = wiki_repo
-    shutil.copyfile(DEV_ROOT / "spec/scenario_taxonomy.yaml", config.taxonomy)
+    shutil.copyfile(TAXONOMY_SOURCE, config.taxonomy)
     page = config.wiki_root / "methods/note.md"
     _method(config.wiki_root, "note", ["单细胞分析"])
     before = commit_count(config.wiki_root)
