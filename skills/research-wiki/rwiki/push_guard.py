@@ -84,7 +84,7 @@ def parse_allow(text: str, source: str = ALLOW_FILE) -> tuple[tuple[str, str], .
         rule_part, _, reason = line.partition("#")
         if not rule_part.strip():
             continue
-        fields = rule_part.split()
+        fields = rule_part.strip().split(maxsplit=1)
         if len(fields) != 2 or fields[0] not in ALLOWED_RULES:
             raise WikiError(f"{source}:{number}: 只接受 `abs-path|size <glob>  # 理由`，"
                             f"私有数据、课题数据、密码和私钥不可豁免: {line}")
