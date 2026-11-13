@@ -5,8 +5,8 @@
 ## 生成索引（只读 catalog）
 
 ```bash
-python3 frontend/search/build_index.py --wiki <jjd-wiki>/知识库 [--rev <jjd-wiki 提交号>]
-# 默认 --taxonomy spec/scenario_taxonomy.yaml，--out frontend/search/search-index.json
+python3 apps/web/search/build_index.py --wiki <jjd-wiki>/wiki [--rev <jjd-wiki 提交号>]
+# 默认 --taxonomy docs/scenario_taxonomy.yaml，--out apps/web/search/search-index.json
 ```
 
 - 条目数从 `catalog.jsonl` 实读，不写死；Wiki 增删条目后重跑即可。
@@ -17,7 +17,7 @@ python3 frontend/search/build_index.py --wiki <jjd-wiki>/知识库 [--rev <jjd-w
 ## 预览
 
 ```bash
-cd frontend/search && python3 -m http.server 8766 --bind 127.0.0.1
+cd apps/web/search && python3 -m http.server 8766 --bind 127.0.0.1
 # 打开 http://127.0.0.1:8766/index.html，默认结果标题打开 GitHub 源文件
 # 若 rwiki serve 正在 8765 端口运行：
 # http://127.0.0.1:8766/index.html?app=http%3A%2F%2F127.0.0.1%3A8765%2F
@@ -30,20 +30,19 @@ URL 参数：`?index=` 索引地址；`?app=` 可选的 rwiki 应用根（需运
 ## 测试
 
 ```bash
-cd frontend/search
+cd apps/web/search
 python3 -m unittest -v test_build_index
 node --test search-core.test.mjs
 ```
 
-CI 在前端检查启用时运行 Python 索引测试；`frontend/npm test` 同时运行搜索 Node 测试。
+CI 在前端检查启用时运行 Python 索引测试；`cd apps/web && npm test` 同时运行搜索 Node 测试。
 
 ## 全库正文与本地应用一致
 
 原有目录分面保留。切换“全库正文”后，使用引擎导出的分节正文、词频、别名和 BM25 参数排序；索引不包含用户备注、运行日志或数据。无需服务器即可在浏览器计算相关性。
 
 ```powershell
-D:\anaconda\python.exe -X utf8 frontend/search/export_full_index.py --config staged/research-wiki/config.json
-# 布局迁移后：D:\anaconda\python.exe -X utf8 apps/web/search/export_full_index.py --config skills/research-wiki/config.json
+D:\anaconda\python.exe -X utf8 apps/web/search/export_full_index.py --config skills/research-wiki/config.json
 ```
 
 导出程序自动寻找引擎，也可指定 `--engine <rwiki包所在目录>`；`--out` 默认同目录 `full-search-index.json`。页面 `?fullindex=<URL>` 可覆盖索引地址。hash 中 `mode=full&q=差异表达&scope=knowledge&runnable=true` 可分享全文查询。
