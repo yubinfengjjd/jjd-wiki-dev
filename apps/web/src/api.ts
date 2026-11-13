@@ -567,7 +567,7 @@ export function methodNoteLabel(meta: MethodMeta, workflow?: Workflow | null): s
 const STAGE_STATUS: Record<string, Status> = {
   checking: 'pending_template',
   unknown: 'pending_template',
-  archived: 'archived', complete: 'ready', signoff: 'pending_signoff',
+  archived: 'archived', complete: 'ready', repair_complete: 'ready', signoff: 'pending_signoff',
   template_confirm: 'draft', method_confirm: 'draft',
   template_work: 'pending_template', method_work: 'pending_template',
   layout_work: 'pending_template', template_missing: 'pending_template',

@@ -32,7 +32,7 @@ def workflow_snapshot(config) -> dict[str, dict]:
             if not errors and status == 'ready' and not acceptance_stale(root / path):
                 put(path, 'complete', None, '可用', '已确认可用；当前笔记与回放完整。')
             elif not errors and status == 'draft':
-                put(path, 'template_confirm', 'confirm', '待你确认',
+                put(path, 'template_confirm', 'confirm', '回放通过 · 待确认',
                     '已有成功回放记录及输出；对照图样后由作者确认，回放不自动标为可用。')
             else:
                 put(path, 'template_work', 'agent', '待完成回放',
@@ -60,11 +60,16 @@ def workflow_snapshot(config) -> dict[str, dict]:
                     put(path, 'method_implementation', 'agent', '待验证实现' if states else '待实现',
                         '笔记已确认；实现尚无当前有效验证，不作为可执行分析推荐。')
         elif kind == 'recipe' and status in ('draft', 'ready'):
+            from .repair_acceptance import validate_repair
             errors = entry_errors(config, root / path)
-            if not errors and status == 'ready' and not acceptance_stale(root / path):
+            repair_ok = validate_repair(config, root / path, require_approval=True)['valid']
+            if repair_ok:
+                put(path, 'repair_complete', None, '修补版运行通过',
+                    '作者已确认当前 repair/ 修补版的通过收据；原样 source/ 及其运行记录保持独立，修补确认不改变原样运行资格。')
+            elif not errors and status == 'ready' and not acceptance_stale(root / path):
                 put(path, 'complete', None, '可原样运行', '已确认；当前原字节有通过的原样运行收据。')
             elif not errors and status == 'draft':
-                put(path, 'recipe_confirm', 'confirm', '待你确认',
+                put(path, 'recipe_confirm', 'confirm', '原样运行通过 · 待确认',
                     '原样运行已通过；可与同批配方一起 mark-ready。运行通过不等于科学有效。')
             else:
                 waiting = any(message.startswith('最近运行为 not_run') for message in errors)
@@ -123,7 +128,7 @@ def workflow_snapshot(config) -> dict[str, dict]:
             waiting = all(result.get(p, {}).get('queue') == 'confirm'
                           for p in active if result.get(p, {}).get('stage') != 'complete')
             put(path, 'template_confirm' if waiting else 'template_work', None,
-                '模板待你确认' if waiting else '模板制作中',
+                '模板回放通过 · 待确认' if waiting else '模板制作中',
                 '工作列在关联模板，不再把来源重复计数。', active)
     return result
 

@@ -9,6 +9,31 @@ from rwiki.server import create_app
 from rwiki.templates import pending
 
 
+def test_passed_replay_labels_keep_author_confirmation_separate(tmp_path, monkeypatch):
+    from pathlib import Path
+    from rwiki.config import Config
+    from rwiki import workflow
+    root = tmp_path / 'wiki'
+    root.mkdir()
+    config = Config(root, tmp_path / 'gallery', tmp_path / 'taxonomy.json',
+                    Path('python'), Path('Rscript'), 8765)
+    pages = []
+    before = {}
+    for kind in ('recipe', 'template'):
+        path = root / f'{kind}s/example.md'
+        path.parent.mkdir()
+        path.write_text('original author material\n', encoding='utf-8')
+        before[path] = path.read_bytes()
+        pages.append((path, {'type': kind, 'id': 'example', 'status': 'draft'}))
+    monkeypatch.setattr(workflow, 'readable_pages', lambda _: pages)
+    monkeypatch.setattr(workflow, 'entry_errors', lambda *args: [])
+    result = workflow.workflow_snapshot(config)
+    assert result['recipes/example.md']['label'] == '原样运行通过 · 待确认'
+    assert result['templates/example.md']['label'] == '回放通过 · 待确认'
+    assert all(item['queue'] == 'confirm' for item in result.values())
+    assert all(path.read_bytes() == data for path, data in before.items())
+
+
 def single(config):
     page = config.wiki_root / f'layouts/{ENTRY_ID}.md'
     meta, body = read_page(page)
