@@ -52,7 +52,7 @@ class BuildIndexTest(unittest.TestCase):
             script = self.wiki / layout / "build_index.py"
             with patch.object(build_index, "__file__", str(script)), patch.object(export_full_index, "__file__", str(script)):
                 self.assertEqual(build_index.default_taxonomy().resolve(), spec.resolve())
-                self.assertEqual(export_full_index.engine_root(), canonical)
+                self.assertEqual(export_full_index.engine_root().resolve(), canonical.resolve())
 
     def test_entry_count_follows_catalog(self):
         for n in (3, 17):  # count is read, never assumed; growth shows up after rebuild
