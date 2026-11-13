@@ -137,6 +137,8 @@ def _record(path: Path, meta: dict, body: str, config: Config) -> dict:
               **{k:meta.get(k) or [] for k in ("chart_types", "tags", "keywords", "purposes", "inputs", "outputs")}}
     if kind == "method":
         result["method_kind"] = meta.get("method_kind")
+    if kind == 'layout':
+        result['reference_only'] = True
     if kind == "scenario":
         result["picks"] = meta.get("picks") or []
     if kind == "recipe":
@@ -419,6 +421,8 @@ def _fresh(config: Config, record: dict) -> dict | None:
                 current.update(id=record["id"],parent_id=record["parent_id"])
         elif kind=="item":
             current.update(usable=False,run="none")
+        elif kind == 'layout':
+            current.update(usable=False, run='none', reference_only=True)
         availability=_availability(config,path)
         current["asset_availability"]=availability.get("state", "missing")
         current["asset_details"]=availability
