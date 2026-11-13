@@ -1,0 +1,20 @@
+[
+  { "wait": 2500 },
+  { "eval": "location.hash = '#/page/methods/rf-shap-regression.md'; 'p'" },
+  { "wait": 2500 },
+  { "eval": "[...document.querySelectorAll('.page-side button')].find(b => b.textContent === '编辑').click(); 'edit'" },
+  { "wait": 500 },
+  { "eval": "document.getElementById('free-tags').value = ''; [...document.querySelectorAll('.page-side button.chip')].find(b => b.textContent === '化学信息与QSAR').click(); 'picked'" },
+  { "wait": 300 },
+  { "eval": "[...document.querySelectorAll('.page-side button')].find(b => b.textContent === '保存').click(); 'saved'" },
+  { "wait": 3000 },
+  { "eval": "[document.querySelectorAll('#free-tags').length, [...document.querySelectorAll('.page-side .chip')].map(c => c.textContent)]" },
+  { "eval": "[...document.querySelectorAll('.page-side button')].find(b => b.textContent === '编辑').click(); 'edit'" },
+  { "wait": 500 },
+  { "eval": "[...document.querySelectorAll('.page-side button.chip')].find(b => b.textContent === '化学信息与QSAR').click(); 'unpicked'" },
+  { "wait": 300 },
+  { "eval": "[...document.querySelectorAll('.page-side button')].find(b => b.textContent === '保存').click(); 'saved'" },
+  { "wait": 3000 },
+  { "eval": "[document.querySelectorAll('#free-tags').length, [...document.querySelectorAll('.page-side .chip')].map(c => c.textContent)]" },
+  { "shot": "15-e2e-scenarios.png" }
+]

@@ -1,0 +1,54 @@
+{
+  "wiki_root": "<vault>\\知识库",
+  "gallery_root": "<vault>\\画廊",
+  "taxonomy": "<skill>\\assets\\scenario_taxonomy.json",
+  "python_exe": "<home>\\.codex\\venvs\\sci-figure-replica\\Scripts\\python.exe",
+  "rscript_exe": "<R_HOME>\\bin\\Rscript.exe",
+  "port": 8765,
+  "function_defaults": {
+    "sizing": {
+      "mode": "adaptive",
+      "profile": "unbound",
+      "table": null,
+      "x": null,
+      "y": null,
+      "item_width_in": 0.8,
+      "item_height_in": 0.32,
+      "plot_width_in": 5.4,
+      "plot_height_in": 4.4,
+      "margins_in": [
+        0.9,
+        0.25,
+        0.85,
+        0.55
+      ],
+      "min_width_in": 3.2,
+      "min_height_in": 2.8,
+      "max_width_in": null,
+      "max_height_in": null,
+      "width_in": null,
+      "height_in": null,
+      "label_fontsize": 11,
+      "label_rotation": 45,
+      "label_gap_in": 0.12
+    }
+  },
+  "single_panel_only": true,
+  "sources_root": "<env>\\sources",
+  "work_root": "<env>\\work\\rwiki",
+  "r_libs": ["<env>\\R-lib\\figureya", "<env>\\R-lib-scp\\4.5"],
+  "cran_mirror": "https://cloud.r-project.org/",
+  "push_guard": {"max_file_mb": 5},
+  "env": {
+    "vars": {"HTTPS_PROXY": "http://<proxy-host>:<port>", "GH_PROMPT_DISABLED": "1"},
+    "path_prepend": ["<GitHub CLI 安装目录>"]
+  },
+  "github": {
+    "owner": "<login>",
+    "dev_repo": "jjd-wiki-dev",
+    "vault_repo": "jjd-wiki",
+    "dev_root": "<vault>\\开发",
+    "vault_root": "<vault>",
+    "worktree_root": "<env>\\worktrees"
+  }
+}

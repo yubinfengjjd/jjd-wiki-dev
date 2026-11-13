@@ -1,0 +1,26 @@
+[
+ {
+  "path": "/workspace/replications/2026-11-12_img07/v2.2/code/../source/full_original.png",
+  "h": 2160,
+  "n_strips": 14,
+  "bar_text_px_median": 19.0,
+  "bar_text_rel": 0.008796296296296297,
+  "n_bar_lines": 70,
+  "bar_text_px_p90": 20.0,
+  "bar_text_px_p10": 15.0,
+  "strip_text_px_median": 21.0,
+  "strip_text_rel": 0.009722222222222222
+ },
+ {
+  "path": "/workspace/replications/2026-11-12_img07/v2.2/output/replica.png",
+  "h": 2160,
+  "n_strips": 17,
+  "bar_text_px_median": 18.0,
+  "bar_text_rel": 0.008333333333333333,
+  "n_bar_lines": 88,
+  "bar_text_px_p90": 19.0,
+  "bar_text_px_p10": 15.0,
+  "strip_text_px_median": 21.0,
+  "strip_text_rel": 0.009722222222222222
+ }
+]

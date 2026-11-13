@@ -1,0 +1,56 @@
+.research-neural-view { padding: 0 !important; overflow: hidden; height: 100%; min-height: 0; container-type: inline-size; }
+.research-neural-view .neural[data-paused="true"] *, .research-neural-view .neural[data-paused="true"] *::before, .research-neural-view .neural[data-paused="true"] *::after { animation-play-state: paused !important; }
+.research-neural-view .neural { min-height: 0; height: 100%; width: 100%; }
+.research-neural-view .home-stage { height: 100%; min-height: 420px; }
+.research-neural-view button { box-shadow: none; height: auto; }
+.research-neural-view .jelly { height: 150px; }
+.research-neural-view .jelly-label { height: auto; }
+.research-neural-view .fan-item { height: 30px; }
+.research-neural-view .hub-copy { top: 36px; left: 28px; }
+.research-neural-view .hub-copy h1 { font-size: clamp(23px, 2.8vw, 36px); }
+.research-neural-view .stage-tools { top: 18px; right: 20px; }
+.research-neural-view .crumbs { top: 18px; left: 16px; max-width: calc(100% - 32px); }
+.research-neural-view .legend { top: 72px; right: 20px; }
+.research-neural-view .analysis-wrap { top: 64px; bottom: 56px; }
+.research-neural-view .stage-note .stage-tools { display: flex; }
+.research-neural-view .neural-source { color: var(--text-2); margin: 0; padding: 2px 6px; font-size: 11px; text-align: center; }
+.research-neural-view .dock { width: min(600px, calc(100% - 32px)); bottom: 16px; }
+.research-neural-view .neural-pagination { position: absolute; bottom: 10px; left: 50%; transform: translateX(-50%); z-index: 10; display: flex; align-items: center; gap: 8px; padding: 5px 10px; font-size: 11px; white-space: nowrap; }
+.research-neural-view .neural-pagination input { width: 170px; height: 28px; background: transparent; border: 0; color: var(--text); }
+.research-neural-view .neural-pagination button { color: var(--text); border: 0; background: transparent; padding: 2px 6px; }
+.research-neural-view .neural-pagination button:disabled { opacity: .35; }
+.research-neural-view .neural-reference-list { margin-top: 22px; }
+.research-neural-view .neural-reference-list h3 { font-size: 13px; font-weight: 500; }
+.research-neural-view .neural-reference, .research-neural-view .neural-unresolved { display: grid; gap: 3px; padding: 9px 10px; margin-bottom: 5px; width: 100%; text-align: left; white-space: normal; font-size: 12px; border: 1px solid var(--line); border-radius: 9px; background: rgba(255,255,255,.025); color: var(--text); word-break: break-word; }
+.research-neural-view .neural-reference:hover { border-color: var(--gold); }
+.research-neural-view .neural-reference small, .research-neural-view .neural-unresolved small { font-size: 10px; color: var(--text-2); }
+.research-neural-view .neural-unresolved { color: var(--text-2); }
+.research-neural-view .neural-boundary { color: var(--text-2); font-size: 11px; padding-top: 16px; border-top: 1px solid var(--line); }
+.research-neural-view .an-status code { white-space: pre-wrap; word-break: break-word; font-size: 12px; }
+.research-neural-view .neural-error { position: absolute; bottom: 0; color: #ffb0bb; z-index: 20; }
+.research-neural-view .neural-message { padding: 30px; }
+@media (max-width: 760px) {
+  .research-neural-view .hub-copy { top: 28px; left: 16px; max-width: 240px; }
+  .research-neural-view .stage-tools { display: flex; gap: 0; right: 8px; top: 8px; }
+  .research-neural-view .stage-tools button { padding: 5px; font-size: 10px; }
+  .research-neural-view .analysis-wrap { left: 8px; right: 8px; top: 210px; bottom: 60px; width: auto; height: auto; }
+  .research-neural-view .stage-note .fan-item { visibility: hidden; }
+  .research-neural-view .neural-pagination input { width: 120px; }
+  .research-neural-view .crumbs { top: 48px; }
+}
+@container (max-width: 760px) {
+  .research-neural-view .hub-copy { top: 28px; left: 16px; max-width: 240px; }
+  .research-neural-view .hub-copy h1 { font-size: 23px; }
+  .research-neural-view .hub-meta, .research-neural-view .hub-hint, .research-neural-view .legend { display: none; }
+  .research-neural-view .stage-tools { display: flex; gap: 0; right: 8px; top: 8px; }
+  .research-neural-view .stage-tools button { padding: 5px; font-size: 10px; }
+  .research-neural-view .analysis-wrap { left: 8px; right: 8px; top: 210px; bottom: 60px; width: auto; height: auto; }
+  .research-neural-view .stage-note .fan-item { visibility: hidden; }
+  .research-neural-view .neural-pagination input { width: 120px; }
+  .research-neural-view .crumbs { top: 48px; }
+  .research-neural-view .jelly-label { min-width: 0; padding: 6px 9px; }
+  .research-neural-view .jl-count { font-size: 16px; }
+  .research-neural-view .jl-sub { display: none; }
+  .research-neural-view .dock-kpis div { padding: 0 6px; }
+  .research-neural-view .dock-kpis span { font-size: 9px; }
+}

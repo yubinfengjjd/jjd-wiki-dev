@@ -1,0 +1,16 @@
+[
+  { "wait": 3000 },
+  { "eval": "location.hash = '#/page/templates/2026-08-17-shap-feature-mechanism__fig01-shap-a-f.md'" },
+  { "wait": 2500 },
+  { "eval": "[...document.querySelectorAll('.page-side button')].find(b => b.textContent.includes('收藏')).textContent" },
+  { "eval": "[...document.querySelectorAll('.page-side button')].find(b => b.textContent.includes('收藏')).click(); 'clicked'" },
+  { "wait": 2500 },
+  { "eval": "[...document.querySelectorAll('.page-side button')].find(b => b.textContent.includes('收藏')).textContent" },
+  { "shot": "e2e-favorite.png" },
+  { "eval": "[...document.querySelectorAll('.page-side button')].find(b => b.textContent.includes('收藏')).click(); 'clicked again'" },
+  { "wait": 2500 },
+  { "eval": "[...document.querySelectorAll('.page-side button')].find(b => b.textContent.includes('收藏')).textContent" },
+  { "eval": "location.hash = '#/log'" },
+  { "wait": 1500 },
+  { "eval": "[...document.querySelectorAll('.log li')].slice(0, 3).map(li => li.textContent)" }
+]

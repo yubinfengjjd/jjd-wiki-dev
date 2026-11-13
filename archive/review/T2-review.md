@@ -1,0 +1,37 @@
+<!-- rwiki-migrated: issue=https://github.com/yubinfengjjd/jjd-wiki-dev/issues/5 -->
+> 已迁移，停止维护：https://github.com/yubinfengjjd/jjd-wiki-dev/issues/5
+
+# T2 审查
+
+结论：**退回一处（模板不能换数据）**，其余通过。
+
+## 独立核实
+
+- 回放像素差 0：`render.py` 是真实的 matplotlib 绘图代码，没有读取或复制原图。用同样的代码和数据重画，输出与 replica.png 字节一致（SHA-256 相同），可信。
+- T1 的 3 处小修已完成：null 来源整行省略、标题只用 label；history 判断已删；resolve 不再重复拆分。
+- 命令代码（spec.py、templates.py、process.py、cli.py）：职责清楚，子进程失败时带命令、退出码和 stderr；只在边界做校验（spec.json 和 --style 都是外部输入），没有宽泛 except。通过。
+
+## 退回：模板只能吃原数据
+
+把示例数据改成每行 10 个特征、数值放大 3 倍后运行 render.py：
+
+```
+ValueError: Expected 15 matching bar/radial features per row
+```
+
+render.py 里按原图数据写死的东西：
+- 每行必须正好 15 个特征。
+- 条形图 xlim（0.16 / 0.1）和刻度、蜂群图 xlim 和刻度、环形图色标 vmin/vmax 和刻度。
+- `bar_palettes` 是按 15 根条取样的颜色，和 15 个特征一一对应。
+- 环形 inset 的角度和高度按 15 个扇区写死。
+- 行数固定为 2（A–C、D–F），面板字母和位置也写死。
+
+R5 要求“可换数据套用”，现在只能 1:1 回放，模板化失去意义。
+
+## 返工要求
+
+见 `T2修订任务书.md`。
+
+## 环境问题
+
+- 审查时 E 盘剩余空间一度为 0，审查文件也写不进去；Codex 最后一次测试因磁盘空间不足失败。今天在 E 盘只写入了约 348 MB（开发目录约 250 MB，其中前端依赖 174 MB），E 盘在此之前就已接近写满。删除自己生成的截图后，E 盘剩余约 1.5 GB（同一时间有其他程序释放了空间）。
