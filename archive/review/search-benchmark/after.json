@@ -1,0 +1,906 @@
+{
+  "engine": "section BM25 index v5",
+  "baseline_head": "76d4bd7cbc8ad0bb57cf45e4b9fb078866d2d864",
+  "current_head": "3fb3758e641a6f2405dec000c92449a4cb893e11",
+  "metrics": {
+    "cases": 40,
+    "recall_at_3": 0.975,
+    "recall_at_5": 0.975,
+    "recall_at_10": 1.0,
+    "mrr_at_10": 0.9035714285714287
+  },
+  "by_category": {
+    "template": {
+      "cases": 10,
+      "recall_at_3": 1.0,
+      "recall_at_5": 1.0,
+      "recall_at_10": 1.0,
+      "mrr_at_10": 1.0
+    },
+    "limitations": {
+      "cases": 5,
+      "recall_at_3": 1.0,
+      "recall_at_5": 1.0,
+      "recall_at_10": 1.0,
+      "mrr_at_10": 1.0
+    },
+    "theory": {
+      "cases": 10,
+      "recall_at_3": 0.9,
+      "recall_at_5": 0.9,
+      "recall_at_10": 1.0,
+      "mrr_at_10": 0.8476190476190476
+    },
+    "method": {
+      "cases": 15,
+      "recall_at_3": 1.0,
+      "recall_at_5": 1.0,
+      "recall_at_10": 1.0,
+      "mrr_at_10": 0.8444444444444444
+    }
+  },
+  "cases": [
+    {
+      "category": "method",
+      "query": "我想做差异表达分析",
+      "expected_ids": [
+        "differential-expression"
+      ],
+      "kind": null,
+      "ids": [
+        "figureya-119multiclasslimma",
+        "figureya-118multiclassdeseq2",
+        "differential-expression",
+        "figureya-120multiclassedger",
+        "figureya-149rankheatmap",
+        "scp-de-enrichment-dynamic",
+        "figureya-59plus-geo2deg",
+        "scp-local-source",
+        "scp-visualization-interface",
+        "differential-enrichment"
+      ],
+      "rank": 3,
+      "duration_ms": 1632.73
+    },
+    {
+      "category": "method",
+      "query": "我想给细胞做注释",
+      "expected_ids": [
+        "cell-type-annotation"
+      ],
+      "kind": null,
+      "ids": [
+        "dimension-reduction-single-cell",
+        "2026-10-22-scp-example__fig17-group-heatmap-dot--heatmap",
+        "cell-type-annotation",
+        "scrna-marker-annotation",
+        "figureya-194pyscenic",
+        "scp-visualization-interface",
+        "scp-annotation-projection",
+        "figureya-310cpdbchordgramv2",
+        "asthma-lactylation-workflow",
+        "2026-10-22-scp-example__fig08-group-heatmap"
+      ],
+      "rank": 3,
+      "duration_ms": 1315.49
+    },
+    {
+      "category": "method",
+      "query": "批次整合 Harmony",
+      "expected_ids": [
+        "batch-integration"
+      ],
+      "kind": null,
+      "ids": [
+        "batch-integration",
+        "scp-integration",
+        "scrna-preprocess-doublet-qc-harmony",
+        "scp-standard-workflow",
+        "figureya-203combat",
+        "reference-mapping",
+        "scop-analysis-guide",
+        "scp-local-source",
+        "scp-visualization-interface",
+        "scp-source-catalog"
+      ],
+      "rank": 1,
+      "duration_ms": 2823.59
+    },
+    {
+      "category": "method",
+      "query": "双细胞检测",
+      "expected_ids": [
+        "doublet-detection"
+      ],
+      "kind": null,
+      "ids": [
+        "scp-cellqc-doublet",
+        "doublet-detection",
+        "scrna-preprocess-doublet-qc-harmony",
+        "scp-standard-workflow",
+        "scp-local-source",
+        "scp-visualization-interface",
+        "scp-source-catalog",
+        "cell-quality-control",
+        "scop-analysis-guide",
+        "venn"
+      ],
+      "rank": 2,
+      "duration_ms": 2376.64
+    },
+    {
+      "category": "method",
+      "query": "细胞质量控制",
+      "expected_ids": [
+        "cell-quality-control"
+      ],
+      "kind": null,
+      "ids": [
+        "cell-quality-control",
+        "scp-cellqc-doublet",
+        "scrna-preprocess-doublet-qc-harmony",
+        "scp-standard-workflow",
+        "scp-local-source",
+        "scp-visualization-interface",
+        "doublet-detection",
+        "scp-source-catalog",
+        "scop-analysis-guide",
+        "figureya-206scheatmap"
+      ],
+      "rank": 1,
+      "duration_ms": 2317.05
+    },
+    {
+      "category": "method",
+      "query": "细胞聚类分析",
+      "expected_ids": [
+        "cell-clustering"
+      ],
+      "kind": null,
+      "ids": [
+        "cell-clustering",
+        "scrna-marker-annotation",
+        "scp-standard-workflow",
+        "scrna-preprocess-doublet-qc-harmony",
+        "scp-local-source",
+        "scp-visualization-interface",
+        "figureya-69cancersubtype",
+        "figureya-81immune-network",
+        "figureya-45v2",
+        "figureya-202consensusgene"
+      ],
+      "rank": 1,
+      "duration_ms": 2617.95
+    },
+    {
+      "category": "method",
+      "query": "降维 PCA UMAP",
+      "expected_ids": [
+        "dimensionality-reduction"
+      ],
+      "kind": null,
+      "ids": [
+        "dimensionality-reduction",
+        "dimension-reduction-single-cell",
+        "scp-standard-workflow",
+        "cell-clustering",
+        "figureya-38pca",
+        "figureya-231scscore",
+        "figureya-204pcascore",
+        "figureya-229pcoa",
+        "umap",
+        "scp-trajectory-velocity"
+      ],
+      "rank": 1,
+      "duration_ms": 2813.46
+    },
+    {
+      "category": "method",
+      "query": "通路富集 GSEA",
+      "expected_ids": [
+        "gene-set-enrichment"
+      ],
+      "kind": null,
+      "ids": [
+        "figureya-5bubbles",
+        "gene-set-enrichment",
+        "scp-de-enrichment-dynamic",
+        "figureya-83enrichment",
+        "2026-10-22-scp-example__fig08-group-heatmap--heatmap",
+        "figureya-60gsea-clusterprofilerv2",
+        "differential-enrichment",
+        "figureya-109subtypegsea-update",
+        "figureya-13gsea-java-update",
+        "figureya-253pangsea"
+      ],
+      "rank": 2,
+      "duration_ms": 3002.77
+    },
+    {
+      "category": "method",
+      "query": "基因集打分 AddModuleScore",
+      "expected_ids": [
+        "gene-set-scoring"
+      ],
+      "kind": null,
+      "ids": [
+        "gene-set-scoring",
+        "scrna-pathway-signature-ensemble",
+        "figureya-275scaucell",
+        "uc-ptm-workflow",
+        "uc-ptm-source-catalog",
+        "figureya-294hccdrug",
+        "scp-de-enrichment-dynamic",
+        "gene-set-enrichment",
+        "figureya-109subtypegsea-update",
+        "figureya-318genesetdedotplot"
+      ],
+      "rank": 1,
+      "duration_ms": 2552.06
+    },
+    {
+      "category": "method",
+      "query": "参考映射标签转移",
+      "expected_ids": [
+        "reference-mapping"
+      ],
+      "kind": null,
+      "ids": [
+        "reference-mapping",
+        "scp-annotation-projection",
+        "cell-type-annotation",
+        "scop-analysis-guide",
+        "scp-viz-model-overlays",
+        "scrna-marker-annotation",
+        "scop-visualization-guide",
+        "figureya-113mutsigcv",
+        "figureya-148simpledendrogram",
+        "2026-10-22-scp-example__fig10-sankey--sankey"
+      ],
+      "rank": 1,
+      "duration_ms": 2750.85
+    },
+    {
+      "category": "method",
+      "query": "RNA velocity",
+      "expected_ids": [
+        "rna-velocity"
+      ],
+      "kind": null,
+      "ids": [
+        "rna-velocity",
+        "figureya-archive-20251223:FigureYa177RNAvelocity",
+        "scp-viz-model-overlays",
+        "scp-trajectory-velocity",
+        "scp-local-source",
+        "scp-visualization-interface",
+        "figureya-34count2fpkmv2",
+        "cell-quality-control",
+        "scop-analysis-guide",
+        "scp-source-catalog"
+      ],
+      "rank": 1,
+      "duration_ms": 2646.5
+    },
+    {
+      "category": "method",
+      "query": "拟时序轨迹推断",
+      "expected_ids": [
+        "trajectory-inference"
+      ],
+      "kind": null,
+      "ids": [
+        "trajectory-inference",
+        "scp-trajectory-velocity",
+        "dynamic-feature-analysis",
+        "scp-viz-model-overlays",
+        "scp-local-source",
+        "scp-visualization-interface",
+        "dimension-reduction-single-cell",
+        "scp-viz-heatmaps",
+        "trend",
+        "uc-ptm-workflow"
+      ],
+      "rank": 1,
+      "duration_ms": 2712.26
+    },
+    {
+      "category": "method",
+      "query": "动态基因特征分析",
+      "expected_ids": [
+        "dynamic-feature-analysis"
+      ],
+      "kind": null,
+      "ids": [
+        "dynamic-feature-analysis",
+        "scp-de-enrichment-dynamic",
+        "scp-trajectory-velocity",
+        "figureya-10chromosomev2-update",
+        "scp-local-source",
+        "scp-visualization-interface",
+        "trajectory-inference",
+        "2026-10-22-scp-example__fig16-cell-density",
+        "rna-velocity",
+        "scp-viz-heatmaps"
+      ],
+      "rank": 1,
+      "duration_ms": 2858.29
+    },
+    {
+      "category": "method",
+      "query": "模型解释 SHAP",
+      "expected_ids": [
+        "shap-explanation"
+      ],
+      "kind": null,
+      "ids": [
+        "shap-explanation",
+        "model-explanation",
+        "2026-08-17-shap-feature-mechanism__fig01-shap-a-f--beeswarm",
+        "2026-08-17-shap-feature-mechanism__fig01-shap-a-f--bar",
+        "2026-08-17-shap-feature-mechanism__fig01-shap-a-f--radial-bar",
+        "shap-summary",
+        "shap-samples",
+        "beeswarm",
+        "regression-resampling-evaluation",
+        "figureya-48adonis"
+      ],
+      "rank": 1,
+      "duration_ms": 2739.8
+    },
+    {
+      "category": "method",
+      "query": "回归模型折外预测",
+      "expected_ids": [
+        "regression-resampling-evaluation"
+      ],
+      "kind": null,
+      "ids": [
+        "regression-resampling-evaluation",
+        "regression-fold-metrics",
+        "regression-predictions",
+        "2026-10-19-regression-stability__fig03-density-panel",
+        "2026-10-19-regression-stability__fig04-boxplot-panel",
+        "2026-10-19-regression-stability__fig04-boxplot-panel--boxplot",
+        "2026-10-19-regression-stability__fig03-density-panel--density-scatter",
+        "density-scatter",
+        "figureya-archive-20251223:FigureYa138NiceCalibration",
+        "shap-explanation"
+      ],
+      "rank": 1,
+      "duration_ms": 2654.56
+    },
+    {
+      "category": "template",
+      "query": "SHAP 蜂群图",
+      "expected_ids": [
+        "2026-08-17-shap-feature-mechanism__fig01-shap-a-f--beeswarm"
+      ],
+      "kind": "template",
+      "ids": [
+        "2026-08-17-shap-feature-mechanism__fig01-shap-a-f--beeswarm",
+        "2026-08-17-shap-feature-mechanism__fig01-shap-a-f--radial-bar",
+        "2026-08-17-shap-feature-mechanism__fig01-shap-a-f--bar",
+        "2026-10-19-regression-stability__fig04-boxplot-panel--boxplot",
+        "2026-10-19-regression-stability__fig03-density-panel--density-scatter"
+      ],
+      "rank": 1,
+      "duration_ms": 2380.59
+    },
+    {
+      "category": "template",
+      "query": "SHAP 平均绝对值条形图",
+      "expected_ids": [
+        "2026-08-17-shap-feature-mechanism__fig01-shap-a-f--bar"
+      ],
+      "kind": "template",
+      "ids": [
+        "2026-08-17-shap-feature-mechanism__fig01-shap-a-f--bar",
+        "2026-08-17-shap-feature-mechanism__fig01-shap-a-f--radial-bar",
+        "2026-08-17-shap-feature-mechanism__fig01-shap-a-f--beeswarm",
+        "2026-10-19-regression-stability__fig04-boxplot-panel--boxplot",
+        "2026-10-22-scp-example__fig02-ring--ring",
+        "2026-10-22-scp-example__fig01-volcano--volcano",
+        "2026-10-19-regression-stability__fig03-density-panel--density-scatter",
+        "2026-10-22-glaucoma-scrna__fig02-marker-feature-umap--umap",
+        "2026-10-22-glaucoma-scrna__fig03-topjournal-bubble--dotplot",
+        "2026-10-22-scp-example__fig13-upset--upset"
+      ],
+      "rank": 1,
+      "duration_ms": 2549.72
+    },
+    {
+      "category": "template",
+      "query": "单细胞 UMAP 分组着色",
+      "expected_ids": [
+        "2026-10-22-glaucoma-scrna__fig01-cns-umap--umap"
+      ],
+      "kind": "template",
+      "ids": [
+        "2026-10-22-glaucoma-scrna__fig01-cns-umap--umap",
+        "2026-10-22-glaucoma-scrna__fig02-marker-feature-umap--umap",
+        "figureya-59volcanov2--volcano",
+        "2026-10-22-scp-example__fig03-pie--pie",
+        "2026-10-22-scp-example__fig07-dot--dot",
+        "2026-10-22-scp-example__fig09-bar--bar",
+        "2026-10-22-scp-example__fig04-rose--rose",
+        "2026-10-22-scp-example__fig05-trend--trend",
+        "2026-10-22-scp-example__fig06-area--area",
+        "2026-10-22-scp-example__fig08-group-heatmap--heatmap"
+      ],
+      "rank": 1,
+      "duration_ms": 2829.35
+    },
+    {
+      "category": "template",
+      "query": "marker 表达气泡点图",
+      "expected_ids": [
+        "2026-10-22-glaucoma-scrna__fig03-topjournal-bubble--dotplot"
+      ],
+      "kind": "template",
+      "ids": [
+        "2026-10-22-glaucoma-scrna__fig03-topjournal-bubble--dotplot",
+        "2026-10-22-glaucoma-scrna__fig02-marker-feature-umap--umap",
+        "2026-10-22-scp-example__fig08-group-heatmap--heatmap",
+        "2026-10-22-scp-example__fig14-feature-heatmap--heatmap",
+        "2026-10-22-scp-example__fig07-dot--dot",
+        "figureya-59volcanov2--volcano",
+        "2026-10-22-scp-example__fig16-cell-density--ridge",
+        "2026-10-22-scp-example__fig01-volcano--volcano",
+        "2026-10-22-glaucoma-scrna__fig01-cns-umap--umap",
+        "2026-10-22-glaucoma-scrna__fig04-cell-proportion-flow--stacked-bar-flow"
+      ],
+      "rank": 1,
+      "duration_ms": 2372.56
+    },
+    {
+      "category": "template",
+      "query": "细胞比例堆叠流带",
+      "expected_ids": [
+        "2026-10-22-glaucoma-scrna__fig04-cell-proportion-flow--stacked-bar-flow"
+      ],
+      "kind": "template",
+      "ids": [
+        "2026-10-22-glaucoma-scrna__fig04-cell-proportion-flow--stacked-bar-flow",
+        "2026-10-22-scp-example__fig01-volcano--volcano",
+        "2026-10-22-scp-example__fig02-ring--ring",
+        "2026-10-22-scp-example__fig17-group-heatmap-dot--heatmap",
+        "2026-10-22-scp-example__fig08-group-heatmap--heatmap",
+        "2026-10-22-scp-example__fig05-trend--trend",
+        "2026-10-22-scp-example__fig06-area--area",
+        "2026-10-22-scp-example__fig09-bar--bar",
+        "2026-10-22-scp-example__fig03-pie--pie",
+        "2026-10-22-scp-example__fig07-dot--dot"
+      ],
+      "rank": 1,
+      "duration_ms": 2384.32
+    },
+    {
+      "category": "template",
+      "query": "通路评分小提琴图",
+      "expected_ids": [
+        "2026-10-22-glaucoma-scrna__fig06-pathway-violin--violin"
+      ],
+      "kind": "template",
+      "ids": [
+        "2026-10-22-glaucoma-scrna__fig06-pathway-violin--violin",
+        "2026-10-22-scp-example__fig16-cell-density--ridge",
+        "figureya-59volcanov2--volcano",
+        "2026-10-22-scp-example__fig08-group-heatmap--heatmap"
+      ],
+      "rank": 1,
+      "duration_ms": 2060.09
+    },
+    {
+      "category": "template",
+      "query": "差异基因火山图",
+      "expected_ids": [
+        "2026-10-22-scp-example__fig01-volcano--volcano"
+      ],
+      "kind": "template",
+      "ids": [
+        "2026-10-22-scp-example__fig01-volcano--volcano",
+        "figureya-59volcanov2--volcano",
+        "2026-10-22-scp-example__fig13-upset--upset",
+        "2026-10-22-scp-example__fig12-venn--venn",
+        "2026-10-22-glaucoma-scrna__fig02-marker-feature-umap--umap",
+        "2026-10-22-scp-example__fig14-feature-heatmap--heatmap",
+        "2026-10-22-scp-example__fig17-group-heatmap-dot--heatmap",
+        "2026-10-22-glaucoma-scrna__fig03-topjournal-bubble--dotplot",
+        "2026-10-22-glaucoma-scrna__fig01-cns-umap--umap",
+        "2026-10-22-scp-example__fig08-group-heatmap--heatmap"
+      ],
+      "rank": 1,
+      "duration_ms": 2575.06
+    },
+    {
+      "category": "template",
+      "query": "分组同心环比例图",
+      "expected_ids": [
+        "2026-10-22-scp-example__fig02-ring--ring"
+      ],
+      "kind": "template",
+      "ids": [
+        "2026-10-22-scp-example__fig02-ring--ring",
+        "2026-10-22-glaucoma-scrna__fig04-cell-proportion-flow--stacked-bar-flow",
+        "figureya-59volcanov2--volcano",
+        "2026-10-22-scp-example__fig17-group-heatmap-dot--heatmap",
+        "2026-10-22-scp-example__fig07-dot--dot",
+        "2026-10-22-scp-example__fig03-pie--pie",
+        "2026-10-22-scp-example__fig09-bar--bar",
+        "2026-10-22-scp-example__fig08-group-heatmap--heatmap",
+        "2026-10-22-scp-example__fig10-sankey--sankey",
+        "2026-10-22-scp-example__fig05-trend--trend"
+      ],
+      "rank": 1,
+      "duration_ms": 2500.14
+    },
+    {
+      "category": "template",
+      "query": "分组流向桑基图",
+      "expected_ids": [
+        "2026-10-22-scp-example__fig10-sankey--sankey"
+      ],
+      "kind": "template",
+      "ids": [
+        "2026-10-22-scp-example__fig10-sankey--sankey",
+        "2026-10-22-scp-example__fig11-chord--chord",
+        "2026-10-22-glaucoma-scrna__fig04-cell-proportion-flow--stacked-bar-flow",
+        "2026-10-22-scp-example__fig13-upset--upset",
+        "2026-10-22-scp-example__fig12-venn--venn",
+        "2026-10-22-scp-example__fig08-group-heatmap--heatmap",
+        "2026-10-22-scp-example__fig09-bar--bar",
+        "2026-10-22-scp-example__fig17-group-heatmap-dot--heatmap",
+        "2026-10-22-glaucoma-scrna__fig06-pathway-violin--violin",
+        "2026-10-22-scp-example__fig03-pie--pie"
+      ],
+      "rank": 1,
+      "duration_ms": 2519.3
+    },
+    {
+      "category": "template",
+      "query": "生存曲线风险表",
+      "expected_ids": [
+        "figureya-1survivalcurve-update--km-curve"
+      ],
+      "kind": "template",
+      "ids": [
+        "figureya-1survivalcurve-update--km-curve",
+        "figureya-6rhrsv2--forest",
+        "2026-10-22-scp-example__fig16-cell-density--ridge"
+      ],
+      "rank": 1,
+      "duration_ms": 2061.19
+    },
+    {
+      "category": "theory",
+      "query": "细胞级 p 值和样本级推断",
+      "expected_ids": [
+        "differential-expression"
+      ],
+      "kind": null,
+      "ids": [
+        "differential-expression",
+        "scrna-preprocess-doublet-qc-harmony",
+        "render-group-summaries",
+        "render-grouped-values",
+        "gene-set-scoring",
+        "volcano",
+        "cell-clustering",
+        "scrna-pathway-signature-ensemble",
+        "2026-10-22-scp-example__fig01-volcano",
+        "scp-de-enrichment-dynamic"
+      ],
+      "rank": 1,
+      "duration_ms": 2274.18
+    },
+    {
+      "category": "theory",
+      "query": "SingleR 参考标签与 marker 路线区别",
+      "expected_ids": [
+        "cell-type-annotation"
+      ],
+      "kind": null,
+      "ids": [
+        "cell-type-annotation",
+        "scp-annotation-projection",
+        "reference-mapping",
+        "scrna-marker-annotation",
+        "render-group-summaries",
+        "figureya-315singlerfraction",
+        "render-umap-groups",
+        "render-correlation-heatmap",
+        "bulk-de-table",
+        "bar"
+      ],
+      "rank": 1,
+      "duration_ms": 2382.42
+    },
+    {
+      "category": "theory",
+      "query": "spliced unspliced 计数输入",
+      "expected_ids": [
+        "rna-velocity"
+      ],
+      "kind": null,
+      "ids": [
+        "rna-velocity",
+        "scp-trajectory-velocity",
+        "figureya-23count2tpm",
+        "scop-analysis-guide",
+        "figureya-21tcga2table",
+        "2026-10-22-scp-example__fig09-bar",
+        "2026-10-22-scp-example__fig09-bar--bar",
+        "2026-10-22-scp-example__fig12-venn--venn",
+        "scp-viz-statplots",
+        "2026-10-22-scp-example__fig05-trend"
+      ],
+      "rank": 1,
+      "duration_ms": 2321.7
+    },
+    {
+      "category": "theory",
+      "query": "不同打分方法的量纲和假设",
+      "expected_ids": [
+        "gene-set-scoring"
+      ],
+      "kind": null,
+      "ids": [
+        "gene-set-scoring",
+        "scop-analysis-guide",
+        "scp-de-enrichment-dynamic",
+        "density-scatter",
+        "trend",
+        "scrna-pathway-signature-ensemble",
+        "umap",
+        "trajectory-inference",
+        "render-correlation-heatmap",
+        "uc-ptm-source-catalog"
+      ],
+      "rank": 1,
+      "duration_ms": 2332.69
+    },
+    {
+      "category": "theory",
+      "query": "ORA 与 GSEA 输入区别",
+      "expected_ids": [
+        "gene-set-enrichment"
+      ],
+      "kind": null,
+      "ids": [
+        "gene-set-enrichment",
+        "render-dotplot-long",
+        "render-correlation-heatmap",
+        "render-cell-membership",
+        "render-feature-heatmap",
+        "render-cell-linkage",
+        "render-cell-feature-values",
+        "render-group-heatmap",
+        "bulk-de-table",
+        "subgroup-effect-table"
+      ],
+      "rank": 1,
+      "duration_ms": 2234.85
+    },
+    {
+      "category": "theory",
+      "query": "聚类分辨率的意义",
+      "expected_ids": [
+        "cell-clustering"
+      ],
+      "kind": null,
+      "ids": [
+        "cell-clustering",
+        "scrna-marker-annotation",
+        "scrna-preprocess-doublet-qc-harmony",
+        "scp-standard-workflow",
+        "scp-trajectory-velocity",
+        "figureya-69cancersubtype",
+        "heatmap",
+        "figureya-202consensusgene",
+        "figureya-45v2",
+        "figureya-148simpledendrogram"
+      ],
+      "rank": 1,
+      "duration_ms": 2239.89
+    },
+    {
+      "category": "theory",
+      "query": "拟时序不是真实时间",
+      "expected_ids": [
+        "trajectory-inference"
+      ],
+      "kind": null,
+      "ids": [
+        "trajectory-inference",
+        "dynamic-feature-analysis",
+        "scp-viz-heatmaps",
+        "uc-ptm-workflow",
+        "asthma-lactylation-workflow",
+        "scop-analysis-guide",
+        "scp-viz-model-overlays",
+        "scp-trajectory-velocity",
+        "2026-10-22-scp-example__fig09-bar--bar",
+        "trend"
+      ],
+      "rank": 1,
+      "duration_ms": 2394.84
+    },
+    {
+      "category": "theory",
+      "query": "折间相关性和重复交叉验证",
+      "expected_ids": [
+        "regression-resampling-evaluation"
+      ],
+      "kind": null,
+      "ids": [
+        "regression-resampling-evaluation",
+        "figureya-221tenfoldrf",
+        "figureya-9heatmap",
+        "regression-predictions",
+        "2026-10-22-scp-example__fig12-venn",
+        "figureya-archive-20251223:FigureYa143survCor",
+        "figureya-300pancancor",
+        "2026-10-22-scp-example__fig12-venn--venn",
+        "venn",
+        "figureya-34count2fpkmv2"
+      ],
+      "rank": 1,
+      "duration_ms": 2536.51
+    },
+    {
+      "category": "theory",
+      "query": "SHAP 背景分布和输出单位",
+      "expected_ids": [
+        "shap-explanation"
+      ],
+      "kind": null,
+      "ids": [
+        "2026-08-17-shap-feature-mechanism__fig01-shap-a-f--beeswarm",
+        "2026-08-17-shap-feature-mechanism__fig01-shap-a-f--radial-bar",
+        "2026-08-17-shap-feature-mechanism__fig01-shap-a-f--bar",
+        "beeswarm",
+        "shap-summary",
+        "2026-10-19-regression-stability__fig03-density-panel",
+        "shap-explanation",
+        "volcano",
+        "scp-de-enrichment-dynamic",
+        "regression-resampling-evaluation"
+      ],
+      "rank": 7,
+      "duration_ms": 2340.29
+    },
+    {
+      "category": "theory",
+      "query": "批次与生物条件混杂",
+      "expected_ids": [
+        "batch-integration"
+      ],
+      "kind": null,
+      "ids": [
+        "scp-integration",
+        "scp-standard-workflow",
+        "batch-integration",
+        "figureya-203combat",
+        "figureya-211multicohortimmsubtype",
+        "figureya-323stpathseq",
+        "upset",
+        "scrna-preprocess-doublet-qc-harmony",
+        "differential-expression",
+        "clinical-prediction-survival"
+      ],
+      "rank": 3,
+      "duration_ms": 2610.89
+    },
+    {
+      "category": "limitations",
+      "query": "没有 unspliced 能不能做速度分析",
+      "expected_ids": [
+        "rna-velocity"
+      ],
+      "kind": null,
+      "ids": [
+        "rna-velocity",
+        "scp-trajectory-velocity",
+        "scp-viz-model-overlays",
+        "scp-local-source",
+        "scp-visualization-interface",
+        "scop-analysis-guide",
+        "figureya-227boxdensity",
+        "beeswarm",
+        "render-cell-feature-values",
+        "figureya-archive-20251223:FigureYa177RNAvelocity"
+      ],
+      "rank": 1,
+      "duration_ms": 2259.73
+    },
+    {
+      "category": "limitations",
+      "query": "SingleR 没有合适 reference",
+      "expected_ids": [
+        "cell-type-annotation"
+      ],
+      "kind": null,
+      "ids": [
+        "cell-type-annotation",
+        "scp-annotation-projection",
+        "reference-mapping",
+        "rna-velocity",
+        "figureya-315singlerfraction",
+        "venn",
+        "dotplot",
+        "boxplot",
+        "radial-bar",
+        "scrna-marker-annotation"
+      ],
+      "rank": 1,
+      "duration_ms": 2277.18
+    },
+    {
+      "category": "limitations",
+      "query": "通路分数不能当绝对活性",
+      "expected_ids": [
+        "gene-set-scoring"
+      ],
+      "kind": null,
+      "ids": [
+        "gene-set-scoring",
+        "scrna-pathway-signature-ensemble",
+        "volcano",
+        "figureya-318genesetdedotplot",
+        "2026-10-22-scp-example__fig08-group-heatmap--heatmap",
+        "umap",
+        "radial-bar",
+        "bar",
+        "render-scatter-rgb",
+        "figureya-42oncoprintv2-update"
+      ],
+      "rank": 1,
+      "duration_ms": 2319.45
+    },
+    {
+      "category": "limitations",
+      "query": "DE 不能把细胞当患者",
+      "expected_ids": [
+        "differential-expression"
+      ],
+      "kind": null,
+      "ids": [
+        "differential-expression",
+        "volcano",
+        "scp-de-enrichment-dynamic",
+        "2026-10-22-scp-example__fig01-volcano",
+        "scrna-pathway-signature-ensemble",
+        "2026-10-22-scp-example__fig01-volcano--volcano",
+        "gene-set-enrichment",
+        "render-de-results",
+        "2026-10-22-glaucoma-scrna__fig02-marker-feature-umap--umap",
+        "2026-10-22-scp-example__fig11-chord--chord"
+      ],
+      "rank": 1,
+      "duration_ms": 2273.65
+    },
+    {
+      "category": "limitations",
+      "query": "五种分数相加是否通用标准",
+      "expected_ids": [
+        "scrna-pathway-signature-ensemble"
+      ],
+      "kind": null,
+      "ids": [
+        "scrna-pathway-signature-ensemble",
+        "gene-set-scoring",
+        "asthma-lactylation-workflow",
+        "asthma-lactylation-source-catalog",
+        "venn",
+        "figureya-229pcoa",
+        "uc-ptm-workflow",
+        "figureya-293plus-binaryclassificationml",
+        "heatmap",
+        "scrna-marker-annotation"
+      ],
+      "rank": 1,
+      "duration_ms": 2560.33
+    }
+  ]
+}
