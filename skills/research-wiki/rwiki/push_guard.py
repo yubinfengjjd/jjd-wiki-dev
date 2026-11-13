@@ -5,16 +5,20 @@
 """
 import codecs
 import hashlib
+import io
 import json
 import os
 import re
 import subprocess
 import sys
+import tempfile
+from contextlib import ExitStack, contextmanager, suppress
 from dataclasses import dataclass
 from pathlib import Path, PurePosixPath
 
 from .config import read_json
 from .errors import WikiError
+from .process import TIMEOUT_SECONDS
 from .store import git
 
 DEFAULT_MAX_MB = 5
@@ -80,7 +84,7 @@ def parse_allow(text: str, source: str = ALLOW_FILE) -> tuple[tuple[str, str], .
         rule_part, _, reason = line.partition("#")
         if not rule_part.strip():
             continue
-        fields = rule_part.split()
+        fields = rule_part.strip().split(maxsplit=1)
         if len(fields) != 2 or fields[0] not in ALLOWED_RULES:
             raise WikiError(f"{source}:{number}: 只接受 `abs-path|size <glob>  # 理由`，"
                             f"私有数据、课题数据、密码和私钥不可豁免: {line}")
@@ -245,26 +249,60 @@ def _unquote(path: str) -> str:
     return path
 
 
-def _cat_file(repo: Path, option: str, shas: list[str]) -> bytes:
-    result = subprocess.run(["git", "-C", str(repo), "cat-file", option],
-                            input="".join(f"{sha}\n" for sha in shas).encode(), capture_output=True)
-    if result.returncode:
-        raise WikiError(f"git cat-file {option} 失败: {result.stderr.decode('utf-8', 'replace')}")
-    return result.stdout
+def _git_error(stderr) -> str:
+    stderr.seek(0)
+    return stderr.read(65536).decode("utf-8", "replace")
 
 
-def _blob_info(repo: Path, sizes_for: set[str], heads_for: set[str]) -> tuple[dict, dict]:
-    sizes = {}
-    for line in _cat_file(repo, "--batch-check", sorted(sizes_for)).decode().splitlines():
-        sha, _, size = line.split()
-        sizes[sha] = int(size)
-    heads, data, offset = {}, _cat_file(repo, "--batch", sorted(heads_for)), 0
-    while offset < len(data):
-        end = data.index(b"\n", offset)
-        sha, _, size = data[offset:end].decode().split()
-        heads[sha] = data[end + 1:end + 1 + min(int(size), HEAD_BYTES)]
-        offset = end + 1 + int(size) + 1
-    return sizes, heads
+@contextmanager
+def _cat_file_batch(repo: Path, option: str):
+    """One request at a time avoids pipe deadlocks and whole-body captures."""
+    with tempfile.TemporaryFile() as stderr:
+        process = subprocess.Popen(["git", "-C", str(repo), "cat-file", option],
+                                   stdin=subprocess.PIPE, stdout=subprocess.PIPE, stderr=stderr)
+        try:
+            yield process
+            process.stdin.close()
+            if process.wait():
+                raise WikiError(f"git cat-file {option} 失败: {_git_error(stderr)}")
+        except OSError as error:
+            raise WikiError(f"git cat-file {option} 读取失败") from error
+        finally:
+            # An interrupted/failed read may leave Git blocked writing a body.
+            if process.poll() is None:
+                process.kill()
+            process.wait()
+            with suppress(OSError):
+                process.stdin.close()
+            with suppress(OSError):
+                process.stdout.close()
+
+
+def _read_blob(process, sha: str, with_head: bool) -> tuple[int, bytes]:
+    try:
+        process.stdin.write((sha + "\n").encode("ascii"))
+        process.stdin.flush()
+        header = process.stdout.readline(256)
+        fields = header.split()
+        if (not header.endswith(b"\n") or len(fields) != 3 or fields[0] != sha.encode("ascii")
+                or fields[1] != b"blob" or not fields[2].isdigit()):
+            raise WikiError("git cat-file 返回无效或缺失的 blob 元数据")
+        size = int(fields[2])
+        head = b""
+        if with_head:
+            remaining = size
+            while remaining:
+                chunk = process.stdout.read(min(65536, remaining))
+                if not chunk:
+                    raise WikiError("git cat-file blob 内容不完整")
+                if len(head) < HEAD_BYTES:
+                    head += chunk[:HEAD_BYTES - len(head)]
+                remaining -= len(chunk)
+            if process.stdout.read(1) != b"\n":
+                raise WikiError("git cat-file blob 结束符无效")
+        return size, head
+    except (OSError, ValueError) as error:
+        raise WikiError("git cat-file 读取失败") from error
 
 
 def _parse_log(text: str) -> list[dict]:
@@ -297,23 +335,105 @@ def _parse_log(text: str) -> list[dict]:
 
 def scan(repo: Path, rev_range: str, rules: Rules) -> list[dict]:
     """逐提交检查推送范围；被后续提交删除或改写的违规同样报告。"""
-    text = git(repo, "-c", "core.quotePath=false", "log", "--format=%x01%H", "--root", "--raw", "-p",
-               "-U0", "--no-color", "--no-renames", "--no-abbrev", "--no-ext-diff", "--no-textconv",
-               *rev_range.split(), "--")
-    commits = _parse_log(text)
-    blobs = {info["blob"] for commit in commits for info in commit["files"].values()}
-    code = {info["blob"] for commit in commits for path, info in commit["files"].items()
-            if PurePosixPath(path).suffix.lower() in CODE_SUFFIXES
-            or PurePosixPath(path).name.upper().startswith("LICENSE")}
-    sizes, heads = _blob_info(repo, blobs, code) if blobs else ({}, {})
+    # Spool first, so a failed git log can never be mistaken for a clean scan.
+    # Both streams go to disk: no subprocess reader thread accumulates a patch.
+    with tempfile.TemporaryFile() as patch, tempfile.TemporaryFile() as stderr:
+        try:
+            result = subprocess.run([
+                "git", "-C", str(repo), "-c", "core.quotePath=false", "log", "--format=%x01%H",
+                "--root", "--raw", "-p", "-U0", "--no-color", "--no-renames", "--no-abbrev",
+                "--no-ext-diff", "--no-textconv", *rev_range.split(), "--"],
+                stdout=patch, stderr=stderr, timeout=TIMEOUT_SECONDS)
+        except subprocess.TimeoutExpired as error:
+            raise WikiError(f"git log 超过 {TIMEOUT_SECONDS} 秒未结束") from error
+        if result.returncode:
+            raise WikiError(f"git log 失败: {_git_error(stderr)}")
+        patch.seek(0)
+        with io.TextIOWrapper(patch, encoding="utf-8", errors="replace") as lines, ExitStack() as stack:
+            # Legacy head selection is by blob, across the entire range. A text
+            # path sharing a code blob must receive that same head as before.
+            code_blobs = set()
+            in_commit, in_hunk = False, False
+            for line in lines:
+                if line.startswith("\x01"):
+                    in_commit, in_hunk = True, False
+                elif not in_commit:
+                    continue
+                elif line.startswith("diff --git "):
+                    in_hunk = False
+                elif in_hunk:
+                    continue  # Bare CRs can expose colon/tab text inside a hunk.
+                elif line.startswith(":") and "\t" in line:
+                    fields, path = line.removesuffix("\n").split("\t", 1)
+                    _, new_mode, _, sha, status = fields[1:].split()
+                    name = PurePosixPath(_unquote(path))
+                    if (status != "D" and new_mode != "160000"
+                            and (name.suffix.lower() in CODE_SUFFIXES or name.name.upper().startswith("LICENSE"))):
+                        code_blobs.add(sha)
+                elif line.startswith("@@"):
+                    in_hunk = True
+            lines.seek(0)
+            batches = {}
+
+            def inspect(path, sha, added):
+                code = sha in code_blobs
+                option = "--batch" if code else "--batch-check"
+                if option not in batches:
+                    batches[option] = stack.enter_context(_cat_file_batch(repo, option))
+                size, head = _read_blob(batches[option], sha, code)
+                return classify(path, size, added, head, rules)
+
+            return _scan_log(lines, inspect)
+
+
+def _scan_log(lines, inspect) -> list[dict]:
+    """Keep raw metadata per commit and added text for only the current file.
+
+    Binary/mode-only changes may have no +++ target. Inspect them at commit end;
+    emit findings in raw-entry order, just like the legacy in-memory parser.
+    """
     findings = []
-    for commit in commits:
-        for path, info in commit["files"].items():
-            for rule, detail in classify(path, sizes[info["blob"]], info["added"],
-                                         heads.get(info["blob"], b""), rules):
-                finding = {"rule": rule, "path": path, "commit": commit["commit"], "detail": detail}
+    commit, files, hits = None, {}, {}
+    target, added, in_hunk = None, [], False
+
+    def finish_file():
+        nonlocal target, added, in_hunk
+        if target is not None:
+            hits[target] = inspect(target, files[target], added)
+        target, added, in_hunk = None, [], False
+
+    def finish_commit():
+        finish_file()
+        for path, sha in files.items():
+            path_hits = hits[path] if path in hits else inspect(path, sha, [])
+            for rule, detail in path_hits:
+                finding = {"rule": rule, "path": path, "commit": commit, "detail": detail}
                 if finding not in findings:
                     findings.append(finding)
+
+    for raw_line in lines:
+        line = raw_line.removesuffix("\n")
+        if line.startswith("\x01"):
+            finish_commit()
+            commit, files, hits = line[1:], {}, {}
+        elif commit is None:
+            continue
+        elif line.startswith("diff --git "):
+            finish_file()
+        elif in_hunk:
+            if line.startswith("+") and target is not None:
+                added.append(line[1:])
+        elif line.startswith(":") and "\t" in line:
+            fields, path = line.split("\t", 1)
+            _, new_mode, _, new_sha, status = fields[1:].split()
+            if status != "D" and new_mode != "160000":
+                files[_unquote(path)] = new_sha
+        elif line.startswith("+++ "):
+            name = _unquote(line[4:].rstrip("\t"))
+            target = name[2:] if name.startswith("b/") and name[2:] in files else None
+        elif line.startswith("@@"):
+            in_hunk = True
+    finish_commit()
     return findings
 
 

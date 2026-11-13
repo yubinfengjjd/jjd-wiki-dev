@@ -80,6 +80,34 @@ def test_allow_rejects_protected_rules_and_missing_reasons():
                 parse_allow(text)
 
 
+def test_size_allow_preserves_exact_unicode_paths_with_spaces():
+    paths = ("public/source/结果 01.csv", "public/source/数据  tables.tsv")
+    text = "\n".join(f"  size\t {path} \t # 公开源文件，原字节保留" for path in paths)
+    allow = parse_allow(text)
+    assert allow == tuple(("size", path) for path in paths)
+    rules = Rules(MAX_BYTES, (), (), (), allow)
+    for path in paths:
+        assert classify(path, MAX_BYTES + 1, [], b"", rules) == []
+        for neighbor in (path + ".extra", path.replace(" ", "", 1)):
+            assert {rule for rule, _ in classify(neighbor, MAX_BYTES + 1, [], b"", rules)} == {"size"}
+
+
+@pytest.mark.parametrize("path, added, protected", [
+    ("private-data/资料 空格.csv", [], "private-data"),
+    ("课题/wiki-use/_project/资料 空格.csv", [], "project-data"),
+    ("public/space folder/.env", [], "secret"),
+    ("public/资料 空格.csv", ["api_" + 'key = "fixture-sensitive"'], "secret"),
+])
+def test_exact_size_allow_never_exempts_protected_rules(path, added, protected):
+    allow = parse_allow(f"size {path} # 公开源文件的大小复核")
+    rules = Rules(MAX_BYTES, (), (), (), allow)
+    assert {rule for rule, _ in classify(path, MAX_BYTES + 1, added, b"", rules)} == {protected}
+    with pytest.raises(WikiError):
+        parse_allow(f"{protected} {path} # 仍不可豁免")
+    with pytest.raises(WikiError):
+        parse_allow(f"size {path} #   ")
+
+
 def test_find_abs_paths_examples():
     assert find_abs_paths(r"见 E:\research-wiki\x 与 C:/Users/me") == ["E:\\", "C:/"]
     assert find_abs_paths('{"p": "E:\\\\research"}') == ["E:\\"]
