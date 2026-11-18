@@ -46,6 +46,7 @@ def prepare(config, page):
             return f'{m[2]}（条目已删除）' if targets(raw) else m[0]
         return re.sub(r'(!?)\[([^\]\n]*)\]\(([^)\n]+)\)', markdown, text)
     changes, asset_edits, relation_changes = [], [], {}
+    deleted_names = {meta['id'], *(a for a in (meta.get('aliases') or []) if isinstance(a, str))}
     def block(text, name):
         return get_block(text, name) if f'<!-- {name}:start -->' in text else ''
     for other in page_paths(root):
@@ -53,13 +54,13 @@ def prepare(config, page):
         om, ob = read_page(other)
         # A template's provenance is its source layout; never leave a live template without one.
         if (meta['type'] == 'layout' and om.get('type') == 'template' and om.get('status') != 'archived'
-                and isinstance(om.get('layouts'), list) and om['layouts'] == [meta['id']]):
+                and isinstance(om.get('layouts'), list)
+                and len(om['layouts']) == 1 and om['layouts'][0] in deleted_names):
             raise WikiError(f'此来源是模板“{om.get("title", other.stem)}”的唯一出处，不能删除；'
                             '删除后模板将无来源。如需删除，请先归档并删除该模板。')
         if clean(block(ob, 'user')) != block(ob, 'user'):
             raise WikiError(f'作者备注引用此条目，请先手动处理：{other.relative_to(root)}')
         original_meta = json.dumps(om, ensure_ascii=False, sort_keys=True)
-        deleted_names = {meta['id'], *(a for a in (meta.get('aliases') or []) if isinstance(a, str))}
         if meta['type'] in ('template', 'layout') and isinstance(om.get('figure_relations'), list):
             deleted_figures = {f"{page.parent.name}/{name}" for name in deleted_names}
             def kept_relation(record):

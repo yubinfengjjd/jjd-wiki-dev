@@ -533,3 +533,50 @@ def test_lint_rejects_same_type_canonical_collision_and_cross_page_duplicate_ali
     write_page(early, meta, body)
     findings = lint(cfg)
     assert any("ERROR " in line and OLD_TEMPLATE_ID in line for line in findings)
+
+
+def test_deletion_prepare_guards_aliased_sole_layout(alias_env):
+    cfg, _, _ = alias_env
+    root = cfg.wiki_root
+    old_layout_id = "2026-08-17-shap-feature-mechanism__fig01-shap-a-f"
+    new_layout_id = "shap-fig01"
+    layout_page = root / f"layouts/{new_layout_id}.md"
+    write_page(
+        layout_page,
+        {
+            "type": "layout",
+            "id": new_layout_id,
+            "aliases": [old_layout_id],
+            "title": "SHAP 组合图",
+            "status": "archived",
+            "archived_from": "ready",
+            "gallery_entry": "2026-08-17-shap-feature-mechanism/figures/fig01-shap-a-f",
+            "gallery_version": 1,
+            "language": "python",
+            "tags": ["单细胞分析"],
+            "chart_types": ["bar"],
+            "favorite": False,
+            "panels": {"A": "bar"},
+            "templates": ["live-from-aliased-layout"],
+            "template_panels": {"live-from-aliased-layout": ["A"]},
+        },
+        "# SHAP 组合图\n\n<!-- facts:start -->\n<!-- facts:end -->\n\n<!-- user:start -->\n<!-- user:end -->\n",
+    )
+    write_page(
+        root / "templates/live-from-aliased-layout.md",
+        {
+            "type": "template",
+            "id": "live-from-aliased-layout",
+            "title": "依赖旧版式别名的活模板",
+            "status": "ready",
+            "layouts": [old_layout_id],
+            "panels": ["A"],
+            "language": "python",
+            "tags": ["单细胞分析"],
+            "chart_types": ["bar"],
+            "favorite": False,
+        },
+        "# 活模板\n\n<!-- facts:start -->\n<!-- facts:end -->\n\n<!-- user:start -->\n<!-- user:end -->\n",
+    )
+    with pytest.raises(WikiError, match="唯一出处"):
+        deletion_prepare(cfg, layout_page)
