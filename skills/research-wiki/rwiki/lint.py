@@ -8,7 +8,7 @@ from .config import Config, read_json
 from .errors import WikiError
 from .links import extract_links, resolve
 from .layouts import load_layout
-from .pages import block_error, get_block, parse_page, section_text
+from .pages import block_error, get_block, parse_page, read_page, section_text
 from .interfaces import load_interface
 from .spec import load_spec
 from .facts import page_facts
@@ -36,19 +36,95 @@ def _string_list(value) -> bool:
     return isinstance(value, list) and all(isinstance(item, str) and item.strip() for item in value)
 
 
+def _render_bridge_schema_errors(bridges) -> list[str]:
+    if not isinstance(bridges, list) or any(not isinstance(item, dict) for item in bridges):
+        return ["render_bridges 必须为对象列表"]
+    errors: list[str] = []
+    for index, item in enumerate(bridges):
+        for field in ("interface", "from_output", "extractor_note"):
+            value = item.get(field)
+            if not isinstance(value, str) or not value.strip():
+                errors.append(f"render_bridges[{index}].{field} 必须为非空字符串")
+        if "unit" in item and item["unit"] is not None and (
+            not isinstance(item["unit"], str) or not item["unit"].strip()
+        ):
+            errors.append(f"render_bridges[{index}].unit 必须为非空字符串")
+    return errors
+
+
+def _primary_method_errors(root: Path, meta: dict) -> list[str]:
+    if meta.get("type") != "template" or "primary_method" not in meta:
+        return []
+    ref = meta.get("primary_method")
+    if not isinstance(ref, str) or not ref.strip():
+        return []
+    target = resolve_page_ref(root, ref, expected_type="method")
+    if target is None:
+        return [f"primary_method 引用的方法页不存在: {ref}"]
+    try:
+        target_meta, _ = read_page(target)
+    except WikiError as error:
+        return [f"primary_method 引用的方法页不可读: {ref} ({error})"]
+    if target_meta.get("type") != "method":
+        return [f"primary_method 必须指向 method 页: {ref}"]
+    if target_meta.get("status") == "archived":
+        return [f"primary_method 引用的方法页已归档: {ref}"]
+    if target_meta.get("method_kind") != "analysis":
+        kind = target_meta.get("method_kind") or "未分类"
+        return [f"primary_method 必须指向 method_kind=analysis 的方法页（当前为 {kind}）: {ref}"]
+    return []
+
+
+def _render_bridge_target_errors(root: Path, meta: dict) -> list[str]:
+    if meta.get("type") != "method":
+        return []
+    bridges = meta.get("render_bridges")
+    if not isinstance(bridges, list):
+        return []
+    errors: list[str] = []
+    for index, item in enumerate(bridges):
+        if not isinstance(item, dict):
+            continue
+        iface = item.get("interface")
+        if not isinstance(iface, str) or not iface.strip():
+            continue
+        target = resolve_page_ref(root, iface, expected_type="interface")
+        if target is None:
+            errors.append(f"render_bridges[{index}].interface 指向的接口不存在: {iface}")
+            continue
+        try:
+            load_interface(root, target.stem)
+        except WikiError as error:
+            errors.append(f"render_bridges[{index}].interface 无效: {error}")
+    return errors
+
+
 def metadata_errors(meta: dict, vocabulary: frozenset[str] | None = None) -> list[str]:
+    from .method_taxonomy import data_domain_errors
     from .tags import keyword_errors, tag_errors
+
+    page_type = meta.get("type")
 
     def finish(found: list[str]) -> list[str]:
         found.extend(tag_errors(meta, vocabulary))
         found.extend(keyword_errors(meta))
+        found.extend(data_domain_errors(meta))
+        if "primary_method" in meta:
+            if page_type != "template":
+                found.append("primary_method 只能在 template 页声明")
+            elif not isinstance(meta.get("primary_method"), str) or not meta["primary_method"].strip():
+                found.append("primary_method 必须为非空字符串")
+        if "render_bridges" in meta:
+            if page_type != "method":
+                found.append("render_bridges 只能在 method 页声明")
+            else:
+                found.extend(_render_bridge_schema_errors(meta.get("render_bridges")))
         if "aliases" in meta:
             ptype = str(meta.get("type") or "unknown")
             pid = str(meta.get("id") or meta.get("slug") or "_unknown")
             found.extend(alias_errors(meta, Path(f"{ptype}s/{pid}.md"), {}, {}))
         return found
 
-    page_type = meta.get("type")
     if page_type not in REQUIRED:
         return ["type 缺失或未知"]
     errors = [f"缺少必需键 {key}" for key in REQUIRED[page_type] if key not in meta]
@@ -340,8 +416,11 @@ def lint(config: Config, ci: bool = False) -> list[str]:
                     errors.append(err)
         if not parse_error and meta.get("type") == "method":
             errors.extend(relation_errors(config, meta))
+            errors.extend(_render_bridge_target_errors(root, meta))
         elif "figure_relations" in meta:
             errors.append("figure_relations 只能在 method 页声明；图端关系由方法页反向计算")
+        if not parse_error and meta.get("type") == "template":
+            errors.extend(_primary_method_errors(root, meta))
         for error in errors:
             report("ERROR", path, error)
         if not errors:

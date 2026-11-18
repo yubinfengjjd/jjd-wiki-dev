@@ -33,7 +33,7 @@ def _is_placeholder(content: str) -> bool:
 
 
 def entry_errors(config, path, *, replay=True) -> list[str]:
-    from .lint import metadata_errors
+    from .lint import _primary_method_errors, _render_bridge_target_errors, metadata_errors
     from .relations import relation_errors
     from .interfaces import load_interface
     from .spec import load_spec
@@ -50,9 +50,11 @@ def entry_errors(config, path, *, replay=True) -> list[str]:
                 errors.append(f'{heading}节尚未完成')
         if meta.get('type') == 'method':
             errors.extend(relation_errors(config, meta))
+            errors.extend(_render_bridge_target_errors(config.wiki_root, meta))
             for slug in meta.get('inputs', []) + meta.get('outputs', []):
                 load_interface(config.wiki_root, slug)
         if meta.get('type') == 'template':
+            errors.extend(_primary_method_errors(config.wiki_root, meta))
             load_spec(path.with_suffix(''))
             if replay and not replay_available(path.with_suffix('')):
                 errors.append('缺少当前版本的完整成功回放，请 verify-template')
