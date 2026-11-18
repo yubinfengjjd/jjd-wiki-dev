@@ -103,3 +103,25 @@ def test_tags_api_rejects_unknown_and_keeps_vocabulary(wiki_repo):
         assert accepted.json()["meta"]["tags"] == ["转录组", "single-cell"]
     assert read_page(page)[0]["tags"] == ["转录组", "single-cell"]
     assert commit_count(config.wiki_root) == before + 1
+
+
+def test_lint_rejects_nonscientific_keywords(wiki_repo):
+    config, _, _ = wiki_repo
+    shutil.copyfile(TAXONOMY_SOURCE, config.taxonomy)
+    write_page(config.wiki_root / "methods/promo.md", {
+        "type": "method", "id": "promo", "title": "CellChat 通讯分析", "status": "draft",
+        "tags": ["single-cell"],
+        "keywords": ["CellChat", "KS科研", "公众号", "wechat", "入库", "9.20"],
+        "inputs": [], "outputs": [],
+        "source": {"kind": "written"}, "license": "none", "cite": ["fixture"],
+        "favorite": False,
+    }, BODY)
+    report = lint(config)
+    assert any(
+        line.startswith("ERROR methods/promo.md:")
+        and "非科研" in line
+        and "KS科研" in line
+        and "入库" in line
+        and "9.20" in line
+        for line in report
+    )

@@ -389,11 +389,34 @@ export interface StudioDispatchResponse {
   message?: string;
 }
 
+export interface StudioUploadResponse {
+  ok: boolean;
+  filename: string;
+  path: string;
+  sniff: StudioSniffResponse;
+}
+
+export interface StudioExampleFile {
+  name: string;
+  path: string;
+  sniff: StudioSniffResponse;
+}
+
+export interface StudioLoadExampleResponse {
+  ok: boolean;
+  id: string;
+  primary_file: string;
+  files: StudioExampleFile[];
+  sniff: StudioSniffResponse;
+  suggested_bindings: Record<string, string>;
+}
+
 export interface StudioRunResponse {
   ok: boolean;
   exit_code: number;
   stdout: string;
   stderr: string;
+  run_id?: string;
   output_files: string[];
   preview_url?: string | null;
 }
@@ -693,6 +716,16 @@ export const api = {
   studioSniff: (path: string) =>
     request<StudioSniffResponse>('/api/studio/sniff', {
       method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ path }),
+    }),
+  studioUpload: (filename: string, contentBase64: string, contentText = '') =>
+    request<StudioUploadResponse>('/api/studio/upload', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ filename, content_base64: contentBase64, content_text: contentText }),
+    }),
+  studioLoadExample: (id: string) =>
+    request<StudioLoadExampleResponse>('/api/studio/load-example', {
+      method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ id }),
     }),
   studioRenderCode: (payload: StudioRenderRequest, signal?: AbortSignal) =>
     request<StudioRenderResponse>('/api/studio/render-code', {

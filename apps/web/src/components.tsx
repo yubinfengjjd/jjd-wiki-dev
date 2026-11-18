@@ -1,4 +1,4 @@
-import { PointerEvent, ReactNode, useRef, useState } from 'react';
+import { ReactNode, useRef, useState } from 'react';
 import { imageOf, previewOf, workflowOf, displayStatus, effectiveStatus, ImplementationStatus, ItemMeta, LayoutMeta, MethodMeta, PageMeta, PageType, RecipeMeta, STATUS_LABEL, Status, studioHref, TemplateMeta } from './api';
 import { pageLink } from './nav';
 import { figureLabel, MethodFigure, methodFigureStatusLabel, methodPlateFigures, SourceLink } from './figureModels';
@@ -44,22 +44,6 @@ const HINT: Record<ItemMeta['type'], Partial<Record<Status, string>>> = {
 
 export const hintOf = (meta: ItemMeta) => workflowOf(meta)?.reason ?? HINT[meta.type][meta.status] ?? STATUS_LABEL[meta.status];
 
-/** The card leans towards the pointer like a plate picked up from the table. */
-function tilt(e: PointerEvent<HTMLElement>) {
-  const el = e.currentTarget;
-  const r = el.getBoundingClientRect();
-  const x = (e.clientX - r.left) / r.width;
-  const y = (e.clientY - r.top) / r.height;
-  el.style.setProperty('--rx', `${(0.5 - y) * 7}deg`);
-  el.style.setProperty('--ry', `${(x - 0.5) * 9}deg`);
-  el.style.setProperty('--gx', `${x * 100}%`);
-  el.style.setProperty('--gy', `${y * 100}%`);
-}
-
-function untilt(e: PointerEvent<HTMLElement>) {
-  for (const p of ['--rx', '--ry', '--gx', '--gy']) e.currentTarget.style.removeProperty(p);
-}
-
 interface CardShell {
   path: string;
   meta: ItemMeta;
@@ -81,45 +65,70 @@ function Card({ path, meta, number, label, plate, back, note, sourceLinks, execu
   const link = pageLink(path, () => plateRef.current);
 
   return (
-    <article className={flipped ? 'plate-card flipped' : 'plate-card'} onPointerMove={tilt} onPointerLeave={untilt}>
+    <article className={flipped ? 'plate-card flipped' : 'plate-card'}>
       <div className="plate-turn">
         <a className="face front" {...link} aria-hidden={flipped} tabIndex={flipped ? -1 : 0}>
           <div className={`plate ${meta.type}`} ref={plateRef}>
             {plate}
             {meta.favorite && <span className="fav" aria-label="已收藏">★</span>}
+            {'language' in meta && (
+              <span className={`lang-pill lang-${String(meta.language).toLowerCase()}`}>
+                {LANGUAGE[meta.language] ?? meta.language}
+              </span>
+            )}
           </div>
           <div className="caption">
-            <h3>
-              <span className="fig-no">{label} {number}</span>
-              {meta.title}
-            </h3>
+            <h3>{meta.title}</h3>
             {note && <p className="caption-note muted small">{note}</p>}
             <div className="caption-foot">
-              <StatusBadge status={effectiveStatus(meta)} label={displayStatus(meta)} />
+              <span className="status-dot-inline">
+                <span className={`dot status-${effectiveStatus(meta)}`} aria-hidden="true" />
+                <StatusBadge status={effectiveStatus(meta)} label={displayStatus(meta)} />
+              </span>
               {badges}
               {execution && <span className="method-execution small">{execution}</span>}
-              {'language' in meta && <span className="lang">{LANGUAGE[meta.language] ?? meta.language}</span>}
+              {'chart_types' in meta && !!meta.chart_types?.length && (
+                <span className="chart-pill">{meta.chart_types[0]}</span>
+              )}
             </div>
           </div>
         </a>
         <div className="face back" aria-hidden={!flipped}>
-          <p className="back-title">{label} {number} 背面</p>
+          <p className="back-title">{label} {number} 详细信息</p>
           <dl>
             <dt>状态</dt>
             <dd>{hintOf(meta)}</dd>
             {back}
           </dl>
-          <a className="button primary" {...link} tabIndex={flipped ? 0 : -1}>打开</a>
+          <a className="button primary" {...link} tabIndex={flipped ? 0 : -1}>查看完整说明</a>
         </div>
       </div>
-      {sourceLinks && sourceLinks.length > 1 && <nav className="card-sources small" aria-label="此图样的来源">{sourceLinks.map((s, i) => <a key={s.path} {...pageLink(s.path)} title={s.title}>来源 {i + 1}</a>)}</nav>}
-      {meta.type !== 'layout' && <a className="button primary small card-studio" href={studioHref(meta.id)} onClick={(e) => e.stopPropagation()}>进入操控台</a>}
-      <CodeButton meta={meta} className="card-code" />
-      <button className="turn" onClick={() => setFlipped(!flipped)} aria-pressed={flipped} aria-label={flipped ? '翻回正面' : '翻到背面'}>
-        <svg viewBox="0 0 20 20" aria-hidden="true">
-          <path d="M4 7a6 6 0 0 1 11-1.5M16 13a6 6 0 0 1-11 1.5M15 2.5v3.5h-3.5M5 17.5V14h3.5" />
-        </svg>
-      </button>
+      <footer className="card-action-bar">
+        {meta.type !== 'layout' ? (
+          <a className="button primary small card-studio-cta" href={studioHref(meta.id)} onClick={(e) => e.stopPropagation()}>
+            打开工作台
+          </a>
+        ) : (
+          <a className="button small card-studio-cta" {...link}>查看图样</a>
+        )}
+        <div className="card-action-secondary">
+          {sourceLinks && sourceLinks.length > 1 && sourceLinks.slice(0, 2).map((s, i) => (
+            <a key={s.path} className="ghost-link small" {...pageLink(s.path)} title={s.title}>来源{i + 1}</a>
+          ))}
+          <CodeButton meta={meta} className="card-code-inline" />
+          <a className="ghost-link small" {...link}>详情</a>
+          <button
+            type="button"
+            className="turn-inline"
+            onClick={() => setFlipped(!flipped)}
+            aria-pressed={flipped}
+            aria-label={flipped ? '翻回正面' : '翻到背面'}
+            title={flipped ? '返回预览' : '翻转查看标签与核验信息'}
+          >
+            {flipped ? '预览' : '参数'}
+          </button>
+        </div>
+      </footer>
     </article>
   );
 }

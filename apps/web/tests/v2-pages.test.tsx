@@ -275,7 +275,7 @@ async function main() {
 
     const recipeListHtml = renderToStaticMarkup(<RecipesView data={dataOf(pages)} />);
     assert.ok(recipeListHtml.includes('#/studio?id=r-confirm'), 'recipe card links to Studio');
-    assert.ok(recipeListHtml.includes('进入操控台'));
+    assert.ok(recipeListHtml.includes('打开工作台'));
 
     const page = detail(v2template, '# 派生火山图模板\n\n<!-- user:start -->\n<!-- user:end -->\n');
     pageCache.set(page.path, page);

@@ -9,9 +9,19 @@ Illegal or repeated tags are errors, the same severity as ``purposes``.
 An empty list stays readable.
 """
 from pathlib import Path
+import re
 
 from .config import Config, load_taxonomy
 from .errors import WikiError
+
+FORBIDDEN_KEYWORD_TOKENS = frozenset({
+    "入库", "全库", "本地导入", "原字节", "来源", "来源索引", "压缩包",
+    "源码本地化", "模块清单", "哮喘乳酸化单细胞开篇",
+    "公众号", "微信", "wechat", "小红书", "知乎", "b站", "bilibili",
+    "ks科研", "ks生信", "ks生信科研课", "ks科研分享与服务",
+    "生信技能树", "生信菜鸟团", "果子学生信", "python数据分析",
+})
+_BARE_NUMBER_RE = re.compile(r"^\d+(?:\.\d+)+$")
 
 
 def _text(value) -> bool:
@@ -79,4 +89,36 @@ def tag_errors(meta: dict, vocabulary: frozenset[str] | None) -> list[str]:
                 + "；别名、软件、数据集和模型名请写入 keywords"]
     if len(set(tags)) != len(tags):
         return ["tags 不得重复"]
+    return []
+
+
+def keyword_errors(meta: dict) -> list[str]:
+    """Keywords must stay strictly scientific (methods, packages, pathways, chart types, organisms).
+
+    Social accounts, WeChat promo names, ingestion-process jargon, and bare date/version
+    numbers degrade Wiki search and gallery UX, so lint rejects them as errors.
+    """
+    if not isinstance(meta, dict) or "keywords" not in meta:
+        return []
+    keywords = meta.get("keywords")
+    if not isinstance(keywords, list) or any(not _text(k) for k in keywords):
+        return ["keywords 必须为字符串列表"]
+    bad: list[str] = []
+    for raw in dict.fromkeys(keywords):
+        text = raw.strip()
+        lower = text.lower()
+        if (
+            lower in FORBIDDEN_KEYWORD_TOKENS
+            or "公众号" in text
+            or "ks科研" in lower
+            or "ks生信" in lower
+            or _BARE_NUMBER_RE.match(text)
+        ):
+            bad.append(text)
+    if bad:
+        return [
+            "keywords 含非科研/推广/流程无关词: "
+            + "、".join(bad)
+            + "；仅允许填写分析方法、算法包名、通路/分子名或图形类型"
+        ]
     return []

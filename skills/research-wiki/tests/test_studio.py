@@ -440,3 +440,35 @@ def test_mcp_server_jsonrpc_and_stdio(studio_env):
     )
     out_line = json.loads(proc.stdout.strip().splitlines()[0])
     assert out_line["id"] == 9 and len(out_line["result"]["tools"]) == 6
+
+
+def test_studio_upload_and_load_example_api(studio_env):
+    import base64
+
+    cfg, _, _ = studio_env
+    # Write a built-in example CSV into the template asset directory
+    ex_dir = cfg.wiki_root / "templates/tpl-prop-bar/example"
+    ex_dir.mkdir(parents=True, exist_ok=True)
+    (ex_dir / "cell-proportion-stats.csv").write_text(
+        "sample_id,cell_type,proportion\nS1,Tcell,0.55\nS2,Bcell,0.45\n",
+        encoding="utf-8",
+    )
+
+    with TestClient(create_app(cfg)) as client:
+        ex_resp = client.post("/api/studio/load-example", json={"id": "tpl-prop-bar"})
+        assert ex_resp.status_code == 200, ex_resp.text
+        ex_data = ex_resp.json()
+        assert ex_data["ok"] is True
+        assert ex_data["suggested_bindings"]["cell_type"] == "cell_type"
+        assert ex_data["sniff"]["row_count_estimate"] == 2
+
+        csv_bytes = b"sample_id,cell_type,proportion\nA1,Mono,0.3\nA2,Neu,0.7\n"
+        up_resp = client.post("/api/studio/upload", json={
+            "filename": "custom upload.csv",
+            "content_base64": base64.b64encode(csv_bytes).decode("ascii"),
+        })
+        assert up_resp.status_code == 200, up_resp.text
+        up_data = up_resp.json()
+        assert up_data["ok"] is True
+        assert Path(up_data["path"]).is_file()
+        assert up_data["sniff"]["row_count_estimate"] == 2

@@ -1,14 +1,16 @@
-import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
+import { DragEvent, useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import {
   api,
   displayStatus,
   effectiveStatus,
+  imageOf,
   InputContractColumn,
   ItemMeta,
   PageDetail,
   PageSummary,
   pageHref,
   StudioDispatchResponse,
+  StudioExampleFile,
   StudioParamSchema,
   StudioRenderResponse,
   StudioRunResponse,
@@ -47,10 +49,9 @@ function defaultValueOf(param: StudioParamSchema): string | number | boolean {
   return '';
 }
 
-function highlightLine(line: string, language: string): JSX.Element {
+function highlightLine(line: string): JSX.Element {
   const isComment = /^\s*#/.test(line);
   if (isComment) return <span className="tok-comment">{line}</span>;
-  // Simple lightweight tokenizer for R & Python keywords/strings/numbers
   const tokens = line.split(/("(?:[^"\\]|\\.)*"|'(?:[^'\\]|\\.)*'|\b(?:library|require|import|from|def|function|return|if|else|for|in|TRUE|FALSE|True|False|NULL|None|NA|ggplot|aes|ggsave|read\.csv|read_csv|scale_color_npg|scale_fill_npg)\b|\b\d+(?:\.\d+)?\b)/g);
   return (
     <>
@@ -61,7 +62,7 @@ function highlightLine(line: string, language: string): JSX.Element {
         if (/^(library|require|import|from|def|function|return|if|else|for|in|TRUE|FALSE|True|False|NULL|None|NA)$/.test(part)) {
           return <span key={i} className="tok-keyword">{part}</span>;
         }
-        if (/^(ggplot|aes|ggsave|read\.csv|read_csv|scale_color_npg|scale_fill_npg)$/.test(part) || (language && false)) {
+        if (/^(ggplot|aes|ggsave|read\.csv|read_csv|scale_color_npg|scale_fill_npg)$/.test(part)) {
           return <span key={i} className="tok-fn">{part}</span>;
         }
         return <span key={i}>{part}</span>;
@@ -96,6 +97,21 @@ function computeLineDiff(baseline: string, current: string): { changedLines: Set
   return { changedLines, headerLines, editedCount };
 }
 
+function readFileAsBase64(file: File): Promise<string> {
+  return new Promise((resolve, reject) => {
+    const reader = new FileReader();
+    reader.onload = () => {
+      const res = String(reader.result || '');
+      const comma = res.indexOf(',');
+      resolve(comma >= 0 ? res.slice(comma + 1) : res);
+    };
+    reader.onerror = () => reject(new Error('读取本地文件失败'));
+    reader.readAsDataURL(file);
+  });
+}
+
+type RightTab = 'preview' | 'code' | 'dispatch';
+
 export function StudioView({ data, query = '' }: { data: AppData; query?: string }) {
   const studioItems = useMemo(() => {
     return data.pages
@@ -120,6 +136,9 @@ export function StudioView({ data, query = '' }: { data: AppData; query?: string
 
   const [selectedId, setSelectedId] = useState(initialId);
   const [itemFilter, setItemFilter] = useState('');
+  const [switcherOpen, setSwitcherOpen] = useState(false);
+  const [rightTab, setRightTab] = useState<RightTab>('preview');
+
   useEffect(() => {
     if (queryId) setSelectedId(queryId);
     else if (!selectedId && studioItems[0]) setSelectedId(studioItems[0].meta.id);
@@ -138,17 +157,22 @@ export function StudioView({ data, query = '' }: { data: AppData; query?: string
     return () => { active = false; };
   }, [currentPage]);
 
-  // Left Column State: Project Dir, Data File, Sniff, Column Bindings, Parameters
+  // Data Input / Upload / Example State
   const [projectDir, setProjectDir] = useState('E:/research-wiki/projects/demo-project');
   const [dataFile, setDataFile] = useState('');
   const [sniffing, setSniffing] = useState(false);
+  const [uploading, setUploading] = useState(false);
+  const [loadingExample, setLoadingExample] = useState(false);
+  const [dragOver, setDragOver] = useState(false);
+  const [exampleFiles, setExampleFiles] = useState<StudioExampleFile[]>([]);
   const [sniffResult, setSniffResult] = useState<StudioSniffResponse | null>(null);
   const [sniffError, setSniffError] = useState('');
+  const fileInputRef = useRef<HTMLInputElement | null>(null);
 
   const [bindings, setBindings] = useState<Record<string, string>>({});
   const [parameters, setParameters] = useState<Record<string, string | number | boolean>>({});
 
-  // Center Column State: Live Rendered Code & Interactive Editor
+  // Code Editor State
   const [renderResp, setRenderResp] = useState<StudioRenderResponse | null>(null);
   const [rendering, setRendering] = useState(false);
   const [renderError, setRenderError] = useState('');
@@ -157,7 +181,7 @@ export function StudioView({ data, query = '' }: { data: AppData; query?: string
   const [manuallyEdited, setManuallyEdited] = useState(false);
   const [copyNote, setCopyNote] = useState('');
 
-  // Right Column State: Dispatch & Local Run
+  // Execution & Dispatch State
   const [dispatching, setDispatching] = useState(false);
   const [dispatchResp, setDispatchResp] = useState<StudioDispatchResponse | null>(null);
   const [dispatchError, setDispatchError] = useState('');
@@ -167,7 +191,6 @@ export function StudioView({ data, query = '' }: { data: AppData; query?: string
   const [runError, setRunError] = useState('');
   const [activeLogTab, setActiveLogTab] = useState<'stdout' | 'stderr'>('stdout');
 
-  // Reset bindings & manual edits when switching template/method/recipe
   useEffect(() => {
     setBindings({});
     setParameters({});
@@ -176,6 +199,11 @@ export function StudioView({ data, query = '' }: { data: AppData; query?: string
     setDispatchError('');
     setRunResp(null);
     setRunError('');
+    setExampleFiles([]);
+    setSniffResult(null);
+    setSniffError('');
+    setDataFile('');
+    setRightTab('preview');
   }, [selectedId]);
 
   const { schema: paramSchema, isTier1 } = useMemo(
@@ -183,7 +211,6 @@ export function StudioView({ data, query = '' }: { data: AppData; query?: string
     [renderResp?.spec?.parameters],
   );
 
-  // Initialize parameter defaults whenever schema changes
   useEffect(() => {
     setParameters((prev) => {
       const next = { ...prev };
@@ -198,7 +225,6 @@ export function StudioView({ data, query = '' }: { data: AppData; query?: string
     });
   }, [paramSchema]);
 
-  // Derive binding columns from renderResp.spec.tables OR pageDetail.input_contract
   const targetTables = useMemo(() => {
     if (renderResp?.spec?.tables && Object.keys(renderResp.spec.tables).length > 0) {
       return Object.entries(renderResp.spec.tables).map(([key, tbl]) => {
@@ -242,7 +268,24 @@ export function StudioView({ data, query = '' }: { data: AppData; query?: string
     return [];
   }, [renderResp?.spec?.tables, pageDetail?.input_contract, currentPage, data.pages]);
 
-  // Live code render effect (debounced)
+  const autoBindFromSniff = useCallback((sniff: StudioSniffResponse) => {
+    if (!sniff.columns?.length || !targetTables.length) return;
+    const colNames = sniff.columns.map((c) => c.name);
+    setBindings((prev) => {
+      const next = { ...prev };
+      for (const tbl of targetTables) {
+        for (const col of tbl.columns) {
+          if (next[col.name]) continue;
+          const exact = colNames.find((c) => c === col.name);
+          const icase = exact ?? colNames.find((c) => c.toLowerCase() === col.name.toLowerCase());
+          if (icase) next[col.name] = icase;
+        }
+      }
+      return next;
+    });
+  }, [targetTables]);
+
+  // Live code render (debounced)
   const renderAbort = useRef<AbortController | null>(null);
   const triggerRender = useCallback(async (id: string, pDir: string, dFile: string, b: Record<string, string>, params: Record<string, string | number | boolean>) => {
     if (!id) return;
@@ -279,10 +322,9 @@ export function StudioView({ data, query = '' }: { data: AppData; query?: string
     return () => clearTimeout(timer);
   }, [selectedId, projectDir, dataFile, bindings, parameters, triggerRender]);
 
-  // Sniff local CSV/TSV/RDS headers
   const handleSniff = async () => {
     if (!dataFile.trim()) {
-      setSniffError('请先填写本地数据文件路径（.csv / .tsv / .txt / .rds）');
+      setSniffError('请先选择、上传或输入数据文件路径');
       return;
     }
     setSniffing(true);
@@ -290,26 +332,73 @@ export function StudioView({ data, query = '' }: { data: AppData; query?: string
     try {
       const res = await api.studioSniff(dataFile.trim());
       setSniffResult(res);
-      // Auto-bind exact / case-insensitive matching columns
-      if (res.columns?.length && targetTables.length) {
-        const colNames = res.columns.map((c) => c.name);
-        setBindings((prev) => {
-          const next = { ...prev };
-          for (const tbl of targetTables) {
-            for (const col of tbl.columns) {
-              if (next[col.name]) continue;
-              const exact = colNames.find((c) => c === col.name);
-              const icase = exact ?? colNames.find((c) => c.toLowerCase() === col.name.toLowerCase());
-              if (icase) next[col.name] = icase;
-            }
-          }
-          return next;
-        });
-      }
+      autoBindFromSniff(res);
     } catch (err) {
       setSniffError((err as Error).message);
     } finally {
       setSniffing(false);
+    }
+  };
+
+  const handleUploadFile = async (file: File | undefined | null) => {
+    if (!file) return;
+    setUploading(true);
+    setSniffError('');
+    try {
+      const b64 = await readFileAsBase64(file);
+      const res = await api.studioUpload(file.name, b64);
+      setDataFile(res.path);
+      setSniffResult(res.sniff);
+      setExampleFiles([]);
+      autoBindFromSniff(res.sniff);
+    } catch (err) {
+      setSniffError((err as Error).message);
+    } finally {
+      setUploading(false);
+    }
+  };
+
+  const handleDrop = (e: DragEvent<HTMLDivElement>) => {
+    e.preventDefault();
+    setDragOver(false);
+    const file = e.dataTransfer.files?.[0];
+    void handleUploadFile(file);
+  };
+
+  const handleLoadExample = async (runAfter = false) => {
+    if (!selectedId) return;
+    setLoadingExample(true);
+    setSniffError('');
+    try {
+      const res = await api.studioLoadExample(selectedId);
+      setExampleFiles(res.files || []);
+      setDataFile(res.primary_file);
+      setSniffResult(res.sniff);
+      if (res.suggested_bindings && Object.keys(res.suggested_bindings).length) {
+        setBindings((prev) => ({ ...res.suggested_bindings, ...prev }));
+      } else {
+        autoBindFromSniff(res.sniff);
+      }
+      if (runAfter) {
+        setRunning(true);
+        setRunError('');
+        setRightTab('preview');
+        const runRes = await api.studioRun({
+          id: selectedId,
+          project_dir: projectDir.trim(),
+          data_file: res.primary_file,
+          bindings: res.suggested_bindings || bindings,
+          parameters,
+        });
+        setRunResp(runRes);
+        setActiveLogTab(!runRes.ok && runRes.stderr ? 'stderr' : 'stdout');
+        setRunning(false);
+      }
+    } catch (err) {
+      setSniffError((err as Error).message);
+      setRunning(false);
+    } finally {
+      setLoadingExample(false);
     }
   };
 
@@ -384,6 +473,7 @@ export function StudioView({ data, query = '' }: { data: AppData; query?: string
     setRunning(true);
     setRunError('');
     setRunResp(null);
+    setRightTab('preview');
     try {
       const res = await api.studioRun({
         id: selectedId,
@@ -391,7 +481,7 @@ export function StudioView({ data, query = '' }: { data: AppData; query?: string
         data_file: dataFile.trim(),
         bindings,
         parameters,
-        code: editorCode,
+        code: manuallyEdited ? editorCode : undefined,
       });
       setRunResp(res);
       if (!res.ok && res.stderr) setActiveLogTab('stderr');
@@ -418,107 +508,222 @@ export function StudioView({ data, query = '' }: { data: AppData; query?: string
   const deps = renderResp?.spec?.dependencies?.length
     ? renderResp.spec.dependencies
     : currentPage?.runtime ? allPackages(currentPage.runtime) : [];
+  const referencePreview = currentPage ? imageOf(currentPage.meta) : null;
 
   return (
-    <section className="studio-page">
+    <section className="studio-page hiplot-studio">
+      {/* Clean Hiplot/SRplot Top Workbench Bar */}
       <header className="studio-topbar sheet">
-        <div className="studio-title-block">
-          <span className="studio-eyebrow">BIO-TEMPLATE STUDIO</span>
-          <h1>代码模版操控台</h1>
+        <div className="studio-topbar-left">
+          <div className="studio-title-block">
+            <span className="studio-eyebrow">BIO-TEMPLATE WORKBENCH · 代码模版操控台</span>
+            <div className="studio-active-heading">
+              <h1>{currentPage?.meta.title || selectedId || '作图工作台'}</h1>
+              {currentPage && (
+                <div className="studio-meta-badges">
+                  <span className={`lang-pill lang-${language.toLowerCase()}`}>{language.toUpperCase()}</span>
+                  <StatusBadge status={effectiveStatus(currentPage.meta)} label={displayStatus(currentPage.meta)} />
+                  <span className="badge">{tier === 1 ? '可调参模版' : TYPE_LABEL[currentPage.meta.type]}</span>
+                </div>
+              )}
+            </div>
+          </div>
         </div>
-        <div className="studio-meta-strip">
+
+        <div className="studio-topbar-actions">
+          <button
+            type="button"
+            className="button small"
+            onClick={() => setSwitcherOpen((v) => !v)}
+          >
+            切换模版 ({studioItems.length})
+          </button>
+          <button
+            type="button"
+            className="button small"
+            disabled={loadingExample || !selectedId}
+            onClick={() => void handleLoadExample(true)}
+          >
+            {loadingExample ? '加载中…' : '示例一键出图'}
+          </button>
+          <button
+            type="button"
+            className="button primary"
+            disabled={running || !selectedId}
+            onClick={() => void handleRun()}
+          >
+            {running ? '正在绘图中…' : '本机试跑并预览'}
+          </button>
           {currentPage && (
-            <>
-              <span className="badge">{TYPE_LABEL[currentPage.meta.type]}</span>
-              <StatusBadge status={effectiveStatus(currentPage.meta)} label={displayStatus(currentPage.meta)} />
-              <span className="lang">{language.toUpperCase()}</span>
-              <span className="badge">{tier === 1 ? 'Tier 1 全表单操控' : 'Tier 2 轻量源码操控'}</span>
-              {deps.length > 0 && <span className="small muted">依赖：{deps.slice(0, 4).join('、')}{deps.length > 4 ? '…' : ''}</span>}
-              <a className="button small" href={pageHref(currentPage.path)}>查看详情页</a>
-            </>
+            <a className="button small" href={pageHref(currentPage.path)}>模版详情</a>
           )}
         </div>
       </header>
 
-      <div className="studio-workbench">
-        {/* LEFT COLUMN: Data Binding & Parameter Controls */}
-        <aside className="studio-col studio-left sheet" aria-label="数据绑定与参数操控">
-          <div className="studio-section">
-            <h2>1. 选择模版 / 方法 / 配方</h2>
+      {/* Visual Template Switcher Drawer */}
+      {switcherOpen && (
+        <section className="studio-switcher-drawer sheet" aria-label="快速切换作图模版">
+          <div className="switcher-head">
             <input
               type="search"
-              placeholder="过滤 ID 或标题…"
+              placeholder="搜索图表标题、关键词或 ID…"
               aria-label="过滤模版"
               value={itemFilter}
               onChange={(e) => setItemFilter(e.target.value)}
             />
-            <select
-              aria-label="选择操作条目"
-              value={selectedId}
-              onChange={(e) => setSelectedId(e.target.value)}
-            >
-              {!filteredItems.some((p) => p.meta.id === selectedId) && selectedId && (
-                <option value={selectedId}>{selectedId}</option>
-              )}
-              {(['template', 'method', 'recipe'] as const).map((kind) => {
-                const group = filteredItems.filter((p) => p.meta.type === kind);
-                if (!group.length) return null;
-                return (
-                  <optgroup key={kind} label={`${TYPE_LABEL[kind]} (${group.length})`}>
-                    {group.map((p) => (
-                      <option key={p.path} value={p.meta.id}>
-                        {p.meta.title} [{p.meta.id}]
-                      </option>
-                    ))}
-                  </optgroup>
-                );
-              })}
-            </select>
+            <button type="button" className="ghost small" onClick={() => setSwitcherOpen(false)}>收起</button>
+          </div>
+          <div className="switcher-grid">
+            {filteredItems.slice(0, 36).map((p) => {
+              const thumb = imageOf(p.meta);
+              const active = p.meta.id === selectedId;
+              return (
+                <button
+                  key={p.path}
+                  type="button"
+                  className={active ? 'switcher-card active' : 'switcher-card'}
+                  onClick={() => {
+                    setSelectedId(p.meta.id);
+                    setSwitcherOpen(false);
+                  }}
+                >
+                  <div className="switcher-thumb">
+                    {thumb ? <img src={thumb} alt={p.meta.title} loading="lazy" /> : <span className="muted small">{TYPE_LABEL[p.meta.type]}</span>}
+                  </div>
+                  <div className="switcher-info">
+                    <strong>{p.meta.title}</strong>
+                    <span className="small muted">{p.meta.id}</span>
+                  </div>
+                </button>
+              );
+            })}
+          </div>
+        </section>
+      )}
+
+      {/* Spacious 2-Column Workbench */}
+      <div className="studio-workbench-2col">
+        {/* LEFT SIDEBAR: Data Upload / Example + Column Binder + Parameters */}
+        <aside className="studio-col studio-left sheet" aria-label="数据绑定与参数操控">
+          {/* Accessible compact select kept synced */}
+          <div className="studio-section compact-select-row">
+            <label className="studio-field">
+              <span className="small muted">当前模版</span>
+              <select
+                aria-label="选择操作条目"
+                value={selectedId}
+                onChange={(e) => setSelectedId(e.target.value)}
+              >
+                {!filteredItems.some((p) => p.meta.id === selectedId) && selectedId && (
+                  <option value={selectedId}>{selectedId}</option>
+                )}
+                {(['template', 'method', 'recipe'] as const).map((kind) => {
+                  const group = studioItems.filter((p) => p.meta.type === kind);
+                  if (!group.length) return null;
+                  return (
+                    <optgroup key={kind} label={`${TYPE_LABEL[kind]} (${group.length})`}>
+                      {group.map((p) => (
+                        <option key={p.path} value={p.meta.id}>
+                          {p.meta.title} [{p.meta.id}]
+                        </option>
+                      ))}
+                    </optgroup>
+                  );
+                })}
+              </select>
+            </label>
           </div>
 
+          {/* Step 1: Data Upload + 1-Click Example + Path Sniff */}
           <div className="studio-section">
-            <h2>2. 课题目录与本地数据嗅探</h2>
-            <label className="studio-field">
-              <span>目标课题目录 (<code>project_dir</code>)</span>
+            <div className="section-title-row">
+              <h2>1. 数据输入</h2>
+              <button
+                type="button"
+                className="button small"
+                disabled={loadingExample || !selectedId}
+                onClick={() => void handleLoadExample(false)}
+              >
+                {loadingExample ? '读取中…' : '加载内置示例'}
+              </button>
+            </div>
+
+            <div
+              className={dragOver ? 'studio-dropzone drag-over' : 'studio-dropzone'}
+              onDragOver={(e) => { e.preventDefault(); setDragOver(true); }}
+              onDragLeave={() => setDragOver(false)}
+              onDrop={handleDrop}
+              onClick={() => fileInputRef.current?.click()}
+              role="button"
+              tabIndex={0}
+              onKeyDown={(e) => { if (e.key === 'Enter' || e.key === ' ') fileInputRef.current?.click(); }}
+            >
               <input
-                type="text"
-                value={projectDir}
-                onChange={(e) => setProjectDir(e.target.value)}
-                placeholder="例如：E:/projects/asthma-scrna"
+                ref={fileInputRef}
+                type="file"
+                accept=".csv,.tsv,.txt,.rds"
+                hidden
+                onChange={(e) => void handleUploadFile(e.target.files?.[0])}
               />
-            </label>
-            <label className="studio-field">
-              <span>本地数据文件路径 (<code>data_file</code>)</span>
-              <div className="studio-sniff-row">
+              <strong>{uploading ? '正在上传并解析表头…' : '点击选择或拖拽上传 CSV / TSV 数据表'}</strong>
+              <span className="small muted">上传后自动解析列名并匹配字段；也可点击右上「加载内置示例」体验</span>
+            </div>
+
+            {exampleFiles.length > 1 && (
+              <div className="example-file-pills">
+                <span className="small muted">示例多表：</span>
+                {exampleFiles.map((ef) => (
+                  <button
+                    key={ef.path}
+                    type="button"
+                    className={dataFile === ef.path ? 'chip-btn active' : 'chip-btn'}
+                    onClick={() => {
+                      setDataFile(ef.path);
+                      setSniffResult(ef.sniff);
+                      autoBindFromSniff(ef.sniff);
+                    }}
+                  >
+                    {ef.name}
+                  </button>
+                ))}
+              </div>
+            )}
+
+            <details className="path-sniff-collapse" open={Boolean(dataFile)}>
+              <summary className="small muted">或指定本地文件路径 (`.csv` / `.tsv` / `.rds`)</summary>
+              <div className="studio-sniff-row" style={{ marginTop: 8 }}>
                 <input
                   type="text"
                   value={dataFile}
                   onChange={(e) => setDataFile(e.target.value)}
-                  placeholder="例如：E:/projects/asthma-scrna/deg.csv"
+                  placeholder="例如：E:/projects/deg.csv"
+                  aria-label="本地数据文件路径"
                 />
                 <button type="button" className="primary small" disabled={sniffing} onClick={() => void handleSniff()}>
                   {sniffing ? '嗅探中…' : '嗅探表头'}
                 </button>
               </div>
-            </label>
+            </details>
+
             {sniffError && <p className="notice error small" role="alert">{sniffError}</p>}
             {sniffResult && (
               <div className="sniff-summary">
                 <p className="small">
-                  已嗅探 <strong>{sniffResult.columns.length}</strong> 列 · 约 <strong>{sniffResult.row_count_estimate}</strong> 行
+                  已就绪：<strong>{sniffResult.columns.length}</strong> 列 · 约 <strong>{sniffResult.row_count_estimate}</strong> 行
                   {sniffResult.note && <span className="muted"> · {sniffResult.note}</span>}
                 </p>
                 <div className="sniff-col-chips">
-                  {sniffResult.columns.map((c) => (
+                  {sniffResult.columns.slice(0, 12).map((c) => (
                     <span key={c.name} className="sniff-chip" title={`样本: ${c.samples.slice(0, 3).join(', ')}`}>
                       <code>{c.name}</code>
                       <small>{c.type}</small>
                     </span>
                   ))}
+                  {sniffResult.columns.length > 12 && <span className="small muted">+{sniffResult.columns.length - 12} 列</span>}
                 </div>
                 {sniffResult.preview_rows?.length > 0 && (
                   <details className="sniff-preview">
-                    <summary className="small">预览前 {sniffResult.preview_rows.length} 行数据</summary>
+                    <summary className="small">预览前 {sniffResult.preview_rows.length} 行</summary>
                     <div className="sniff-table-scroll">
                       <table className="input-columns">
                         <thead>
@@ -539,15 +744,16 @@ export function StudioView({ data, query = '' }: { data: AppData; query?: string
             )}
           </div>
 
+          {/* Step 2: Column Binder */}
           <div className="studio-section">
-            <h2>3. 可视化下拉列映射器</h2>
+            <h2>2. 可视化下拉列映射器</h2>
             {targetTables.length === 0 ? (
-              <p className="small muted">当前条目未声明结构化输入接口表；可直接在右侧代码头部或下方参数表单指定数据路径与字段。</p>
+              <p className="small muted">本模版使用标准位置参数或内置数据表结构，直接点击出图即可。</p>
             ) : (
               targetTables.map((tbl) => (
                 <div key={tbl.key} className="binder-table">
                   <div className="binder-table-head">
-                    <strong>表 {tbl.key}</strong>
+                    <strong>{tbl.description || tbl.key}</strong>
                     <code>{tbl.interface}.csv</code>
                   </div>
                   {tbl.columns.map((col) => {
@@ -569,7 +775,7 @@ export function StudioView({ data, query = '' }: { data: AppData; query?: string
                               value={boundVal}
                               onChange={(e) => setBindings((prev) => ({ ...prev, [col.name]: e.target.value }))}
                             >
-                              <option value="">-- 未绑定（默认 {col.name}）--</option>
+                              <option value="">-- 默认列名 ({col.name}) --</option>
                               {sniffedCols.map((sc) => (
                                 <option key={sc.name} value={sc.name}>
                                   {sc.name} ({sc.type}){sc.samples.length ? ` · 例: ${sc.samples[0]}` : ''}
@@ -581,7 +787,7 @@ export function StudioView({ data, query = '' }: { data: AppData; query?: string
                               type="text"
                               aria-label={`映射列 ${col.name}`}
                               value={boundVal}
-                              placeholder={`输入列名（默认 ${col.name}）`}
+                              placeholder={`默认列名 ${col.name}`}
                               onChange={(e) => setBindings((prev) => ({ ...prev, [col.name]: e.target.value }))}
                             />
                           )}
@@ -592,14 +798,11 @@ export function StudioView({ data, query = '' }: { data: AppData; query?: string
                 </div>
               ))
             )}
-            <details className="bindings-json-preview">
-              <summary className="small">查看自动生成的 <code>bindings.json</code></summary>
-              <pre>{JSON.stringify(bindingsJsonObj, null, 2)}</pre>
-            </details>
           </div>
 
+          {/* Step 3: Parameters & ggsci */}
           <div className="studio-section">
-            <h2>4. 动态参数表单与顶刊配色</h2>
+            <h2>3. 顶刊配色与作图参数</h2>
             <div className="param-form">
               {paramSchema.map((param) => {
                 const value = parameters[param.name] ?? defaultValueOf(param);
@@ -708,221 +911,288 @@ export function StudioView({ data, query = '' }: { data: AppData; query?: string
           </div>
         </aside>
 
-        {/* CENTER COLUMN: Live Code Generator & Interactive Editor */}
-        <section className="studio-col studio-center sheet" aria-label="实时代码生成与编辑器">
-          <div className="editor-toolbar">
-            <div className="editor-status">
-              <h2>实时脚本编辑器 ({language.toUpperCase()})</h2>
-              <span className={`diff-indicator ${manuallyEdited ? 'edited' : 'synced'}`}>
-                {rendering
-                  ? '正在渲染代码…'
-                  : manuallyEdited
-                    ? `已手动微调 ${diffInfo.editedCount} 行`
-                    : `参数头已实时同步 (${diffInfo.headerLines.size} 行注入)`}
-              </span>
-            </div>
-            <div className="editor-actions">
-              {manuallyEdited && (
-                <button
-                  type="button"
-                  className="ghost small"
-                  onClick={() => {
-                    setManuallyEdited(false);
-                    setEditorCode(baselineCode);
-                  }}
-                >
-                  重置为自动生成
-                </button>
-              )}
-              <button type="button" className="small" onClick={() => void handleCopyCode()} disabled={!editorCode}>
-                复制代码
-              </button>
-              <button type="button" className="small" onClick={handleDownloadBundle} disabled={!editorCode}>
-                下载脚本 + bindings.json
-              </button>
-            </div>
-          </div>
-          {copyNote && <p className="small muted editor-note" role="status">{copyNote}</p>}
-          {renderError && (
-            <p className="notice error small" role="alert">
-              代码渲染服务响应异常：{renderError}（仍可在下方手动编写或重试）
-            </p>
-          )}
-
-          <div className="code-editor-shell">
-            <div className="code-gutter" aria-hidden="true">
-              {editorLines.map((_, idx) => {
-                const isEdited = diffInfo.changedLines.has(idx);
-                const isHeader = diffInfo.headerLines.has(idx);
-                return (
-                  <span
-                    key={idx}
-                    className={`gutter-no${isEdited ? ' diff-edited' : isHeader ? ' diff-header' : ''}`}
-                    title={isEdited ? '手动修改行' : isHeader ? '自动注入参数头' : undefined}
-                  >
-                    {idx + 1}
-                  </span>
-                );
-              })}
-            </div>
-            <div className="code-surface">
-              <pre className="code-highlight-layer" aria-hidden="true">
-                {editorLines.map((line, idx) => (
-                  <div
-                    key={idx}
-                    className={`code-hl-line${diffInfo.changedLines.has(idx) ? ' is-edited' : diffInfo.headerLines.has(idx) ? ' is-header' : ''}`}
-                  >
-                    {line ? highlightLine(line, language) : '\u200B'}
-                  </div>
-                ))}
-              </pre>
-              <textarea
-                className="code-input-layer"
-                aria-label="交互式代码编辑器"
-                spellCheck={false}
-                value={editorCode}
-                onChange={(e) => {
-                  setManuallyEdited(true);
-                  setEditorCode(e.target.value);
-                }}
-                onKeyDown={(e) => {
-                  if (e.key === 'Tab') {
-                    e.preventDefault();
-                    const el = e.currentTarget;
-                    const start = el.selectionStart;
-                    const end = el.selectionEnd;
-                    const next = editorCode.slice(0, start) + '  ' + editorCode.slice(end);
-                    setManuallyEdited(true);
-                    setEditorCode(next);
-                    requestAnimationFrame(() => {
-                      el.selectionStart = el.selectionEnd = start + 2;
-                    });
-                  }
-                }}
-              />
-            </div>
-          </div>
-        </section>
-
-        {/* RIGHT COLUMN: Dispatch & Local Execution Preview */}
-        <aside className="studio-col studio-right sheet" aria-label="派发执行与成图预览">
-          <div className="studio-section">
-            <h2>5. 派发与本机试跑</h2>
-            <div className="runner-buttons">
-              <button
-                type="button"
-                className="button"
-                disabled={dispatching || !selectedId}
-                onClick={() => void handleDispatch()}
-              >
-                {dispatching ? '派发中…' : '一键派发到课题目录'}
-              </button>
-              <button
-                type="button"
-                className="button primary"
-                disabled={running || !selectedId}
-                onClick={() => void handleRun()}
-              >
-                {running ? '正在本机试跑…' : '本机试跑并预览'}
-              </button>
-            </div>
-            <p className="small muted">
-              派发将把最小代码闭包、<code>bindings.json</code> 与当前定制脚本写入 <code>{projectDir || '<project_dir>'}/wiki-use/{selectedId || '<id>'}/</code>。
-            </p>
-          </div>
-
-          {dispatchError && <p className="notice error small" role="alert">派发失败：{dispatchError}</p>}
-          {dispatchResp && (
-            <div className="dispatch-receipt">
-              <strong>派发完成</strong>
-              <p className="small">目标路径：<code>{dispatchResp.output_dir}</code></p>
-              {dispatchResp.files?.length > 0 && (
-                <ul className="small">
-                  {dispatchResp.files.map((f) => <li key={f}><code>{f}</code></li>)}
-                </ul>
-              )}
-            </div>
-          )}
-
-          {runError && <p className="notice error small" role="alert">试跑请求失败：{runError}</p>}
-
-          <div className="studio-section preview-stage">
-            <div className="preview-stage-head">
-              <h3>成图预览窗</h3>
+        {/* RIGHT MAIN STAGE: Tabbed Preview / Code / Dispatch */}
+        <section className="studio-col studio-stage sheet" aria-label="成图预览与脚本工作区">
+          <div className="studio-stage-tabs" role="tablist" aria-label="工作台主视图切换">
+            <button
+              type="button"
+              role="tab"
+              aria-selected={rightTab === 'preview'}
+              className={rightTab === 'preview' ? 'stage-tab active' : 'stage-tab'}
+              onClick={() => setRightTab('preview')}
+            >
+              成图预览与下载
               {runResp && (
-                <span className={`badge ${runResp.ok ? 'status-ready' : 'status-pending_signoff'}`}>
-                  {runResp.ok ? `运行成功 (exit ${runResp.exit_code})` : `运行失败 (exit ${runResp.exit_code})`}
-                </span>
+                <span className={`dot status-${runResp.ok ? 'ready' : 'pending_signoff'}`} aria-hidden="true" />
               )}
+            </button>
+            <button
+              type="button"
+              role="tab"
+              aria-selected={rightTab === 'code'}
+              className={rightTab === 'code' ? 'stage-tab active' : 'stage-tab'}
+              onClick={() => setRightTab('code')}
+            >
+              实时脚本 ({language.toUpperCase()})
+            </button>
+            <button
+              type="button"
+              role="tab"
+              aria-selected={rightTab === 'dispatch'}
+              className={rightTab === 'dispatch' ? 'stage-tab active' : 'stage-tab'}
+              onClick={() => setRightTab('dispatch')}
+            >
+              派发到课题与说明
+            </button>
+            <div className="stage-tab-status small muted">
+              {deps.length > 0 && <span>依赖包：{deps.slice(0, 4).join('、')}{deps.length > 4 ? '…' : ''}</span>}
             </div>
+          </div>
 
-            {!runResp && !running && (
-              <div className="preview-placeholder">
-                <p className="small muted">点击「本机试跑并预览」执行当前脚本并在此实时查看成图（PNG / SVG / PDF）与终端输出。</p>
+          {/* TAB 1: Preview & Downloads */}
+          <div className="studio-tab-panel" hidden={rightTab !== 'preview'}>
+            {runError && <p className="notice error small" role="alert">试跑请求失败：{runError}</p>}
+
+            {running && (
+              <div className="stage-loading-banner" role="status">
+                <span>正在本机调用 {language.toUpperCase()} 环境绘图，请稍候…</span>
               </div>
             )}
 
-            {running && <p className="notice small" role="status">正在本机执行脚本并等待出图…</p>}
-
-            {runResp?.preview_url && (
-              <div className="preview-media-box">
-                {/\.pdf($|\?)/i.test(runResp.preview_url) ? (
-                  <div className="pdf-preview-wrap">
-                    <iframe title="PDF 预览" src={runResp.preview_url} className="pdf-frame" />
-                    <a className="button small" href={runResp.preview_url} target="_blank" rel="noreferrer">在新窗口打开 PDF</a>
+            {runResp?.preview_url ? (
+              <div className="live-result-stage">
+                <div className="preview-stage-head">
+                  <div className="preview-status-left">
+                    <span className={`badge ${runResp.ok ? 'status-ready' : 'status-pending_signoff'}`}>
+                      {runResp.ok ? '实时成图已生成' : `运行异常 (exit ${runResp.exit_code})`}
+                    </span>
+                    <span className="small muted">基于当前参数与数据实时绘制</span>
+                  </div>
+                  <div className="download-pill-bar">
+                    {runResp.run_id && runResp.output_files.map((f) => (
+                      <a
+                        key={f}
+                        className="button small"
+                        href={`/api/studio/output/${encodeURIComponent(runResp.run_id!)}/${f.split('/').map(encodeURIComponent).join('/')}`}
+                        download={f.split('/').pop()}
+                      >
+                        下载 {f.split('/').pop()}
+                      </a>
+                    ))}
+                  </div>
+                </div>
+                <div className="preview-media-box large">
+                  {/\.pdf($|\?)/i.test(runResp.preview_url) ? (
+                    <iframe title="PDF 预览" src={runResp.preview_url} className="pdf-frame tall" />
+                  ) : (
+                    <a href={runResp.preview_url} target="_blank" rel="noreferrer" title="在新标签页查看原图">
+                      <img src={runResp.preview_url} alt="实时成图预览" className="preview-img large" />
+                    </a>
+                  )}
+                </div>
+              </div>
+            ) : (
+              <div className="reference-result-stage">
+                <div className="preview-stage-head">
+                  <div className="preview-status-left">
+                    <span className="badge">模版参考成图</span>
+                    <span className="small muted">左侧上传 CSV 或点击右上「示例一键出图」，即可用你自己的参数重绘此图</span>
+                  </div>
+                </div>
+                {referencePreview ? (
+                  <div className="preview-media-box large">
+                    <img src={referencePreview} alt={currentPage?.meta.title || '模版参考图'} className="preview-img large" />
                   </div>
                 ) : (
-                  <a href={runResp.preview_url} target="_blank" rel="noreferrer" title="点击查看大图">
-                    <img src={runResp.preview_url} alt="试跑预览图" className="preview-img" />
-                  </a>
+                  <div className="preview-placeholder large">
+                    <p className="muted">点击右上角 <strong>「示例一键出图」</strong> 或 <strong>「本机试跑并预览」</strong>，在此实时渲染高分辨率成图。</p>
+                  </div>
                 )}
               </div>
             )}
 
-            {runResp && !runResp.preview_url && (
-              <p className="small muted">本次运行未返回预览图 URL，请查看下方输出文件与终端日志。</p>
-            )}
-
-            {!!runResp?.output_files?.length && (
-              <div className="output-files-box">
-                <span className="small muted">产物文件：</span>
-                <ul className="small">
-                  {runResp.output_files.map((f) => <li key={f}><code>{f}</code></li>)}
-                </ul>
-              </div>
+            {runResp && (
+              <details className="console-collapse" open={!runResp.ok}>
+                <summary className="small muted">
+                  运行终端日志（exit {runResp.exit_code} · 产物 {runResp.output_files.length} 个）
+                </summary>
+                <div className="studio-section console-box" style={{ marginTop: 10 }}>
+                  <div className="console-tabs" role="tablist">
+                    <button
+                      type="button"
+                      role="tab"
+                      aria-selected={activeLogTab === 'stdout'}
+                      className={activeLogTab === 'stdout' ? 'active' : ''}
+                      onClick={() => setActiveLogTab('stdout')}
+                    >
+                      stdout ({runResp.stdout ? runResp.stdout.split('\n').length : 0} 行)
+                    </button>
+                    <button
+                      type="button"
+                      role="tab"
+                      aria-selected={activeLogTab === 'stderr'}
+                      className={activeLogTab === 'stderr' ? 'active' : ''}
+                      onClick={() => setActiveLogTab('stderr')}
+                    >
+                      stderr ({runResp.stderr ? runResp.stderr.split('\n').length : 0} 行)
+                    </button>
+                  </div>
+                  <pre className="console-log">
+                    {activeLogTab === 'stdout'
+                      ? (runResp.stdout || '(stdout 为空)')
+                      : (runResp.stderr || '(stderr 为空)')}
+                  </pre>
+                </div>
+              </details>
             )}
           </div>
 
-          {runResp && (
-            <div className="studio-section console-box">
-              <div className="console-tabs" role="tablist">
-                <button
-                  type="button"
-                  role="tab"
-                  aria-selected={activeLogTab === 'stdout'}
-                  className={activeLogTab === 'stdout' ? 'active' : ''}
-                  onClick={() => setActiveLogTab('stdout')}
-                >
-                  stdout ({runResp.stdout ? runResp.stdout.split('\n').length : 0} 行)
+          {/* TAB 2: Interactive Script Editor */}
+          <div className="studio-tab-panel" hidden={rightTab !== 'code'}>
+            <div className="editor-toolbar">
+              <div className="editor-status">
+                <h2>实时脚本编辑器 ({language.toUpperCase()})</h2>
+                <span className={`diff-indicator ${manuallyEdited ? 'edited' : 'synced'}`}>
+                  {rendering
+                    ? '正在渲染代码…'
+                    : manuallyEdited
+                      ? `已手动微调 ${diffInfo.editedCount} 行`
+                      : `参数已同步注入 (${diffInfo.headerLines.size} 行参数头)`}
+                </span>
+              </div>
+              <div className="editor-actions">
+                {manuallyEdited && (
+                  <button
+                    type="button"
+                    className="ghost small"
+                    onClick={() => {
+                      setManuallyEdited(false);
+                      setEditorCode(baselineCode);
+                    }}
+                  >
+                    重置为自动生成
+                  </button>
+                )}
+                <button type="button" className="small" onClick={() => void handleCopyCode()} disabled={!editorCode}>
+                  复制代码
                 </button>
-                <button
-                  type="button"
-                  role="tab"
-                  aria-selected={activeLogTab === 'stderr'}
-                  className={activeLogTab === 'stderr' ? 'active' : ''}
-                  onClick={() => setActiveLogTab('stderr')}
-                >
-                  stderr ({runResp.stderr ? runResp.stderr.split('\n').length : 0} 行)
+                <button type="button" className="small" onClick={handleDownloadBundle} disabled={!editorCode}>
+                  下载脚本 + bindings.json
                 </button>
               </div>
-              <pre className="console-log">
-                {activeLogTab === 'stdout'
-                  ? (runResp.stdout || '(stdout 为空)')
-                  : (runResp.stderr || '(stderr 为空)')}
-              </pre>
             </div>
-          )}
-        </aside>
+            {copyNote && <p className="small muted editor-note" role="status">{copyNote}</p>}
+            {renderError && (
+              <p className="notice error small" role="alert">
+                代码渲染服务响应异常：{renderError}（仍可在下方手动编写或重试）
+              </p>
+            )}
+
+            <div className="code-editor-shell">
+              <div className="code-gutter" aria-hidden="true">
+                {editorLines.map((_, idx) => {
+                  const isEdited = diffInfo.changedLines.has(idx);
+                  const isHeader = diffInfo.headerLines.has(idx);
+                  return (
+                    <span
+                      key={idx}
+                      className={`gutter-no${isEdited ? ' diff-edited' : isHeader ? ' diff-header' : ''}`}
+                      title={isEdited ? '手动修改行' : isHeader ? '自动注入参数头' : undefined}
+                    >
+                      {idx + 1}
+                    </span>
+                  );
+                })}
+              </div>
+              <div className="code-surface">
+                <pre className="code-highlight-layer" aria-hidden="true">
+                  {editorLines.map((line, idx) => (
+                    <div
+                      key={idx}
+                      className={`code-hl-line${diffInfo.changedLines.has(idx) ? ' is-edited' : diffInfo.headerLines.has(idx) ? ' is-header' : ''}`}
+                    >
+                      {line ? highlightLine(line) : '\u200B'}
+                    </div>
+                  ))}
+                </pre>
+                <textarea
+                  className="code-input-layer"
+                  aria-label="交互式代码编辑器"
+                  spellCheck={false}
+                  value={editorCode}
+                  onChange={(e) => {
+                    setManuallyEdited(true);
+                    setEditorCode(e.target.value);
+                  }}
+                  onKeyDown={(e) => {
+                    if (e.key === 'Tab') {
+                      e.preventDefault();
+                      const el = e.currentTarget;
+                      const start = el.selectionStart;
+                      const end = el.selectionEnd;
+                      const next = editorCode.slice(0, start) + '  ' + editorCode.slice(end);
+                      setManuallyEdited(true);
+                      setEditorCode(next);
+                      requestAnimationFrame(() => {
+                        el.selectionStart = el.selectionEnd = start + 2;
+                      });
+                    }
+                  }}
+                />
+              </div>
+            </div>
+          </div>
+
+          {/* TAB 3: Dispatch to Project & Bindings */}
+          <div className="studio-tab-panel" hidden={rightTab !== 'dispatch'}>
+            <div className="dispatch-panel-grid">
+              <div className="studio-section">
+                <h2>派发可复现脚本到课题目录</h2>
+                <label className="studio-field">
+                  <span>目标课题目录 (<code>project_dir</code>)</span>
+                  <input
+                    type="text"
+                    value={projectDir}
+                    onChange={(e) => setProjectDir(e.target.value)}
+                    placeholder="例如：E:/research-wiki/projects/demo-project"
+                  />
+                </label>
+                <div className="runner-buttons" style={{ maxWidth: 260 }}>
+                  <button
+                    type="button"
+                    className="button primary"
+                    disabled={dispatching || !selectedId}
+                    onClick={() => void handleDispatch()}
+                  >
+                    {dispatching ? '派发中…' : '一键派发到课题目录'}
+                  </button>
+                </div>
+                <p className="small muted">
+                  将把最小代码闭包、<code>bindings.json</code> 与当前定制脚本写入 <code>{projectDir || '<project_dir>'}/wiki-use/{selectedId || '<id>'}/</code>，方便课题内归档与 Git 版本追踪。
+                </p>
+                {dispatchError && <p className="notice error small" role="alert">派发失败：{dispatchError}</p>}
+                {dispatchResp && (
+                  <div className="dispatch-receipt">
+                    <strong>派发完成</strong>
+                    <p className="small">目标路径：<code>{dispatchResp.output_dir}</code></p>
+                    {dispatchResp.files?.length > 0 && (
+                      <ul className="small">
+                        {dispatchResp.files.map((f) => <li key={f}><code>{f}</code></li>)}
+                      </ul>
+                    )}
+                  </div>
+                )}
+              </div>
+
+              <div className="studio-section">
+                <h3>列映射配置文件 (<code>bindings.json</code>)</h3>
+                <div className="bindings-json-preview">
+                  <pre>{JSON.stringify(bindingsJsonObj, null, 2)}</pre>
+                </div>
+              </div>
+            </div>
+          </div>
+        </section>
       </div>
     </section>
   );

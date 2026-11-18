@@ -36,10 +36,11 @@ def _string_list(value) -> bool:
 
 
 def metadata_errors(meta: dict, vocabulary: frozenset[str] | None = None) -> list[str]:
-    from .tags import tag_errors
+    from .tags import keyword_errors, tag_errors
 
     def finish(found: list[str]) -> list[str]:
         found.extend(tag_errors(meta, vocabulary))
+        found.extend(keyword_errors(meta))
         return found
 
     page_type = meta.get("type")

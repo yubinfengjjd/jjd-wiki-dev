@@ -331,17 +331,18 @@ export function PlaybooksView({ data, query = '' }: { data: AppData; query?: str
   const activeMethodPage = resolvePageById(activeNodeId, data.pages);
 
   return (
-    <section className="playbooks-workbench">
-      <header className="hero slim">
-        <div className="hero-text">
-          <h1>步进决策导航</h1>
-          <p className="lede">
-            生信分析「走一步看一步」决策工作台：选择当前所处的分析阶段，查看有证据支持的下游分支、标准中间表契约、推荐分析模版与配套可视化预览图，一键进入代码模版操控台。
+    <section className="playbooks-workbench hiplot-playbooks">
+      <header className="gallery-top-bar">
+        <div className="gallery-title-group">
+          <span className="studio-eyebrow">BIOINFORMATICS STEPWISE PLAYBOOKS</span>
+          <h1>分析路线导航</h1>
+          <p className="muted small">
+            选择当前所处的组学分析步骤，直接查看该阶段可产出的下游图表模版、输入格式要求并一键进入作图工作台。
           </p>
         </div>
-        <div className="playbook-quick-links">
-          <a className="button primary" href="#/studio">直接打开代码操控台</a>
-          <a className="button" href="#/projects">查看课题步进看板</a>
+        <div className="gallery-top-actions">
+          <a className="button" href="#/gallery">浏览全部图库</a>
+          <a className="button primary" href="#/studio">打开作图工作台</a>
         </div>
       </header>
 
@@ -363,83 +364,92 @@ export function PlaybooksView({ data, query = '' }: { data: AppData; query?: str
       </div>
 
       {activePlaybook && (
-        <section className="sheet dag-panel" aria-label="交互式步进决策流画布">
+        <section className="sheet dag-panel" aria-label="当前主线分析步骤">
           <div className="dag-header">
             <div>
               <h2>{activePlaybook.title}</h2>
-              <p className="small muted">
-                点击画布中的任意分析步骤节点（如 <code>cell-type-annotation</code>），下方将展开该步骤的下游方向、中间表契约与可调用模版。
-              </p>
+              <p className="small muted">点击下方任意步骤，立即查看该步骤对应的下游分析与出图模版。</p>
             </div>
             <div className="dag-step-select">
-              <label className="small">
-                快速定位当前步骤：
-                <select
-                  aria-label="选择当前步骤"
-                  value={activeStep?.id ?? ''}
-                  onChange={(e) => setSelectedStepId(e.target.value)}
-                >
-                  {activePlaybook.steps.map((s) => (
-                    <option key={s.id} value={s.id}>{s.title}</option>
-                  ))}
-                </select>
-              </label>
               {resolvePageById(activePlaybook.path, data.pages) && (
-                <a className="button small" {...pageLink(activePlaybook.path)}>查看 Playbook 文档</a>
+                <a className="button small" {...pageLink(activePlaybook.path)}>路线文档</a>
               )}
             </div>
           </div>
 
-          <div className="dag-scroll">
-            <div className="dag-canvas" style={{ width: dag.width, height: dag.height }}>
-              <svg className="dag-edges" width={dag.width} height={dag.height} aria-hidden="true">
-                <defs>
-                  <marker id="dag-arrow" viewBox="0 0 10 10" refX="8" refY="5" markerWidth="7" markerHeight="7" orient="auto-start-reverse">
-                    <path d="M 0 1 L 10 5 L 0 9 z" fill="var(--line)" />
-                  </marker>
-                  <marker id="dag-arrow-active" viewBox="0 0 10 10" refX="8" refY="5" markerWidth="7" markerHeight="7" orient="auto-start-reverse">
-                    <path d="M 0 1 L 10 5 L 0 9 z" fill="var(--hub)" />
-                  </marker>
-                </defs>
-                {dag.edges.map(({ from, to }) => {
-                  const x1 = from.x + NODE_W;
-                  const y1 = from.y + NODE_H / 2;
-                  const x2 = to.x;
-                  const y2 = to.y + NODE_H / 2;
-                  const dx = Math.max(36, (x2 - x1) * 0.5);
-                  const isActive = from.step.id === activeStep?.id || to.step.id === activeStep?.id;
+          <div className="playbook-step-pills" role="tablist" aria-label="步骤切换">
+            {activePlaybook.steps.map((step, sIdx) => {
+              const isSelected = activeStep?.id === step.id;
+              return (
+                <button
+                  key={step.id}
+                  type="button"
+                  role="tab"
+                  aria-selected={isSelected}
+                  className={isSelected ? 'step-pill-btn active' : 'step-pill-btn'}
+                  onClick={() => setSelectedStepId(step.id)}
+                  title={step.description || step.title}
+                >
+                  <span className="step-pill-num">{sIdx + 1}</span>
+                  <span className="step-pill-label">{step.title}</span>
+                </button>
+              );
+            })}
+          </div>
+
+          <details className="dag-collapse">
+            <summary className="small muted">展开交互式拓扑流程图（{activePlaybook.steps.length} 个步骤节点）</summary>
+            <div className="dag-scroll">
+              <div className="dag-canvas" style={{ width: dag.width, height: dag.height }}>
+                <svg className="dag-edges" width={dag.width} height={dag.height} aria-hidden="true">
+                  <defs>
+                    <marker id="dag-arrow" viewBox="0 0 10 10" refX="8" refY="5" markerWidth="7" markerHeight="7" orient="auto-start-reverse">
+                      <path d="M 0 1 L 10 5 L 0 9 z" fill="var(--line)" />
+                    </marker>
+                    <marker id="dag-arrow-active" viewBox="0 0 10 10" refX="8" refY="5" markerWidth="7" markerHeight="7" orient="auto-start-reverse">
+                      <path d="M 0 1 L 10 5 L 0 9 z" fill="var(--hub)" />
+                    </marker>
+                  </defs>
+                  {dag.edges.map(({ from, to }) => {
+                    const x1 = from.x + NODE_W;
+                    const y1 = from.y + NODE_H / 2;
+                    const x2 = to.x;
+                    const y2 = to.y + NODE_H / 2;
+                    const dx = Math.max(36, (x2 - x1) * 0.5);
+                    const isActive = from.step.id === activeStep?.id || to.step.id === activeStep?.id;
+                    return (
+                      <path
+                        key={`${from.step.id}->${to.step.id}`}
+                        d={`M ${x1} ${y1} C ${x1 + dx} ${y1}, ${x2 - dx} ${y2}, ${x2 - 4} ${y2}`}
+                        className={isActive ? 'dag-edge active' : 'dag-edge'}
+                        markerEnd={isActive ? 'url(#dag-arrow-active)' : 'url(#dag-arrow)'}
+                      />
+                    );
+                  })}
+                </svg>
+
+                {dag.nodes.map(({ step, x, y }) => {
+                  const isSelected = activeStep?.id === step.id;
+                  const isNeighbor = !isSelected && connectedIds.has(step.id);
+                  const methodId = step.method_id || step.id;
                   return (
-                    <path
-                      key={`${from.step.id}->${to.step.id}`}
-                      d={`M ${x1} ${y1} C ${x1 + dx} ${y1}, ${x2 - dx} ${y2}, ${x2 - 4} ${y2}`}
-                      className={isActive ? 'dag-edge active' : 'dag-edge'}
-                      markerEnd={isActive ? 'url(#dag-arrow-active)' : 'url(#dag-arrow)'}
-                    />
+                    <button
+                      key={step.id}
+                      type="button"
+                      style={{ left: x, top: y, width: NODE_W, height: NODE_H }}
+                      className={`dag-node${isSelected ? ' selected' : ''}${isNeighbor ? ' neighbor' : ''}`}
+                      onClick={() => setSelectedStepId(step.id)}
+                      aria-pressed={isSelected}
+                    >
+                      <span className="dag-node-id">{methodId}</span>
+                      <strong className="dag-node-title">{step.title}</strong>
+                      {step.description && <span className="dag-node-desc">{step.description}</span>}
+                    </button>
                   );
                 })}
-              </svg>
-
-              {dag.nodes.map(({ step, x, y }) => {
-                const isSelected = activeStep?.id === step.id;
-                const isNeighbor = !isSelected && connectedIds.has(step.id);
-                const methodId = step.method_id || step.id;
-                return (
-                  <button
-                    key={step.id}
-                    type="button"
-                    style={{ left: x, top: y, width: NODE_W, height: NODE_H }}
-                    className={`dag-node${isSelected ? ' selected' : ''}${isNeighbor ? ' neighbor' : ''}`}
-                    onClick={() => setSelectedStepId(step.id)}
-                    aria-pressed={isSelected}
-                  >
-                    <span className="dag-node-id">{methodId}</span>
-                    <strong className="dag-node-title">{step.title}</strong>
-                    {step.description && <span className="dag-node-desc">{step.description}</span>}
-                  </button>
-                );
-              })}
+              </div>
             </div>
-          </div>
+          </details>
         </section>
       )}
 
@@ -447,11 +457,10 @@ export function PlaybooksView({ data, query = '' }: { data: AppData; query?: str
         <div className="next-steps-head">
           <div>
             <h2>
-              当前已完成步骤：{activeStep?.title ?? activeNodeId}
-              <span className="badge status-ready">{activeNodeId}</span>
+              当前步骤：{activeStep?.title ?? activeNodeId}
             </h2>
             <p className="small muted">
-              以下为依据当前观察现象与中间表契约推荐的下一步分支。点击任意模版的「在代码操控台中打开」即可直接绑列调参并运行。
+              点击下方任意可视化模版卡片中的「打开工作台」，直接加载示例数据或上传自己的 CSV 出图。
             </p>
           </div>
           <div className="next-steps-actions">
@@ -568,7 +577,7 @@ export function PlaybooksView({ data, query = '' }: { data: AppData; query?: str
                                 {page && 'status' in page.meta && <StatusBadge status={page.meta.status} />}
                               </div>
                               <a className="button primary small" href={studioHref(resolvedId)}>
-                                在代码操控台中打开
+                                打开工作台
                               </a>
                             </div>
                           </div>

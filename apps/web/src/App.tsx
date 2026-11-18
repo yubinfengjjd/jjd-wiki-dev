@@ -55,14 +55,13 @@ function withEffectiveStatus(graph: GraphData, pages: PageSummary[]): GraphData 
 }
 
 const NAV = [
-  ['playbooks', '1. 步进导航'],
-  ['studio', '2. 代码操控台'],
-  ['projects', '3. 课题看板'],
-  ['gallery', '图库'],
+  ['gallery', '图库模版'],
+  ['studio', '作图工作台'],
+  ['playbooks', '分析路线'],
+  ['projects', '课题记录'],
   ['methods', '方法库'],
-  ['recipes', '配方'],
-  ['scenarios', '场景'],
-  ['search', '全库搜索'],
+  ['recipes', '配方库'],
+  ['search', '搜索'],
 ] as const;
 
 export function App() {
@@ -142,7 +141,7 @@ export function App() {
   return (
     <div className="shell">
       <header className="masthead">
-        <a className="brand" href="#/playbooks">
+        <a className="brand" href="#/gallery">
           <svg className="brand-mark" viewBox="0 0 24 24" aria-hidden="true">
             <circle cx="12" cy="12" r="9" />
             <ellipse cx="12" cy="12" rx="9" ry="3.4" />

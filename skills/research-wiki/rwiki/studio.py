@@ -1,6 +1,7 @@
 """Bio-Template Studio backend engine: playbooks DAG, data sniffing, code rendering, dispatch, and local run."""
 from __future__ import annotations
 
+import base64
 import json
 import os
 import re
@@ -243,6 +244,106 @@ def sniff_data(config: Config, path_str: str) -> dict[str, Any]:
         raise WikiError(f"读取数据表头失败: {exc}") from exc
 
 
+def _studio_uploads_root(config: Config) -> Path:
+    base = config.work_root or (Path(tempfile.gettempdir()) / "rwiki-studio-work")
+    out = Path(base).resolve() / "studio_uploads"
+    out.mkdir(parents=True, exist_ok=True)
+    return out
+
+
+def upload_studio_data(
+    config: Config,
+    *,
+    filename: str,
+    content_base64: str = "",
+    content_text: str = "",
+) -> dict[str, Any]:
+    """Persist an uploaded CSV/TSV/TXT/RDS table into studio_uploads and sniff its schema."""
+    raw_name = Path(str(filename or "upload.csv")).name
+    safe_name = re.sub(r"[^A-Za-z0-9._-]", "_", raw_name).strip("._") or "upload.csv"
+    if len(safe_name) > 120:
+        safe_name = safe_name[-120:]
+    dest = _studio_uploads_root(config) / f"{uuid.uuid4().hex[:8]}_{safe_name}"
+    if content_base64:
+        try:
+            payload = base64.b64decode(content_base64, validate=False)
+        except (ValueError, TypeError) as exc:
+            raise WikiError(f"上传文件内容解码失败: {exc}") from exc
+        if len(payload) > 50 * 1024 * 1024:
+            raise WikiError("上传文件超过 50 MB 限制，请改用本地绝对路径嗅探")
+        dest.write_bytes(payload)
+    elif content_text:
+        dest.write_text(content_text, encoding="utf-8", newline="\n")
+    else:
+        raise WikiError("上传文件内容为空")
+
+    sniffed = sniff_data(config, str(dest))
+    return {
+        "ok": True,
+        "filename": safe_name,
+        "path": str(dest),
+        "sniff": sniffed,
+    }
+
+
+def _auto_bind_columns(spec: dict[str, Any], sniffed: dict[str, Any]) -> dict[str, str]:
+    col_names = [str(c.get("name", "")) for c in (sniffed.get("columns") or []) if c.get("name")]
+    if not col_names:
+        return {}
+    suggested: dict[str, str] = {}
+    for tdef in (spec.get("tables") or {}).values():
+        cols = tdef.get("columns") or {}
+        for expected in cols:
+            if expected in suggested:
+                continue
+            exact = next((c for c in col_names if c == expected), None)
+            icase = exact or next((c for c in col_names if c.lower() == expected.lower()), None)
+            if icase:
+                suggested[expected] = icase
+    return suggested
+
+
+def load_example_data(config: Config, entry_id: str) -> dict[str, Any]:
+    """Locate built-in example/source tables for a template/recipe/method and sniff them."""
+    spec = load_unified_spec(config, entry_id)
+    asset_dir = Path(spec["asset_dir"])
+    data_exts = {".csv", ".tsv", ".txt", ".rds"}
+    candidates: list[Path] = []
+    for folder in ("example", "source"):
+        sub = asset_dir / folder
+        if sub.is_dir():
+            for p in sorted(sub.rglob("*")):
+                if p.is_file() and p.suffix.lower() in data_exts:
+                    candidates.append(p)
+    if not candidates:
+        raise WikiError(f"条目 {entry_id} 暂未附带内置示例数据文件（可手动选择本地文件路径或拖拽上传 CSV/TSV）")
+
+    files_out: list[dict[str, Any]] = []
+    for p in candidates[:8]:
+        try:
+            sniffed = sniff_data(config, str(p))
+        except WikiError:
+            continue
+        files_out.append({
+            "name": p.name,
+            "path": str(p),
+            "sniff": sniffed,
+        })
+    if not files_out:
+        raise WikiError(f"条目 {entry_id} 的示例文件无法解析表头")
+
+    primary = files_out[0]
+    suggested = _auto_bind_columns(spec, primary["sniff"])
+    return {
+        "ok": True,
+        "id": entry_id,
+        "primary_file": primary["path"],
+        "files": files_out,
+        "sniff": primary["sniff"],
+        "suggested_bindings": suggested,
+    }
+
+
 # ------------------------------------------------------------------ code rendering
 
 def _load_source_script(spec: dict[str, Any], data_file: str, bindings: dict[str, str], params: dict[str, Any]) -> str:
@@ -479,6 +580,85 @@ def _resolve_rscript_exe(config: Config) -> str:
     raise WikiError(f"Rscript 不存在: {config.rscript_exe}")
 
 
+def _prepare_cli_template_inputs(
+    workdir: Path,
+    spec: dict[str, Any],
+    data_file: str,
+    bindings: dict[str, str] | None,
+    parameters: dict[str, Any] | None,
+) -> tuple[Path, Path]:
+    """Prepare normalized CSV data dir and style JSON override for L2 `--data/--out` renderers."""
+    import csv
+
+    data_dir = workdir / "_studio_data"
+    data_dir.mkdir(parents=True, exist_ok=True)
+    example_dir = workdir / "example"
+    if example_dir.is_dir():
+        for src in example_dir.iterdir():
+            if src.is_file():
+                shutil.copyfile(src, data_dir / src.name)
+
+    tables = spec.get("tables") or {}
+    primary_iface = None
+    for tdef in tables.values():
+        if isinstance(tdef, dict) and tdef.get("interface"):
+            if primary_iface is None or tdef.get("required", True):
+                primary_iface = str(tdef["interface"])
+                if tdef.get("required", True):
+                    break
+
+    raw_df = Path(str(data_file or "").strip()).expanduser()
+    if raw_df.is_file() and primary_iface and raw_df.suffix.lower() in (".csv", ".tsv", ".txt"):
+        target_csv = data_dir / f"{primary_iface}.csv"
+        sep = "\t" if raw_df.suffix.lower() == ".tsv" else ","
+        if sep == ",":
+            sample = raw_df.read_text(encoding="utf-8", errors="replace")[:4096]
+            if "\t" in sample and "," not in sample.splitlines()[0]:
+                sep = "\t"
+        reverse_map = {str(v): str(k) for k, v in (bindings or {}).items() if v}
+        with raw_df.open("r", encoding="utf-8-sig", errors="replace", newline="") as fin:
+            reader = list(csv.reader(fin, delimiter=sep))
+        if reader:
+            header = reader[0]
+            mapped_header = [reverse_map.get(col, col) for col in header]
+            with target_csv.open("w", encoding="utf-8", newline="") as fout:
+                writer = csv.writer(fout)
+                writer.writerow(mapped_header)
+                writer.writerows(reader[1:])
+
+    style_spec = spec.get("style") or {}
+    param_spec = spec.get("parameters") or {}
+    pal_param = param_spec.get("palette") if isinstance(param_spec, dict) else None
+    pal_choices = set(pal_param.get("choices") or []) if isinstance(pal_param, dict) else set()
+
+    style_payload: dict[str, Any] = {}
+    palettes_db = load_ggsci_palettes()
+    for k, v in (parameters or {}).items():
+        if v is None or v == "":
+            continue
+        ks = str(k)
+        if ks == "palette":
+            pal_entry = resolve_palette(str(v), palettes_db)
+            if pal_choices and str(v) not in pal_choices and "palcolor" in style_spec:
+                # SCP templates expect SCP palette names in `palette`, arbitrary hex lists in `palcolor`.
+                if pal_entry.get("colors"):
+                    style_payload["palcolor"] = list(pal_entry["colors"])
+                continue
+            if "palcolor" in style_spec and str(v) not in {str(style_spec.get("palette", "")), "Paired", "RdBu", "Set1"} and pal_entry.get("colors"):
+                style_payload["palcolor"] = list(pal_entry["colors"])
+                continue
+        style_payload[ks] = v
+
+    pal_name = str((parameters or {}).get("palette") or "NPG")
+    pal_entry = resolve_palette(pal_name, palettes_db)
+    if pal_entry.get("colors"):
+        style_payload["palette_colors"] = list(pal_entry["colors"])
+
+    style_path = workdir / "_studio_style.json"
+    style_path.write_text(json.dumps(style_payload, ensure_ascii=False, indent=2) + "\n", encoding="utf-8")
+    return data_dir, style_path
+
+
 def run_studio(
     config: Config,
     *,
@@ -540,6 +720,19 @@ def run_studio(
     else:
         cmd = [_resolve_rscript_exe(config), "--vanilla", str(script_path)]
 
+    if "--data" in final_code and "--out" in final_code and (workdir / "code").is_dir():
+        exec_script = workdir / "code" / script_name
+        exec_script.write_text(final_code, encoding="utf-8", newline="\n")
+        cli_data_dir, cli_style_path = _prepare_cli_template_inputs(workdir, spec, data_file, bindings, parameters)
+        cli_out_dir = workdir / "studio_out"
+        cli_out_dir.mkdir(parents=True, exist_ok=True)
+        exe = _resolve_python_exe(config) if rendered["language"] == "Python" else _resolve_rscript_exe(config)
+        flag_args = ["--data", str(cli_data_dir), "--out", str(cli_out_dir)]
+        if "--style" in final_code:
+            flag_args.extend(["--style", str(cli_style_path)])
+        prefix = ["-X", "utf8"] if rendered["language"] == "Python" else ["--vanilla"]
+        cmd = [exe, *prefix, str(exec_script), *flag_args]
+
     try:
         proc = subprocess.run(
             cmd,
@@ -583,21 +776,28 @@ def run_studio(
     out_dir = _studio_outputs_root(config) / run_id
     out_dir.mkdir(parents=True, exist_ok=True)
     output_files: list[str] = []
-    preview_url: str | None = None
+    raster_preview: str | None = None
+    fallback_preview: str | None = None
     for p in produced:
         rel = p.relative_to(workdir).as_posix()
         target = out_dir / rel
         target.parent.mkdir(parents=True, exist_ok=True)
         shutil.copyfile(p, target)
         output_files.append(rel)
-        if preview_url is None and p.suffix.lower() in (".png", ".jpg", ".jpeg", ".svg", ".pdf"):
-            preview_url = f"/api/studio/output/{run_id}/{rel}"
+        suffix = p.suffix.lower()
+        url = f"/api/studio/output/{run_id}/{rel}"
+        if raster_preview is None and suffix in (".png", ".jpg", ".jpeg", ".svg"):
+            raster_preview = url
+        elif fallback_preview is None and suffix == ".pdf":
+            fallback_preview = url
+    preview_url = raster_preview or fallback_preview
 
     return {
         "ok": exit_code == 0,
         "exit_code": exit_code,
         "stdout": stdout,
         "stderr": stderr,
+        "run_id": run_id,
         "output_files": output_files,
         "preview_url": preview_url,
     }

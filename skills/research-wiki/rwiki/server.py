@@ -63,6 +63,16 @@ class SniffBody(BaseModel):
     path: str = Field(min_length=1)
 
 
+class StudioUploadBody(BaseModel):
+    filename: StrictStr = Field(min_length=1, max_length=240)
+    content_base64: str = ""
+    content_text: str = ""
+
+
+class StudioLoadExampleBody(BaseModel):
+    id: StrictStr = Field(min_length=1, max_length=240)
+
+
 class StudioRenderBody(BaseModel):
     id: StrictStr = Field(min_length=1, max_length=240)
     project_dir: str = ""
@@ -668,6 +678,27 @@ def create_app(config: Config) -> FastAPI:
             return sniff_data(config, request.path)
         except WikiError as error:
             raise HTTPException(400, str(error)) from error
+
+    @app.post("/api/studio/upload")
+    def studio_upload(request: StudioUploadBody):
+        from .studio import upload_studio_data
+        try:
+            return upload_studio_data(
+                config,
+                filename=request.filename,
+                content_base64=request.content_base64,
+                content_text=request.content_text,
+            )
+        except WikiError as error:
+            raise HTTPException(400, str(error)) from error
+
+    @app.post("/api/studio/load-example")
+    def studio_load_example(request: StudioLoadExampleBody):
+        from .studio import load_example_data
+        try:
+            return load_example_data(config, request.id)
+        except WikiError as error:
+            raise HTTPException(404, str(error)) from error
 
     @app.post("/api/studio/render-code")
     def studio_render_code(request: StudioRenderBody):

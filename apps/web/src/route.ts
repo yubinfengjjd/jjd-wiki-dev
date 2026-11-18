@@ -21,10 +21,10 @@ export function parseRoute(hash: string): Route {
   try {
     segments = pathText.split('/').map((segment) => decodeURIComponent(segment));
   } catch {
-    return { view: 'playbooks', arg: '', query }; // a truncated or hand-typed %-sequence
+    return { view: 'gallery', arg: '', query }; // a truncated or hand-typed %-sequence
   }
   const [view, ...rest] = segments;
-  return { view: view || 'playbooks', arg: rest.join('/'), query };
+  return { view: view || 'gallery', arg: rest.join('/'), query };
 }
 
 export function useRoute(): Route {
