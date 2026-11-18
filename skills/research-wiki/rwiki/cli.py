@@ -251,6 +251,56 @@ def parser() -> argparse.ArgumentParser:
     p_step.add_argument("--next", dest="next_branch", default="", help="触发下一步分支")
     p_step.add_argument("--project-title", help="新建课题卡时的标题")
     p_step.add_argument("--json", action="store_true")
+
+    paper = commands.add_parser("paper", help="文献复刻流水线：trace / fetch / parse / plan / publish / status")
+    paper_sub = paper.add_subparsers(dest="paper_command", required=True)
+    pp_trace = paper_sub.add_parser("trace", help="从二手推文/DOI/PMID/标题溯源原文献并初始化工作区")
+    pp_trace.add_argument("--id", dest="paper_id", default="")
+    pp_trace.add_argument("--query", default="")
+    pp_trace.add_argument("--doi", default="")
+    pp_trace.add_argument("--pmid", default="")
+    pp_trace.add_argument("--pmcid", default="")
+    pp_trace.add_argument("--url", dest="source_url", default="")
+    pp_trace.add_argument("--post-file", type=Path)
+    pp_trace.add_argument("--repo", dest="repo_url", default="")
+    pp_trace.add_argument("--offline", action="store_true")
+    pp_trace.add_argument("--json", action="store_true")
+
+    pp_fetch = paper_sub.add_parser("fetch", help="下载 OA 全文 PDF（不绕过付费墙）或导入本地 PDF，并可选克隆开源代码仓")
+    pp_fetch.add_argument("paper_id")
+    pp_fetch.add_argument("--pdf", type=Path)
+    pp_fetch.add_argument("--repo", dest="repo_url", default="")
+    pp_fetch.add_argument("--no-clone", action="store_true")
+    pp_fetch.add_argument("--json", action="store_true")
+
+    pp_parse = paper_sub.add_parser("parse", help="解析 PDF Methods、剔除湿实验、提取图注与页面截图")
+    pp_parse.add_argument("paper_id")
+    pp_parse.add_argument("--no-render", action="store_true")
+    pp_parse.add_argument("--json", action="store_true")
+
+    pp_plan = paper_sub.add_parser("plan", help="生成小规模数据降维计划、查重映射与子代理任务单")
+    pp_plan.add_argument("paper_id")
+    pp_plan.add_argument("--max-cells", type=int, default=2500)
+    pp_plan.add_argument("--max-samples", type=int, default=120)
+    pp_plan.add_argument("--include-supp", action="store_true")
+    pp_plan.add_argument("--json", action="store_true")
+
+    pp_pub = paper_sub.add_parser("publish", help="将复刻串联流程发布为 Wiki workflow 方法页")
+    pp_pub.add_argument("paper_id")
+    pp_pub.add_argument("--id", dest="workflow_id", required=True)
+    pp_pub.add_argument("--title", required=True)
+    pp_pub.add_argument("--tags", nargs="*", default=[])
+    pp_pub.add_argument("--data-domains", nargs="*", default=[])
+    pp_pub.add_argument("--derived-methods", nargs="*", default=[])
+    pp_pub.add_argument("--derived-templates", nargs="*", default=[])
+    pp_pub.add_argument("--scale-down-note", default="")
+    pp_pub.add_argument("--dedup-note", default="")
+    pp_pub.add_argument("--force", action="store_true")
+    pp_pub.add_argument("--json", action="store_true")
+
+    pp_stat = paper_sub.add_parser("status", help="查看文献工作区进度")
+    pp_stat.add_argument("paper_id", nargs="?", default="")
+    pp_stat.add_argument("--json", action="store_true")
     return result
 
 
@@ -409,7 +459,7 @@ def main(argv: list[str] | None = None) -> int:
                 'project', 'find', 'show', 'use', 'serve', 'lint', 'pending',
                 'suggest', 'suggest-methods', 'suggest-pipeline', 'discover-methods',
                 'next', 'contact-sheet', 'render', 'render-layout', 'check-entry',
-                'check-dup', 'curate-audit'} and not (args.command == 'map-method' and args.audit):
+                'check-dup', 'curate-audit'} and not (args.command == 'map-method' and args.audit) and not (args.command == 'paper' and args.paper_command != 'publish'):
             from .asset_checkout import assert_writable
             # run --dir writes only the already copied project directory.
             if not (args.command == 'run' and getattr(args, 'dir', None)):
@@ -426,6 +476,59 @@ def main(argv: list[str] | None = None) -> int:
                 return 0
         if args.command == "project":
             _project_dispatch(args, config)
+            return 0
+        if args.command == "paper":
+            from . import paper as paper_mod
+            verb = args.paper_command
+            if verb == "trace":
+                res = paper_mod.trace_paper(
+                    config,
+                    paper_id=args.paper_id,
+                    query=args.query,
+                    doi=args.doi,
+                    pmid=args.pmid,
+                    pmcid=args.pmcid,
+                    source_url=args.source_url,
+                    source_text_path=args.post_file,
+                    repo_url=args.repo_url,
+                    offline=args.offline,
+                )
+            elif verb == "fetch":
+                res = paper_mod.fetch_paper(
+                    config,
+                    args.paper_id,
+                    pdf_path=args.pdf,
+                    repo_url=args.repo_url,
+                    clone_repo=not args.no_clone,
+                )
+            elif verb == "parse":
+                res = paper_mod.parse_paper_pdf(config, args.paper_id, render_pages=not args.no_render)
+            elif verb == "plan":
+                res = paper_mod.build_plan(
+                    config,
+                    args.paper_id,
+                    max_cells=args.max_cells,
+                    max_samples=args.max_samples,
+                    include_supp=args.include_supp,
+                )
+            elif verb == "publish":
+                wid = paper_mod.publish_paper_workflow(
+                    config,
+                    args.paper_id,
+                    workflow_id=args.workflow_id,
+                    title=args.title,
+                    tags=args.tags or None,
+                    data_domains=args.data_domains or None,
+                    derived_methods=args.derived_methods or None,
+                    derived_templates=args.derived_templates or None,
+                    scale_down_note=args.scale_down_note,
+                    dedup_note=args.dedup_note,
+                    force=args.force,
+                )
+                res = {"workflow_id": wid, "paper_id": args.paper_id}
+            else:
+                res = paper_mod.paper_status(config, args.paper_id)
+            _print(res) if getattr(args, "json", False) else print(json.dumps(res, ensure_ascii=False, indent=2))
             return 0
         if args.command == "gh":
             return _gh_dispatch(args, config)

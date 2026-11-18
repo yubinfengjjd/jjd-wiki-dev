@@ -91,3 +91,4 @@ medfig-render、medpaper-pipeline 出图前先 `rwiki find`：有可用模板或
 - references/project-reuse.md、references/project-state.md：课题推荐、适配与课题状态层
 - references/llm-wiki-mode.md：LLM Wiki 模式、网页删除与预览、Obsidian
 - references/github-workflow.md：GitHub Flow、gh 子命令、风险档与门禁、env 段、CI 跳过范围
+- `paper-replication` 技能 & `rwiki paper`（`trace` / `fetch` / `parse` / `plan` / `publish` / `status`）：从推文/文献追踪原文献、剥离湿实验、小规模抽样复刻生信方法与多面板发表图并发布为 `workflow` 页面
