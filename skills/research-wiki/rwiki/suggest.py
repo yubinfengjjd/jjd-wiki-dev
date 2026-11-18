@@ -281,134 +281,460 @@ def _normalize_next_step(item: dict) -> dict:
     }
 
 
+def _resolve_branch_targets(
+    config: Config,
+    analysis_refs: list[str],
+    viz_refs: list[str],
+    hidden: set[str],
+    rel_compat_by_figure: dict[str, str],
+) -> tuple[list[dict], list[dict], list[dict]]:
+    from .aliases import resolve_page_ref
+    from .method_hub import recipe_preview_url, template_preview_url
+    from .method_taxonomy import domains_for
+
+    root = config.wiki_root
+    next_methods: list[dict] = []
+    reference_recipes: list[dict] = []
+    viz_templates: list[dict] = []
+    seen_methods: set[str] = set()
+    seen_recipes: set[str] = set()
+    seen_viz: set[str] = set()
+
+    for ref in analysis_refs:
+        resolved = resolve_page_ref(root, ref, expected_types=("method", "recipe"))
+        if resolved is None:
+            clean = ref.removesuffix(".md")
+            if clean.startswith("recipes/"):
+                rid = clean.split("/", 1)[1]
+                if rid not in seen_recipes:
+                    seen_recipes.add(rid)
+                    reference_recipes.append({
+                        "id": rid,
+                        "title": rid,
+                        "path": f"recipes/{rid}.md",
+                        "status": "missing",
+                        "exists": False,
+                    })
+            else:
+                mid = clean.split("/", 1)[-1]
+                if mid not in seen_methods:
+                    seen_methods.add(mid)
+                    next_methods.append({
+                        "id": mid,
+                        "title": mid,
+                        "path": f"methods/{mid}.md",
+                        "status": "missing",
+                        "exists": False,
+                    })
+            continue
+        rel_path = resolved.relative_to(root).as_posix()
+        if rel_path in hidden:
+            continue
+        try:
+            rmeta, _ = read_page(resolved)
+        except WikiError:
+            continue
+        if rmeta.get("status") == "archived":
+            continue
+        rtype = rmeta.get("type")
+        if rtype == "method":
+            if rmeta.get("method_kind") in ("technical", "workflow"):
+                continue
+            mid = str(rmeta.get("id") or resolved.stem)
+            if mid in seen_methods:
+                continue
+            seen_methods.add(mid)
+            next_methods.append({
+                "id": mid,
+                "title": str(rmeta.get("title") or mid),
+                "path": rel_path,
+                "status": str(rmeta.get("status") or "draft"),
+                "method_kind": rmeta.get("method_kind"),
+                "summary": str(rmeta.get("summary") or ""),
+                "data_domains": domains_for(rmeta),
+                "purposes": list(rmeta.get("purposes") or []),
+                "exists": True,
+            })
+        elif rtype == "recipe":
+            rid = str(rmeta.get("id") or resolved.stem)
+            if rid in seen_recipes:
+                continue
+            seen_recipes.add(rid)
+            reference_recipes.append({
+                "id": rid,
+                "title": str(rmeta.get("title") or rid),
+                "path": rel_path,
+                "status": str(rmeta.get("status") or "draft"),
+                "language": str(rmeta.get("language") or ""),
+                "chart_types": list(rmeta.get("chart_types") or []),
+                "preview_url": recipe_preview_url(root, rid),
+                "exists": True,
+            })
+
+    for ref in viz_refs:
+        resolved = resolve_page_ref(root, ref, expected_type="template")
+        if resolved is None:
+            tid = ref.removesuffix(".md").split("/", 1)[-1]
+            if tid and tid not in seen_viz:
+                seen_viz.add(tid)
+                viz_templates.append({
+                    "id": tid,
+                    "title": tid,
+                    "path": f"templates/{tid}.md",
+                    "status": "missing",
+                    "compatibility": "unreviewed",
+                    "preview_url": None,
+                    "exists": False,
+                })
+            continue
+        rel_path = resolved.relative_to(root).as_posix()
+        if rel_path in hidden:
+            continue
+        try:
+            tmeta, _ = read_page(resolved)
+        except WikiError:
+            continue
+        if tmeta.get("status") == "archived":
+            continue
+        tid = str(tmeta.get("id") or resolved.stem)
+        if tid in seen_viz:
+            continue
+        seen_viz.add(tid)
+        viz_templates.append({
+            "id": tid,
+            "title": str(tmeta.get("title") or tid),
+            "path": rel_path,
+            "status": str(tmeta.get("status") or "draft"),
+            "language": str(tmeta.get("language") or ""),
+            "chart_types": list(tmeta.get("chart_types") or []),
+            "preview_url": template_preview_url(root, tmeta),
+            "compatibility": rel_compat_by_figure.get(rel_path, "unreviewed"),
+            "exists": True,
+        })
+
+    return next_methods, reference_recipes, viz_templates
+
+
 def suggest_next_steps(config: Config, node_id: str, query: str = "") -> dict:
     """Return structured downstream bioinformatics directions and structural interface matches."""
     from .catalog import readable_pages
     from .facts import declarations, input_interfaces, table_interfaces
+    from .method_hub import (
+        _attached_visualizations,
+        _hub_context,
+        _normalize_render_bridges,
+        _session_ctx,
+        match_interfaces,
+        spec_tables_list,
+        template_preview_url,
+    )
+    from .method_taxonomy import domains_for
 
-    path = _locate_node(config, node_id)
-    meta, body = read_page(path)
-    kind = meta.get("type", "")
-    canonical_id = str(meta.get("id") or meta.get("slug") or path.stem)
-    title = meta.get("title", canonical_id)
+    with _session_ctx():
+        root = config.wiki_root
+        hidden = excluded_paths(config)
+        path = _locate_node(config, node_id)
+        meta, _ = read_page(path)
+        kind = meta.get("type", "")
+        canonical_id = str(meta.get("id") or meta.get("slug") or path.stem)
+        page_rel = path.relative_to(root).as_posix()
+        title = meta.get("title", canonical_id)
 
-    raw_steps = meta.get("next_steps")
-    next_steps: list[dict] = []
-    if isinstance(raw_steps, list):
-        for entry in raw_steps:
-            if isinstance(entry, dict):
-                next_steps.append(_normalize_next_step(entry))
-    elif kind == "scenario" and isinstance(meta.get("steps"), list):
-        for entry in meta["steps"]:
-            if isinstance(entry, dict):
-                next_steps.append(_normalize_next_step(entry))
+        raw_steps = meta.get("next_steps")
+        branch_pairs: list[tuple[dict, dict]] = []
+        if isinstance(raw_steps, list):
+            for entry in raw_steps:
+                if isinstance(entry, dict):
+                    branch_pairs.append((entry, _normalize_next_step(entry)))
+        elif kind == "scenario" and isinstance(meta.get("steps"), list):
+            for entry in meta["steps"]:
+                if isinstance(entry, dict):
+                    branch_pairs.append((entry, _normalize_next_step(entry)))
 
-    outputs: set[str] = set()
-    if kind == "method":
-        outputs = {str(s) for s in (meta.get("outputs") or []) if isinstance(s, str) and s.strip()}
-    elif kind == "interface":
-        outputs = {str(meta.get("slug") or canonical_id)}
-    elif kind == "template":
-        spec_path = path.with_suffix("") / "spec.json"
-        if spec_path.is_file():
-            try:
-                spec = load_spec(path.with_suffix(""))
-                outputs = table_interfaces(spec)
-            except (WikiError, OSError, ValueError, KeyError, TypeError):
-                outputs = set()
+        outputs: set[str] = set()
+        if kind == "method":
+            outputs = {str(s) for s in (meta.get("outputs") or []) if isinstance(s, str) and s.strip()}
+        elif kind == "interface":
+            outputs = {str(meta.get("slug") or canonical_id)}
+        elif kind == "template":
+            spec_path = path.with_suffix("") / "spec.json"
+            if spec_path.is_file():
+                try:
+                    spec = load_spec(path.with_suffix(""))
+                    outputs = table_interfaces(spec)
+                except (WikiError, OSError, ValueError, KeyError, TypeError):
+                    outputs = set()
 
-    structural_matches: list[dict] = []
-    if outputs:
-        for tid, (tm, spec) in declarations(config.wiki_root, "templates").items():
-            if tm.get("status") == "archived":
-                continue
-            req = table_interfaces(spec)
-            if req and req & outputs:
-                preview_file = config.wiki_root / "templates" / tid / "preview.png"
-                structural_matches.append({
-                    "id": tid,
-                    "kind": "template",
-                    "type": "template",
-                    "title": tm.get("title", tid),
-                    "status": tm.get("status"),
-                    "interfaces": sorted(req),
-                    "inputs": sorted(req),
-                    "path": f"templates/{tid}.md",
-                    "page": f"templates/{tid}.md",
-                    "preview": f"/files/wiki/templates/{tid}/preview.png" if preview_file.is_file() else None,
-                })
-        for mid, (mm, method_meta) in declarations(config.wiki_root, "methods").items():
-            if mm.get("status") == "archived" or mid == canonical_id:
-                continue
-            ins = input_interfaces(method_meta)
-            if ins and ins & outputs:
-                structural_matches.append({
-                    "id": mid,
-                    "kind": "method",
-                    "type": "method",
-                    "title": mm.get("title", mid),
-                    "status": mm.get("status"),
-                    "interfaces": sorted(ins),
-                    "inputs": sorted(ins),
-                    "outputs": list(method_meta.get("outputs") or []),
-                    "path": f"methods/{mid}.md",
-                    "page": f"methods/{mid}.md",
-                })
-    # Also attach any scenario step links if node_id appears in playbook scenarios
-    if not next_steps:
-        for spath, smeta in readable_pages(config.wiki_root):
-            if smeta.get("type") != "scenario" or not isinstance(smeta.get("steps"), list):
-                continue
-            steps = smeta["steps"]
-            for idx, st in enumerate(steps):
-                if not isinstance(st, dict):
+        # Playbook scenario fallback when node has no explicit next_steps
+        if not branch_pairs:
+            for _, smeta in readable_pages(root):
+                if smeta.get("type") != "scenario" or not isinstance(smeta.get("steps"), list):
                     continue
-                if st.get("id") in (canonical_id, node_id) or st.get("method_id") in (canonical_id, node_id):
-                    for nxt in steps[idx + 1:]:
-                        if isinstance(nxt, dict) and (nxt.get("parent") == st.get("id") or idx + 1 == steps.index(nxt)):
-                            next_steps.append(_normalize_next_step(nxt))
-                    break
+                steps = smeta["steps"]
+                for idx, st in enumerate(steps):
+                    if not isinstance(st, dict):
+                        continue
+                    if st.get("id") in (canonical_id, node_id) or st.get("method_id") in (canonical_id, node_id):
+                        for nxt in steps[idx + 1:]:
+                            if isinstance(nxt, dict) and (nxt.get("parent") == st.get("id") or idx + 1 == steps.index(nxt)):
+                                branch_pairs.append((nxt, _normalize_next_step(nxt)))
+                        break
 
-    words = [w for w in dict.fromkeys(query.casefold().split()) if w]
-    if words:
-        def _matches(text: str) -> bool:
-            low = text.casefold()
-            return any(w in low for w in words)
+        hub_ctx = _hub_context(config, include_recipes=False)
+        relations = hub_ctx["relations"]
+        rel_compat_by_figure = {
+            rel["figure"]: rel["compatibility"]
+            for rel in relations
+            if rel["method"] == page_rel
+        }
 
-        filtered_steps = [
-            step for step in next_steps
-            if _matches(" ".join([
-                step["direction"], step["when"], step["intermediate_interface"],
-                *step["analysis_templates"], *step["viz_templates"],
-            ]))
-        ]
-        if filtered_steps:
-            next_steps = filtered_steps
-        filtered_matches = [
-            m for m in structural_matches
-            if _matches(" ".join([m["id"], m["title"], *m.get("interfaces", [])]))
-        ]
-        if filtered_matches:
-            structural_matches = filtered_matches
+        if kind == "method" and meta.get("status") != "archived" and meta.get("method_kind") == "analysis":
+            attached_visualizations = _attached_visualizations(
+                canonical_id,
+                page_rel,
+                outputs,
+                _normalize_render_bridges(meta.get("render_bridges")),
+                hub_ctx["templates"],
+                relations,
+            )
+        else:
+            attached_visualizations = {
+                "curated": [],
+                "object_compatible": [],
+                "render_bridged": [],
+                "all_previews": [],
+            }
 
-    return {
-        "node_id": canonical_id,
-        "requested_id": node_id,
-        "kind": kind,
-        "title": title,
-        "page": path.relative_to(config.wiki_root).as_posix(),
-        "outputs": sorted(outputs),
-        "next_steps": next_steps,
-        "structural_matches": structural_matches,
-    }
+        data_contract_out = ""
+        if isinstance(meta.get("data_contract"), dict):
+            data_contract_out = str(meta["data_contract"].get("output") or "").strip()
+        default_required_obj = data_contract_out or (", ".join(sorted(outputs)) if outputs else "")
+
+        curated_branches: list[dict] = []
+        for idx, (raw_entry, norm_step) in enumerate(branch_pairs, 1):
+            next_methods, reference_recipes, viz_templates = _resolve_branch_targets(
+                config,
+                norm_step["analysis_templates"],
+                norm_step["viz_templates"],
+                hidden,
+                rel_compat_by_figure,
+            )
+            hypothesis = str(raw_entry.get("hypothesis") or "").strip() or norm_step["when"] or norm_step["direction"]
+            required_obj = str(raw_entry.get("required_object") or "").strip() or default_required_obj
+            curated_branches.append({
+                "branch_id": str(raw_entry.get("branch_id") or f"branch-{idx}"),
+                "direction": norm_step["direction"],
+                "when": norm_step["when"],
+                "hypothesis": hypothesis,
+                "required_object": required_obj,
+                "produced_interface": norm_step["intermediate_interface"],
+                "next_methods": next_methods,
+                "reference_recipes": reference_recipes,
+                "viz_templates": viz_templates,
+            })
+
+        structural_matches: list[dict] = []
+        object_compatible_candidates: list[dict] = []
+        if outputs:
+            tpl_decls = declarations(root, "templates")
+            method_decls = declarations(root, "methods")
+
+            for tid, (tm, spec) in tpl_decls.items():
+                tpath = f"templates/{tid}.md"
+                if tm.get("status") == "archived" or tpath in hidden:
+                    continue
+                req = table_interfaces(spec)
+                if req and req & outputs:
+                    preview_url = template_preview_url(root, tm)
+                    structural_matches.append({
+                        "id": tid,
+                        "kind": "template",
+                        "type": "template",
+                        "title": tm.get("title", tid),
+                        "status": tm.get("status"),
+                        "interfaces": sorted(req),
+                        "inputs": sorted(req),
+                        "path": tpath,
+                        "page": tpath,
+                        "preview": preview_url,
+                    })
+                    tables = spec_tables_list(spec)
+                    match_type, matched, missing = match_interfaces(tables, outputs)
+                    if match_type is not None:
+                        object_compatible_candidates.append({
+                            "id": tid,
+                            "kind": "template",
+                            "title": tm.get("title", tid),
+                            "path": tpath,
+                            "status": tm.get("status"),
+                            "source": "object_inferred",
+                            "match_type": match_type,
+                            "shared_interfaces": matched,
+                            "missing_required_interfaces": missing,
+                            "language": tm.get("language", ""),
+                            "chart_types": list(tm.get("chart_types") or []),
+                            "preview_url": preview_url,
+                            "downstream_viz": [],
+                        })
+
+            for mid, (mm, method_meta) in method_decls.items():
+                mpath = f"methods/{mid}.md"
+                if mm.get("status") == "archived" or mid == canonical_id or mpath in hidden:
+                    continue
+                if mm.get("method_kind") in ("technical", "workflow"):
+                    continue
+                ins = input_interfaces(method_meta)
+                if ins and ins & outputs:
+                    structural_matches.append({
+                        "id": mid,
+                        "kind": "method",
+                        "type": "method",
+                        "title": mm.get("title", mid),
+                        "status": mm.get("status"),
+                        "interfaces": sorted(ins),
+                        "inputs": sorted(ins),
+                        "outputs": list(method_meta.get("outputs") or []),
+                        "path": mpath,
+                        "page": mpath,
+                    })
+                    if mm.get("method_kind") == "analysis":
+                        req_ins = {s for s in ins if isinstance(s, str) and s.strip()}
+                        match_type = "full" if req_ins <= outputs else "partial"
+                        shared = sorted(req_ins & outputs)
+                        missing = sorted(req_ins - outputs)
+                        m_outputs = {
+                            str(s) for s in (mm.get("outputs") or []) if isinstance(s, str) and s.strip()
+                        }
+                        m_viz = _attached_visualizations(
+                            mid,
+                            mpath,
+                            m_outputs,
+                            _normalize_render_bridges(mm.get("render_bridges")),
+                            hub_ctx["templates"],
+                            relations,
+                        )
+                        object_compatible_candidates.append({
+                            "id": mid,
+                            "kind": "method",
+                            "title": mm.get("title", mid),
+                            "path": mpath,
+                            "status": mm.get("status"),
+                            "source": "object_inferred",
+                            "match_type": match_type,
+                            "shared_interfaces": shared,
+                            "missing_required_interfaces": missing,
+                            "data_domains": domains_for(mm),
+                            "purposes": list(mm.get("purposes") or []),
+                            "downstream_viz": m_viz["all_previews"],
+                        })
+
+        object_compatible_candidates.sort(key=lambda item: (
+            0 if item["match_type"] == "full" else 1,
+            0 if item["kind"] == "method" else 1,
+            -len(item["shared_interfaces"]),
+            item["id"],
+        ))
+
+        next_steps = [norm for _, norm in branch_pairs]
+        words = [w for w in dict.fromkeys(query.casefold().split()) if w]
+        if words:
+            def _matches(text: str) -> bool:
+                low = text.casefold()
+                return any(w in low for w in words)
+
+            filtered_pairs = [
+                (idx, norm, branch)
+                for idx, (norm, branch) in enumerate(zip(next_steps, curated_branches))
+                if _matches(" ".join([
+                    norm["direction"], norm["when"], norm["intermediate_interface"],
+                    branch["hypothesis"], *norm["analysis_templates"], *norm["viz_templates"],
+                ]))
+            ]
+            if filtered_pairs:
+                next_steps = [norm for _, norm, _ in filtered_pairs]
+                curated_branches = [branch for _, _, branch in filtered_pairs]
+            filtered_matches = [
+                m for m in structural_matches
+                if _matches(" ".join([m["id"], m["title"], *m.get("interfaces", [])]))
+            ]
+            if filtered_matches:
+                structural_matches = filtered_matches
+            filtered_candidates = [
+                c for c in object_compatible_candidates
+                if _matches(" ".join([
+                    c["id"], c["title"], c["match_type"],
+                    *c.get("shared_interfaces", []), *c.get("missing_required_interfaces", []),
+                ]))
+            ]
+            if filtered_candidates:
+                object_compatible_candidates = filtered_candidates
+
+        current_node = {
+            "id": canonical_id,
+            "requested_id": node_id,
+            "kind": kind,
+            "title": title,
+            "path": page_rel,
+            "status": meta.get("status"),
+            "data_domains": domains_for(meta),
+            "purposes": list(meta.get("purposes") or []) if kind == "method" else [],
+            "inputs": list(meta.get("inputs") or []) if kind == "method" else [],
+            "outputs": sorted(outputs),
+        }
+
+        agent_guidance = (
+            "下游分支均为可选科研决策，无固定线性顺序；"
+            "请结合课题假设选择 curated_branches，或对照 object_compatible_candidates 的 full/partial 接口匹配，"
+            "并在调用模板前核对方法前提与 figure_relations 适配说明。"
+        )
+
+        return {
+            "schema_version": 2,
+            "node_id": canonical_id,
+            "requested_id": node_id,
+            "kind": kind,
+            "title": title,
+            "page": page_rel,
+            "outputs": sorted(outputs),
+            "current_node": current_node,
+            "decision_mode": "multi_branch_optional",
+            "agent_guidance": agent_guidance,
+            "curated_branches": curated_branches,
+            "object_compatible_candidates": object_compatible_candidates,
+            "attached_visualizations": attached_visualizations,
+            "next_steps": next_steps,
+            "structural_matches": structural_matches,
+        }
 
 
 def format_next_steps(payload: dict) -> str:
     lines = [f"{payload['node_id']}  {payload['title']}  [{payload['kind']}]"]
     if payload.get("outputs"):
         lines.append("输出中间表：" + "、".join(payload["outputs"]))
+    if payload.get("agent_guidance"):
+        lines.append(f"分支决策提示（{payload.get('decision_mode', 'multi_branch_optional')}）：{payload['agent_guidance']}")
+
+    branches = payload.get("curated_branches")
     steps = payload.get("next_steps") or []
-    if steps:
+    if branches:
+        lines.append("下一步分析方向（可选分支）：")
+        for idx, branch in enumerate(branches, 1):
+            lines.append(f"  {idx}. {branch['direction']}")
+            if branch.get("when"):
+                lines.append(f"     触发条件：{branch['when']}")
+            if branch.get("hypothesis") and branch["hypothesis"] != branch.get("when"):
+                lines.append(f"     分析假设：{branch['hypothesis']}")
+            if branch.get("produced_interface"):
+                lines.append(f"     标准中间表：{branch['produced_interface']}")
+            if branch.get("next_methods"):
+                lines.append("     推荐分析模版：" + ", ".join(m["id"] for m in branch["next_methods"]))
+            if branch.get("reference_recipes"):
+                lines.append("     参考源码配方：" + ", ".join(r["id"] for r in branch["reference_recipes"]))
+            if branch.get("viz_templates"):
+                lines.append("     配套可视化模版：" + ", ".join(
+                    f"{v['id']}({v.get('compatibility', 'unreviewed')})" for v in branch["viz_templates"]
+                ))
+    elif steps:
         lines.append("下一步分析方向：")
         for idx, step in enumerate(steps, 1):
             lines.append(f"  {idx}. {step['direction']}")
@@ -422,8 +748,17 @@ def format_next_steps(payload: dict) -> str:
                 lines.append(f"     配套可视化模版：{', '.join(step['viz_templates'])}")
     else:
         lines.append("暂无显式 next_steps 声明。")
+
+    candidates = payload.get("object_compatible_candidates")
     matches = payload.get("structural_matches") or []
-    if matches:
+    if candidates:
+        lines.append("接口结构匹配下游候选（仅接口推断，不代表语义已审查）：")
+        for c in candidates:
+            shared = ", ".join(c.get("shared_interfaces", []))
+            missing = c.get("missing_required_interfaces") or []
+            miss_note = f"；缺必需接口: {', '.join(missing)}" if missing else ""
+            lines.append(f"  - [{c['kind']}] {c['id']}  {c['title']} [{c['match_type']}] ({shared}){miss_note}")
+    elif matches:
         lines.append("接口结构匹配下游条目：")
         for m in matches:
             lines.append(f"  - [{m['kind']}] {m['id']}  {m['title']} ({', '.join(m.get('interfaces', []))})")

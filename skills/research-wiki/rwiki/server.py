@@ -370,6 +370,24 @@ def create_app(config: Config) -> FastAPI:
 
         return taxonomy(root)
 
+    @app.get("/api/method-hubs")
+    def method_hubs(domain: str = "", purpose: str = "", q: str = ""):
+        from .method_hub import list_method_hubs
+
+        return list_method_hubs(config, domain=domain, purpose=purpose, q=q)
+
+    @app.get("/api/methods/{method_id}/hub")
+    def method_hub_detail(method_id: str):
+        from .method_hub import build_method_hub
+        from .suggest import suggest_next_steps
+
+        try:
+            hub = build_method_hub(config, method_id)
+            hub["next"] = suggest_next_steps(config, hub["id"])
+            return hub
+        except WikiError as error:
+            raise HTTPException(404, str(error)) from error
+
     @app.get("/api/pages")
     def list_pages(light: bool = False):
         from .asset_checkout import profile
