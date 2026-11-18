@@ -158,7 +158,7 @@ export function StudioView({ data, query = '', embedded = false }: { data: AppDa
   }, [currentPage]);
 
   // Data Input / Upload / Example State
-  const [projectDir, setProjectDir] = useState('E:/research-wiki/projects/demo-project');
+  const [projectDir, setProjectDir] = useState('./projects/demo-project');
   const [dataFile, setDataFile] = useState('');
   const [sniffing, setSniffing] = useState(false);
   const [uploading, setUploading] = useState(false);
@@ -700,7 +700,7 @@ export function StudioView({ data, query = '', embedded = false }: { data: AppDa
                   type="text"
                   value={dataFile}
                   onChange={(e) => setDataFile(e.target.value)}
-                  placeholder="例如：E:/projects/deg.csv"
+                  placeholder="例如：./data/deg.csv"
                   aria-label="本地数据文件路径"
                 />
                 <button type="button" className="primary small" disabled={sniffing} onClick={() => void handleSniff()}>
@@ -1158,7 +1158,7 @@ export function StudioView({ data, query = '', embedded = false }: { data: AppDa
                     type="text"
                     value={projectDir}
                     onChange={(e) => setProjectDir(e.target.value)}
-                    placeholder="例如：E:/research-wiki/projects/demo-project"
+                    placeholder="例如：./projects/demo-project"
                   />
                 </label>
                 <div className="runner-buttons" style={{ maxWidth: 260 }}>

@@ -463,8 +463,10 @@ def use(config: Config, entry_id: str, project: Path, name: str | None = None) -
                     shutil.copyfile(target / filename, destination / filename)
             bindings = {"tables": {}}
             for key, table in spec["tables"].items():
-                columns = load_interface(config.wiki_root, table["interface"])["columns"]
-                bindings["tables"][key] = {"file": f"{table['interface']}.csv",
+                iface = (table.get("interface") or "").strip()
+                columns = load_interface(config.wiki_root, iface)["columns"] if iface else (table.get("columns") or {})
+                fname = table.get("filename") or (f"{iface}.csv" if iface else f"{key}.csv")
+                bindings["tables"][key] = {"file": fname,
                                            "columns": {column: column for column in columns}}
             (destination / "bindings.draft.json").write_text(
                 json.dumps(bindings, ensure_ascii=False, indent=2) + "\n", encoding="utf-8", newline="\n")

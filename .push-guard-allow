@@ -44,3 +44,6 @@ abs-path apps/web/search/README.md  # 静态检索构建的 Python 命令示例�
 abs-path frontend/search/README.md  # 同一构建说明在迁移前提交中的路径，保留历史审计
 abs-path archive/staged/integration-patches.md  # 原始整合方案中的历史安装目录；原件字节保留，无凭据
 abs-path archive/spec/2026-10-22-obsidian-neural-view-plan.md  # 历史插件方案的工程目录示例；原件字节保留，无凭据
+abs-path apps/web/src/views/StudioView.tsx  # 历史提交 d0189671/aec611c7/3e9fc322 中包含界面示例路径占位符，现行版本已改为相对路径
+abs-path skills/research-wiki/app/assets/index-*.js  # 历史构建产物包含旧提交占位路径文本，现行版本重编已清除
+abs-path scripts/migrate_v4_slugs.py  # 历史提交 c8392b41 的 CLI 默认路径参数，现行版本已改为相对仓库推导

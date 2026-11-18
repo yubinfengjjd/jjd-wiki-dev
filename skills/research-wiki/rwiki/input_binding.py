@@ -316,34 +316,41 @@ def prepare_tables(spec: dict, bindings: dict, data_root: Path, work_dir: Path) 
     work = Path(work_dir)
     sources, entries, output_keys = {}, [], {}
     for key, table in tables.items():
-        if not isinstance(table, dict) or not _text(table.get('interface')):
-            raise BindingError(f'spec.tables.{key}.interface 必须为非空字符串')
+        if not isinstance(table, dict):
+            raise BindingError(f'spec.tables.{key} 必须为对象')
+        interface = str(table.get('interface') or '').strip()
+        filename = str(table.get('filename') or (f'{interface}.csv' if interface else f'{key}.csv')).strip()
         binding = bindings['tables'].get(key)
         if binding is None:
             if table.get('required', True):
                 raise BindingError(f'缺少必需表 {key} 的 bindings')
             continue
-        interface = table['interface']
         source = _source_path(binding['file'], root)
         sources.setdefault(os.path.normcase(str(source.resolve())), source)
         source_digest = hashlib.sha256(source.read_bytes()).hexdigest()
         header, rows = read_source(source)
         reshaped_header, reshaped_rows, operation = reshape_records(header, rows, binding.get('reshape'))
         columns = table.get('columns') or {}
-        if not isinstance(columns, dict) or not columns:
-            raise BindingError(f'spec.tables.{key}.columns 缺失，无法核对必填字段')
-        out_header, out_rows, mapped = map_records(
-            reshaped_header, reshaped_rows, columns, binding.get('columns') or {})
-        checks = ['source_inside_data_root', 'header_unique', 'required_columns_present']
-        numeric = _numeric_checks(out_header, out_rows, columns, mapped['mapping'])
-        checks.append('numeric_values_parse')
-        out_path = work / f'{interface}.csv'
+        if not isinstance(columns, dict):
+            raise BindingError(f'spec.tables.{key}.columns 必须为对象')
+        if columns:
+            out_header, out_rows, mapped = map_records(
+                reshaped_header, reshaped_rows, columns, binding.get('columns') or {})
+            checks = ['source_inside_data_root', 'header_unique', 'required_columns_present']
+            numeric = _numeric_checks(out_header, out_rows, columns, mapped['mapping'])
+            checks.append('numeric_values_parse')
+        else:
+            out_header, out_rows = reshaped_header, reshaped_rows
+            mapped = {'mapping': {}, 'dropped_extra': []}
+            numeric = {'missing_values': {}, 'observed_ranges': {}, 'warnings': []}
+            checks = ['source_inside_data_root', 'header_unique']
+        out_path = work / filename
         output_key = os.path.normcase(str(out_path.resolve()))
         if output_key in output_keys:
             raise BindingError(f'表 {key} 与 {output_keys[output_key]} 使用同一输出文件: {out_path.name}')
         output_keys[output_key] = key
         entries.append({
-            'table_key': key, 'interface': interface, 'source': source,
+            'table_key': key, 'interface': interface, 'filename': filename, 'source': source,
             'source_digest': source_digest, 'out_header': out_header,
             'out_rows': out_rows, 'mapped': mapped, 'operation': operation,
             'checks': checks, 'numeric': numeric, 'out_path': out_path,
@@ -362,7 +369,7 @@ def prepare_tables(spec: dict, bindings: dict, data_root: Path, work_dir: Path) 
     try:
         staged = []
         for entry in entries:
-            staged_path = staging / f'{entry["interface"]}.csv'
+            staged_path = staging / entry['filename']
             _write(staged_path, entry['out_header'], entry['out_rows'])
             staged.append((staged_path, entry['out_path']))
         for staged_path, target in staged:

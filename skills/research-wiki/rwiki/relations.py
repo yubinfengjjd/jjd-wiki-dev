@@ -128,11 +128,14 @@ def _record_errors(config, record: dict, method: dict | None = None) -> list[str
                     if target.get("status") == "draft":
                         errors.append("direct 目标模板仍为 draft；作者确认可用前用 adaptable 或 candidate")
                     if method is not None:
-                        required = {table["interface"] for table in spec["tables"].values()}
-                        missing = sorted(required - set(method.get("outputs") or []))
-                        if missing:
-                            errors.append("direct 要求模板读取的接口均为方法声明输出；缺 "
-                                          + "、".join(missing) + "，否则写 adaptable")
+                        required = {table["interface"] for table in spec["tables"].values() if table.get("interface")}
+                        if not required or not all(table.get("interface") for table in spec["tables"].values()):
+                            errors.append("direct 要求模板全部输入表均声明标准接口，否则写 adaptable")
+                        else:
+                            missing = sorted(required - set(method.get("outputs") or []))
+                            if missing:
+                                errors.append("direct 要求模板读取的接口均为方法声明输出；缺 "
+                                              + "、".join(missing) + "，否则写 adaptable")
             if target["type"] == "layout":
                 covering = [tid for tid in target.get("templates", [])
                             if _ready_covering_template(config, target, tid)]

@@ -401,7 +401,7 @@ def _build_bindings_json(spec: dict[str, Any], data_file: str, bindings: dict[st
         cols = tdef.get("columns") or {}
         mapped = {col: bindings.get(col, col) for col in cols}
         tables_out[tname] = {
-            "file": data_file or (f"{tdef['interface']}.csv" if tdef.get("interface") else "input.csv"),
+            "file": data_file or tdef.get("filename") or (f"{tdef['interface']}.csv" if tdef.get("interface") else f"{tname}.csv"),
             "columns": mapped,
         }
     return {
@@ -602,17 +602,18 @@ def _prepare_cli_template_inputs(
                 shutil.copyfile(src, data_dir / src.name)
 
     tables = spec.get("tables") or {}
-    primary_iface = None
-    for tdef in tables.values():
-        if isinstance(tdef, dict) and tdef.get("interface"):
-            if primary_iface is None or tdef.get("required", True):
-                primary_iface = str(tdef["interface"])
+    primary_filename = None
+    for tname, tdef in tables.items():
+        if isinstance(tdef, dict):
+            candidate = tdef.get("filename") or (f"{tdef['interface']}.csv" if tdef.get("interface") else f"{tname}.csv")
+            if primary_filename is None or tdef.get("required", True):
+                primary_filename = str(candidate)
                 if tdef.get("required", True):
                     break
 
     raw_df = Path(str(data_file or "").strip()).expanduser()
-    if raw_df.is_file() and primary_iface and raw_df.suffix.lower() in (".csv", ".tsv", ".txt"):
-        target_csv = data_dir / f"{primary_iface}.csv"
+    if raw_df.is_file() and primary_filename and raw_df.suffix.lower() in (".csv", ".tsv", ".txt"):
+        target_csv = data_dir / primary_filename
         sep = "\t" if raw_df.suffix.lower() == ".tsv" else ","
         if sep == ",":
             sample = raw_df.read_text(encoding="utf-8", errors="replace")[:4096]

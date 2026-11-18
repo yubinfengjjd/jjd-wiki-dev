@@ -214,7 +214,8 @@ def suggest_pipeline(config: Config, figure: str | None = None, query: str = "")
         ):
             continue
         spec = load_spec(path.with_suffix(""))
-        required = {table["interface"] for table in spec["tables"].values()}
+        required = {table["interface"] for table in spec["tables"].values() if table.get("interface")}
+        all_interfaced = bool(required) and all(table.get("interface") for table in spec["tables"].values())
         candidates = []
         figure_path = path.relative_to(config.wiki_root).as_posix()
         figure_relations = [relation for relation in relations
@@ -222,7 +223,7 @@ def suggest_pipeline(config: Config, figure: str | None = None, query: str = "")
         for method_path, meta, method_body in methods:
             method_page = method_path.relative_to(config.wiki_root).as_posix()
             relation = next((record for record in figure_relations if record["method"] == method_page), None)
-            structural = bool(required) and required <= set(meta["outputs"])
+            structural = all_interfaced and required <= set(meta["outputs"])
             if not structural and relation is None:
                 continue
             score, reasons = 0, []

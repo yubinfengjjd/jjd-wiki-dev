@@ -89,6 +89,7 @@ class ParameterField(BaseModel):
 
 class TableContract(BaseModel):
     interface: str = ""
+    filename: str = ""
     description: str = ""
     required: bool = True
     columns: dict[str, Any] = Field(default_factory=dict)
@@ -223,17 +224,18 @@ def load_unified_spec(config: Config, entry_id: str) -> dict[str, Any]:
             if not isinstance(tdef, dict):
                 continue
             slug = str(tdef.get("interface") or "")
-            cols: dict[str, Any] = {}
-            iface_title = slug
+            cols: dict[str, Any] = tdef.get("columns") if isinstance(tdef.get("columns"), dict) else {}
+            iface_title = slug or tdef.get("description") or tname
             if slug:
                 try:
                     iface = load_interface(root, slug)
                     cols = iface.get("columns") or {}
                     iface_title = iface.get("title") or slug
                 except WikiError:
-                    cols = {}
+                    cols = cols or {}
             tables_out[tname] = {
                 "interface": slug,
+                "filename": str(tdef.get("filename") or (f"{slug}.csv" if slug else f"{tname}.csv")),
                 "interface_title": iface_title,
                 "description": tdef.get("description", ""),
                 "required": tdef.get("required", True),

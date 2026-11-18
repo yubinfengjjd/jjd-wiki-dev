@@ -384,7 +384,7 @@ def migrate(
 
 def main(argv: list[str] | None = None) -> int:
     parser = argparse.ArgumentParser(description="Migrate 31 v3 template IDs to v4 short slugs")
-    parser.add_argument("--wiki-root", type=Path, default=Path(r"E:\research-wiki\wiki"))
+    parser.add_argument("--wiki-root", type=Path, default=Path(__file__).resolve().parents[2] / "wiki")
     mode = parser.add_mutually_exclusive_group()
     mode.add_argument("--dry-run", action="store_true", help="Plan migration without writing files (default)")
     mode.add_argument("--apply", action="store_true", help="Apply migration to wiki_root")

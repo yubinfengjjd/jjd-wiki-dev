@@ -33,13 +33,17 @@ def replay_inputs(target: Path) -> dict:
         for p in sorted((folder / 'code').rglob('*')):
             if p.is_file() and '__pycache__' not in p.parts and p.suffix not in ('.pyc', '.pyo'):
                 add(p)
-        for table in spec.get('tables', {}).values():
-            slug = table['interface']
-            from .interfaces import load_interface
-            definition = load_interface(root, slug)
-            # Only the table contract affects execution, not generated facts or notes.
-            files[f'interfaces/{slug}#columns'] = hashlib.sha256(json.dumps(
-                definition['columns'], ensure_ascii=False, sort_keys=True).encode()).hexdigest()
+        for tname, table in spec.get('tables', {}).items():
+            slug = str(table.get('interface') or '').strip()
+            if slug:
+                from .interfaces import load_interface
+                definition = load_interface(root, slug)
+                # Only the table contract affects execution, not generated facts or notes.
+                files[f'interfaces/{slug}#columns'] = hashlib.sha256(json.dumps(
+                    definition['columns'], ensure_ascii=False, sort_keys=True).encode()).hexdigest()
+            else:
+                files[f'inline/{tname}#columns'] = hashlib.sha256(json.dumps(
+                    table.get('columns') or {}, ensure_ascii=False, sort_keys=True).encode()).hexdigest()
 
     if target.parent.name == 'templates':
         template(target)

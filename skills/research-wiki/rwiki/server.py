@@ -306,7 +306,13 @@ def create_app(config: Config) -> FastAPI:
                                     "description": column["description"],
                                     "required": column.get("required", True)}
                                    for name, column in definition["columns"].items()]
+                elif isinstance(table, dict) and isinstance(table.get("columns"), dict):
+                    columns = [{"name": name, "type": col.get("type", "str"),
+                                "description": col.get("description", ""),
+                                "required": col.get("required", True)}
+                               for name, col in table["columns"].items() if isinstance(col, dict)]
                 tables.append({"key": key, "interface": slug if isinstance(slug, str) else "",
+                               "filename": table.get("filename", "") if isinstance(table, dict) else "",
                                "description": table.get("description", "") if isinstance(table, dict) else "",
                                "required": table.get("required", True) if isinstance(table, dict) else True,
                                "columns": columns})
