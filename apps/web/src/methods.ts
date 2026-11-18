@@ -1,5 +1,23 @@
-import { TYPE_LABEL } from './api';
-import type { ImplementationStatus, MethodMeta, MethodTaxonomy, PageMeta, PageSummary, PageType, PortabilityState, RuntimeFacts, RuntimeMode, TaxonomyCount } from './api';
+import { imageOf, TYPE_LABEL } from './api';
+import type {
+  AttachedViz,
+  DataDomainGroup,
+  GraphData,
+  ImplementationStatus,
+  MethodHubCard,
+  MethodMeta,
+  MethodTaxonomy,
+  PageMeta,
+  PageSummary,
+  PageType,
+  PortabilityState,
+  RuntimeFacts,
+  RuntimeMode,
+  TaxonomyCount,
+  TemplateMeta,
+} from './api';
+import type { Flow } from './flow';
+import { methodFigures } from './figureModels';
 
 export const RUNTIME_MODE_LABEL: Record<RuntimeMode, string> = {
   standalone: '独立模块',
@@ -99,14 +117,86 @@ export function methodSelectionHref(selection: MethodSelection): string {
   return query ? `#/methods?${query}` : '#/methods';
 }
 
+export const CANONICAL_DATA_DOMAINS: readonly [string, string][] = [
+  ['single-cell', '单细胞转录组'],
+  ['spatial-omics', '空间转录组'],
+  ['bulk-transcriptomics', 'Bulk 转录组'],
+  ['genomics-epigenomics', '基因组与表观遗传'],
+  ['clinical-prognosis', '临床与预后建模'],
+  ['multi-omics', '多组学整合与泛癌'],
+  ['general-viz-stats', '通用绘图与统计'],
+];
+
+export const DATA_DOMAIN_LABEL: Record<string, string> = Object.fromEntries(CANONICAL_DATA_DOMAINS);
+
+const LEGACY_TAG_TO_DOMAIN: Record<string, string> = {
+  'single-cell': 'single-cell',
+  '单细胞分析': 'single-cell',
+  'spatial-omics': 'spatial-omics',
+  '空间转录组': 'spatial-omics',
+  'bulk-transcriptomics': 'bulk-transcriptomics',
+  'genomics-epigenomics': 'genomics-epigenomics',
+  'clinical-prognosis': 'clinical-prognosis',
+  'survival-analysis': 'clinical-prognosis',
+  '生存分析': 'clinical-prognosis',
+  'diagnostic-roc': 'clinical-prognosis',
+  '诊断与预测评价': 'clinical-prognosis',
+  'multi-omics': 'multi-omics',
+  '多组学整合': 'multi-omics',
+  '多组学整合与泛癌': 'multi-omics',
+  'general-viz-stats': 'general-viz-stats',
+  'experimental-statistics': 'general-viz-stats',
+  '实验统计': 'general-viz-stats',
+};
+
+export function domainsForMeta(meta: { data_domains?: string[]; tags?: string[] }): string[] {
+  const explicit = (meta.data_domains ?? []).filter((d) => d in DATA_DOMAIN_LABEL);
+  if (explicit.length > 0) return [...new Set(explicit)];
+  const mapped: string[] = [];
+  for (const tag of meta.tags ?? []) {
+    const domain = LEGACY_TAG_TO_DOMAIN[tag.trim()];
+    if (domain && !mapped.includes(domain)) mapped.push(domain);
+  }
+  return mapped;
+}
+
+export function domainLabel(slug: string, taxonomy?: MethodTaxonomy): string {
+  return taxonomy?.domain_labels?.[slug] ?? DATA_DOMAIN_LABEL[slug] ?? slug;
+}
+
+export function dataDomainGroups(taxonomy: MethodTaxonomy, pages?: PageSummary[]): DataDomainGroup[] {
+  if (taxonomy.data_domains?.length) return taxonomy.data_domains;
+  const analysisPages = (pages ?? []).filter(
+    (p): p is PageSummary<MethodMeta> =>
+      p.meta.type === 'method' && p.meta.method_kind === 'analysis' && p.meta.status !== 'archived',
+  );
+  return CANONICAL_DATA_DOMAINS.map(([value, label]) => {
+    const members = analysisPages.filter((p) => domainsForMeta(p.meta).includes(value));
+    const purposeCounts = new Map<string, number>();
+    for (const member of members) {
+      for (const purpose of new Set(member.meta.purposes ?? [])) {
+        purposeCounts.set(purpose, (purposeCounts.get(purpose) ?? 0) + 1);
+      }
+    }
+    const purposes = [...purposeCounts.entries()].map(([p, count]) => ({ value: p, count }));
+    return { value, label, count: members.length, purposes };
+  });
+}
+
 /** Backend counts decide what exists; an unavailable purpose resets when the domain changes. */
 export function purposeOptionsFor(taxonomy: MethodTaxonomy, domain = ''): TaxonomyCount[] {
   if (!domain) return taxonomy.purposes;
+  const fromCanonical = taxonomy.data_domains?.find(item => item.value === domain)?.purposes;
+  if (fromCanonical) return fromCanonical;
   return taxonomy.domains.find(item => item.value === domain)?.purposes ?? [];
 }
 
 export function normalizeMethodSelection(selection: MethodSelection, taxonomy: MethodTaxonomy): MethodSelection {
-  const domain = taxonomy.domains.some(item => item.value === selection.domain) ? selection.domain : '';
+  const validDomains = new Set([
+    ...(taxonomy.data_domains ?? []).map(item => item.value),
+    ...taxonomy.domains.map(item => item.value),
+  ]);
+  const domain = validDomains.has(selection.domain) ? selection.domain : '';
   const purposes = purposeOptionsFor(taxonomy, domain).map(item => item.value);
   const purpose = purposes.includes(selection.purpose) ? selection.purpose : '';
   return { domain, purpose, q: selection.q };
@@ -125,16 +215,136 @@ export function filterAnalysisMethods(
     const meta = page.meta;
     if (meta.type !== 'method' || meta.method_kind !== 'analysis' || meta.status === 'archived') return false;
     if (seen.has(page.path)) return false;
-    if (selected.domain && !(meta.tags ?? []).includes(selected.domain)) return false;
+    if (selected.domain) {
+      const canonical = domainsForMeta(meta);
+      const matchesDomain = canonical.includes(selected.domain) || (meta.tags ?? []).includes(selected.domain);
+      if (!matchesDomain) return false;
+    }
     if (selected.purpose && !(meta.purposes ?? []).includes(selected.purpose)) return false;
     if (query) {
       const haystack = [meta.id, meta.title, meta.summary ?? '', ...(meta.purposes ?? []),
-        ...(meta.keywords ?? []), ...(meta.tags ?? [])].join(' ').toLowerCase();
+        ...(meta.data_domains ?? []), ...(meta.keywords ?? []), ...(meta.tags ?? []),
+        ...(meta.inputs ?? []), ...(meta.outputs ?? [])].join(' ').toLowerCase();
       if (!haystack.includes(query)) return false;
     }
     seen.add(page.path);
     return true;
   });
+}
+
+/** Derive a synchronous MethodHubCard fallback from AppData pages/graph/flow for SSR & initial paint. */
+export function buildFallbackMethodHub(
+  page: PageSummary<MethodMeta>,
+  pages: PageSummary[],
+  graph: GraphData,
+  flow: Flow,
+): MethodHubCard {
+  const { meta } = page;
+  const figures = methodFigures(page.path, pages, graph, flow);
+  const curated: AttachedViz['curated'] = [];
+  const objectCompatible: AttachedViz['object_compatible'] = [];
+  const seenTpl = new Set<string>();
+
+  for (const fig of figures) {
+    if (fig.meta.type !== 'template') continue;
+    const tpl = fig.meta as TemplateMeta;
+    const isPrimary = tpl.primary_method === meta.id || tpl.primary_method === page.path;
+    if (fig.relation === 'semantic' || isPrimary) {
+      seenTpl.add(tpl.id);
+      curated.push({
+        id: tpl.id,
+        title: tpl.title,
+        path: fig.path,
+        status: tpl.status,
+        language: tpl.language,
+        chart_types: tpl.chart_types ?? [],
+        tables: [],
+        preview_url: imageOf(tpl),
+        primary: isPrimary,
+        compatibility: fig.semantic?.compatibility ?? 'unreviewed',
+        verification: fig.semantic?.verification ?? {
+          state: 'not_run',
+          scope: '仅声明 primary_method，尚未在方法页 figure_relations 完成语义配对审查。',
+          evidence: [],
+        },
+        reason: fig.semantic?.reason ?? '',
+        adaptation: fig.semantic?.adaptation ?? '',
+        prerequisites: fig.semantic?.prerequisites ?? [],
+      });
+    } else if (fig.relation === 'compatible') {
+      seenTpl.add(tpl.id);
+      objectCompatible.push({
+        id: tpl.id,
+        title: tpl.title,
+        path: fig.path,
+        status: tpl.status,
+        language: tpl.language,
+        chart_types: tpl.chart_types ?? [],
+        tables: [],
+        preview_url: imageOf(tpl),
+        match_type: 'full',
+        matched_interfaces: meta.outputs ?? [],
+        missing_required_interfaces: [],
+      });
+    }
+  }
+
+  const allPreviews: AttachedViz['all_previews'] = [
+    ...curated.map((c) => ({
+      id: c.id,
+      title: c.title,
+      path: c.path,
+      preview_url: c.preview_url,
+      source: 'curated',
+      primary: c.primary,
+      compatibility: c.compatibility,
+      match_type: null,
+      chart_types: c.chart_types,
+      language: c.language,
+    })),
+    ...objectCompatible.map((o) => ({
+      id: o.id,
+      title: o.title,
+      path: o.path,
+      preview_url: o.preview_url,
+      source: 'object_compatible',
+      primary: false,
+      compatibility: null,
+      match_type: o.match_type,
+      chart_types: o.chart_types,
+      language: o.language,
+    })),
+  ].slice(0, 6);
+
+  const domains = domainsForMeta(meta);
+  return {
+    id: meta.id,
+    title: meta.title,
+    path: page.path,
+    status: meta.status,
+    summary: meta.summary ?? '',
+    data_domains: domains,
+    data_domain_labels: domains.map((d) => DATA_DOMAIN_LABEL[d] ?? d),
+    purposes: meta.purposes ?? [],
+    tags: meta.tags ?? [],
+    keywords: meta.keywords ?? [],
+    inputs: meta.inputs ?? [],
+    outputs: meta.outputs ?? [],
+    data_contract: meta.data_contract ?? {},
+    render_bridges: meta.render_bridges ?? [],
+    implementations: meta.implementations ?? [],
+    implementation_status: page.implementation_status ?? [],
+    workflow: page.workflow ?? null,
+    next_steps_count: meta.next_steps?.length ?? 0,
+    attached_visualizations: {
+      curated,
+      object_compatible: objectCompatible,
+      render_bridged: [],
+      all_previews: allPreviews,
+    },
+    reference_recipes: [],
+    unmapped_recipes_count: 0,
+  };
 }
 
 export type MethodBrowseKind = 'all' | 'analysis' | 'workflow' | 'technical';

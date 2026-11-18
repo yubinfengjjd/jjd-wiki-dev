@@ -96,6 +96,17 @@ async function main() {
   await apiModule.loadLibrary({pages: () => {}, graph: () => {}, taxonomy: () => {}}, () => true, false);
   assert.deepEqual(requested, ['/api/pages?light=true'],
     'global search must not compete with unrelated full-library evidence and graph hydration');
+
+  requested.length = 0;
+  globalThis.fetch = (async (url: string) => {
+    requested.push(url);
+    return {ok: true, json: async () => ({taxonomy: {total: 0, domains: [], purposes: [], unclassified: []}, data_domains: [], methods: [], total: 0, filtered_total: 0, unmapped_recipes: [], unmapped_recipes_count: 0})};
+  }) as any;
+  await apiModule.api.methodHubs({domain: 'single-cell', purpose: '差异与功能分析', q: 'deg'});
+  await apiModule.api.methodHub('differential-expression');
+  assert.ok(requested[0].startsWith('/api/method-hubs?') && requested[0].includes('domain=single-cell') && requested[0].includes('q=deg'));
+  assert.equal(requested[1], '/api/methods/differential-expression/hub');
+
   console.log('discovery/loading: source search, pending evidence, staged loading and stale-load checks passed');
 }
 main().catch(error => {console.error(error); process.exit(1);});

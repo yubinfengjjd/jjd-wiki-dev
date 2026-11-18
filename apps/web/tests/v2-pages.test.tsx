@@ -12,6 +12,7 @@ import { PageView } from '../src/views/PageView';
 import { PlaybooksView } from '../src/views/PlaybooksView';
 import { ProjectsView } from '../src/views/ProjectsView';
 import { RecipesView } from '../src/views/RecipesView';
+import { ResourcesView } from '../src/views/ResourcesView';
 import { ScenariosView } from '../src/views/ScenariosView';
 import { StudioView } from '../src/views/StudioView';
 
@@ -249,11 +250,45 @@ async function main() {
       implementation_status: [],
     };
     const pbHtml = renderToStaticMarkup(<PlaybooksView data={dataOf([...pages, methodWithNext])} />);
+    assert.ok(pbHtml.includes('多路决策沙盘'));
     assert.ok(pbHtml.includes('单细胞转录组步进决策树'));
     assert.ok(pbHtml.includes('Bulk + 101种机器学习标志物决策树'));
     assert.ok(pbHtml.includes('特定修饰/基因集主题挖掘决策树'));
     assert.ok(pbHtml.includes('单细胞 × Bulk 多组学联合决策树'));
+    assert.ok(pbHtml.includes('精选条件分支'));
+    assert.ok(pbHtml.includes('object_compatible_candidates'));
+    assert.ok(pbHtml.includes('切换任意方法节点'));
     assert.ok(pbHtml.includes('class="dag-canvas"'));
+
+    const techMethod = {
+      path: 'methods/seurat-helper.md',
+      meta: {
+        type: 'method', id: 'seurat-helper', title: 'Seurat 对象工具', method_kind: 'technical',
+        status: 'ready', tags: [], favorite: false, inputs: [], outputs: [],
+        source: { kind: 'written' }, license: 'none', cite: [],
+      },
+      implementation_status: [],
+    };
+    const ifacePage = {
+      path: 'interfaces/deg-result-table.md',
+      meta: {
+        type: 'interface', slug: 'deg-result-table', title: '差异基因结果表',
+        columns: { gene: { type: 'str', description: '基因', required: true } },
+      },
+    };
+    const resData = dataOf([...pages, methodWithNext, techMethod, ifacePage]);
+    const resTechHtml = renderToStaticMarkup(<ResourcesView data={resData} />);
+    assert.ok(resTechHtml.includes('资料与检索中心'));
+    assert.ok(resTechHtml.includes('技术与适配代码'));
+    assert.ok(resTechHtml.includes('数据接口契约'));
+    assert.ok(resTechHtml.includes('完整图库索引'));
+    assert.ok(resTechHtml.includes('Seurat 对象工具'));
+    const resIfaceHtml = renderToStaticMarkup(<ResourcesView data={resData} query="tab=interfaces" />);
+    assert.ok(resIfaceHtml.includes('deg-result-table.csv'));
+    const resGalleryHtml = renderToStaticMarkup(<ResourcesView data={resData} query="tab=gallery" />);
+    assert.ok(resGalleryHtml.includes('#/gallery'));
+    const resSearchHtml = renderToStaticMarkup(<ResourcesView data={resData} query="tab=search" />);
+    assert.ok(resSearchHtml.includes('全库搜索'));
 
     const studioHtml = renderToStaticMarkup(<StudioView data={dataOf([...pages, methodWithNext])} query="id=t-v2" />);
     assert.ok(studioHtml.includes('代码模版操控台'));

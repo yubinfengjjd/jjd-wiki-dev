@@ -1,11 +1,12 @@
 import { useCallback, useEffect, useState } from 'react';
-import { api, imageOf, isFigure, isItem, LayoutMeta, PageDetail, pageCache, PageSummary, PageType, safeUrl, studioHref, wikiFile } from '../api';
+import { api, imageOf, isFigure, isItem, LayoutMeta, MethodHubDetail, NextStepsResponse, PageDetail, pageCache, PageSummary, PageType, safeUrl, studioHref, wikiFile } from '../api';
 import type { AppData } from '../App';
 import { FigureImage, TypeMark } from '../components';
 import { figureLabel, isWholeSource, methodFigures, templateSourceNote } from '../figureModels';
 import { methodSection, renderBody, renderMarkdown, userBlock, withoutLeadEmbeds } from '../markdown';
 import { pageLink } from '../nav';
 import { Chain } from './Chain';
+import { InlineStudioDrawer } from './InlineStudioDrawer';
 import { ItemActions, LayoutImages, MethodSource, NoteEditor, TagsEditor } from './ItemPanel';
 import { CodeButton } from '../CodeViewer';
 import { RelationList } from '../RelationList';
@@ -16,8 +17,8 @@ import { sectionTargets } from '../search';
 
 /** The list a page belongs to, for the breadcrumb; figures and hubs fall back to the gallery. */
 const SECTION: Partial<Record<PageType, [string, string]>> = {
-  method: ['#/methods', '方法库'],
-  interface: ['#/methods', '方法库'],
+  method: ['#/methods', '分析方法库'],
+  interface: ['#/resources?tab=interfaces', '资料与接口'],
   recipe: ['#/recipes', '配方'],
   source: ['#/recipes', '配方'],
   scenario: ['#/scenarios', '场景'],
@@ -26,12 +27,38 @@ const SECTION: Partial<Record<PageType, [string, string]>> = {
 export function PageView({ path, data, query = '' }: { path: string; data: AppData; query?: string }) {
   // A page opened from a card was prefetched, so it paints in the transition's first frame.
   const [page, setPage] = useState<PageDetail | null>(() => pageCache.get(path) ?? null);
+  const [hub, setHub] = useState<MethodHubDetail | null>(null);
+  const [nextSteps, setNextSteps] = useState<NextStepsResponse | null>(null);
+  const [drawerTemplate, setDrawerTemplate] = useState<{ id: string; title?: string } | null>(null);
   const [error, setError] = useState('');
   const [busy, setBusy] = useState(false);
 
   useEffect(() => {
+    setHub(null);
+    setNextSteps(null);
+    setDrawerTemplate(null);
     api.page(path).then(setPage, (e: Error) => setError(e.message));
   }, [path]);
+
+  useEffect(() => {
+    if (!page || page.meta.type !== 'method' || page.meta.method_kind !== 'analysis') return;
+    if (typeof fetch !== 'function') return;
+    const methodId = page.meta.id;
+    const ctrl = new AbortController();
+    api.methodHub(methodId, ctrl.signal)
+      .then((res) => {
+        if (ctrl.signal.aborted || !res || !res.id) return;
+        setHub(res);
+        if (res.next) setNextSteps(res.next);
+      })
+      .catch(() => undefined);
+    api.nextSteps(methodId)
+      .then((res) => {
+        if (!ctrl.signal.aborted && res && res.node_id) setNextSteps(res);
+      })
+      .catch(() => undefined);
+    return () => ctrl.abort();
+  }, [page?.path, page?.meta.type]);
 
   useEffect(() => {
     if (!page) return;
@@ -95,7 +122,8 @@ export function PageView({ path, data, query = '' }: { path: string; data: AppDa
   const pagesOf = (paths: string[]) => paths.flatMap((p) => byPath.get(p) ?? [])
     .filter((p) => !isItem(p.meta) || p.meta.status !== 'archived');
   const { flow } = data;
-  const structuralTemplates = meta.type === 'method' ? pagesOf(flow.figuresOf(path)) : [];
+  const canonicalPath = page.path || path;
+  const structuralTemplates = meta.type === 'method' ? pagesOf(flow.figuresOf(canonicalPath)) : [];
   const adaptableTemplates = meta.type === 'method'
     ? adaptableTemplateRelations(page.relations ?? [])
     : [];
@@ -126,7 +154,12 @@ export function PageView({ path, data, query = '' }: { path: string; data: AppDa
             : pageTypeLabel(meta)}
         </p>
         <div className="page-title-row">
-          <h1>{meta.title}</h1>
+          <div>
+            <h1>{meta.title}</h1>
+            {meta.type === 'template' && (
+              <p className="small muted page-canonical-slug">规范标识：<code>{meta.id}</code></p>
+            )}
+          </div>
           <div className="page-title-actions">
             {item && item.type !== 'layout' && (
               <a className="button primary small" href={studioHref(item.id)}>进入操控台</a>
@@ -134,6 +167,12 @@ export function PageView({ path, data, query = '' }: { path: string; data: AppDa
             {item && <CodeButton meta={item} />}
           </div>
         </div>
+        {(page.path !== path || (hub?.requested_id && hub.requested_id !== hub.id)) && (
+          <p className="notice small alias-notice" role="status">
+            已从旧别名 <code>{hub?.requested_id && hub.requested_id !== hub.id ? hub.requested_id : path}</code> 解析至规范条目{' '}
+            <code>{'id' in meta ? meta.id : page.path}</code>（<code>{page.path}</code>）。
+          </p>
+        )}
         {error && <p className="notice error" role="alert">{error}</p>}
 
         {meta.type === 'layout' && <LayoutImages page={page} meta={meta} />}
@@ -153,15 +192,27 @@ export function PageView({ path, data, query = '' }: { path: string; data: AppDa
         {meta.type === 'layout' && <PanelSet meta={meta} pages={pagesOf(meta.templates)} />}
 
         {meta.type === 'method' && !analysisMethod && !!meta.implementations?.length && <MethodImplementations meta={meta} implementationStatus={page.implementation_status} />}
-        {analysisMethod && <MethodOverview purposeHtml={purposeHtml} meta={meta} implementationStatus={page.implementation_status} figures={methodFigures(path, data.pages.map((p) => p.path === path ? page : p), data.graph, flow)} pages={data.pages} hiddenSources={data.env.hiddenSources} />}
+        {analysisMethod && (
+          <MethodOverview
+            purposeHtml={purposeHtml}
+            meta={meta}
+            implementationStatus={page.implementation_status}
+            figures={methodFigures(page.path, data.pages.map((p) => p.path === page.path ? page : p), data.graph, flow)}
+            pages={data.pages}
+            hiddenSources={data.env.hiddenSources}
+            hub={hub}
+            nextSteps={nextSteps}
+            onOpenStudio={(templateId, templateTitle) => setDrawerTemplate({ id: templateId, title: templateTitle })}
+          />
+        )}
         {analysisMethod && <details className="method-details"><summary>查看接口结构匹配与完整关联证据</summary>
           <Chain
             title="接口结构匹配"
             hint="结构匹配只看模板是否消费方法声明的输出；仍需另行核对含义、每行单位、量纲与方法前提。"
-            self={path}
+            self={canonicalPath}
             columns={[
-              { label: '分析方法', pages: pagesOf([path]) },
-              { label: '输出的数据接口', pages: pagesOf(flow.outputs(path)) },
+              { label: '分析方法', pages: pagesOf([canonicalPath]) },
+              { label: '输出的数据接口', pages: pagesOf(flow.outputs(canonicalPath)) },
               { label: '结构匹配的模板', pages: structuralTemplates,
                 empty: adaptableTemplates.length ? '暂无；见下方“语义关联的模板（需适配）”' : '暂无' },
             ]}
@@ -171,18 +222,18 @@ export function PageView({ path, data, query = '' }: { path: string; data: AppDa
             <Chain
               title="语义关联的模板（需适配）"
               hint="这些模板的输入接口不在方法声明输出中；需要先按关系中的适配动作准备表，不能当作结构直连。"
-              self={path}
+              self={canonicalPath}
               columns={[
-                { label: '分析方法', pages: pagesOf([path]) },
-                { label: '输出的数据接口', pages: pagesOf(flow.outputs(path)) },
+                { label: '分析方法', pages: pagesOf([canonicalPath]) },
+                { label: '输出的数据接口', pages: pagesOf(flow.outputs(canonicalPath)) },
                 { label: '语义关联的模板（需适配）', pages: adaptablePages },
               ]}
               detailOf={chainDetail}
             />
           )}
-          <RelationList relations={page.relations ?? []} self={path} pages={data.pages} />
+          <RelationList relations={page.relations ?? []} self={canonicalPath} pages={data.pages} />
         </details>}
-        {isFigure(meta) && <RelationList relations={page.relations ?? []} self={path} pages={data.pages} />}
+        {isFigure(meta) && <RelationList relations={page.relations ?? []} self={canonicalPath} pages={data.pages} />}
         {meta.type === 'template' && (
           <details className="method-details template-inputs">
             <summary>数据输入与绑定</summary>
@@ -223,11 +274,11 @@ export function PageView({ path, data, query = '' }: { path: string; data: AppDa
           <Chain
             title="接口结构匹配"
             hint="已声明的接口说明表结构；这种匹配不代表方法与图的科学含义、单位及前提已核实。"
-            self={path}
+            self={canonicalPath}
             columns={[
-              { label: '结构匹配的分析方法', pages: pagesOf(flow.methodsFor(path)) },
-              { label: '读取的数据接口', pages: pagesOf(flow.inputs(path)) },
-              { label: '这张图', pages: pagesOf([path]) },
+              { label: '结构匹配的分析方法', pages: pagesOf(flow.methodsFor(canonicalPath)) },
+              { label: '读取的数据接口', pages: pagesOf(flow.inputs(canonicalPath)) },
+              { label: '这张图', pages: pagesOf([canonicalPath]) },
             ]}
             detailOf={chainDetail}
           />
@@ -236,11 +287,11 @@ export function PageView({ path, data, query = '' }: { path: string; data: AppDa
           <Chain
             title="谁写它，谁读它"
             hint={`标准输入文件名为 ${meta.slug}.csv（内部执行约定；外部列可用 render --bindings 映射）。接口结构匹配仍需核对当前课题的含义、单位和前提。`}
-            self={path}
+            self={canonicalPath}
             columns={[
-              { label: '产出方法', pages: pagesOf(flow.inputs(path)) },
-              { label: '数据接口', pages: pagesOf([path]) },
-              { label: '读取它的图与方法', pages: pagesOf(flow.outputs(path)) },
+              { label: '产出方法', pages: pagesOf(flow.inputs(canonicalPath)) },
+              { label: '数据接口', pages: pagesOf([canonicalPath]) },
+              { label: '读取它的图与方法', pages: pagesOf(flow.outputs(canonicalPath)) },
             ]}
           />
         )}
@@ -278,6 +329,14 @@ export function PageView({ path, data, query = '' }: { path: string; data: AppDa
         <aside className="page-side sheet">
           <Backlinks page={{ ...page, backlinks: page.backlinks.filter((b) => data.env.titles.has(b.path)) }} pages={data.pages} />
         </aside>
+      )}
+      {drawerTemplate && (
+        <InlineStudioDrawer
+          templateId={drawerTemplate.id}
+          templateTitle={drawerTemplate.title}
+          data={data}
+          onClose={() => setDrawerTemplate(null)}
+        />
       )}
     </article>
   );

@@ -1,18 +1,20 @@
 import { useEffect, useMemo, useState } from 'react';
 import {
   api,
+  CuratedBranchV2,
   imageOf,
   InterfaceMeta,
   MethodMeta,
   NextStepBranch,
   NextStepsResponse,
+  ObjectCandidateV2,
   PageSummary,
   PlaybookItem,
   PlaybookStep,
   studioHref,
 } from '../api';
 import type { AppData } from '../App';
-import { FigureImage, StatusBadge } from '../components';
+import { FigureImage, LicenseBadge, StatusBadge } from '../components';
 import { pageLink } from '../nav';
 
 const CORE_PLAYBOOK_META: Record<string, { title: string; subtitle: string; steps: PlaybookStep[] }> = {
@@ -240,12 +242,31 @@ export function PlaybooksView({ data, query = '' }: { data: AppData; query?: str
   });
   const [selectedStepId, setSelectedStepId] = useState<string>(() => {
     const params = new URLSearchParams(query);
-    return params.get('step') || 'cell-type-annotation';
+    return params.get('method') || params.get('step') || 'cell-type-annotation';
+  });
+  const [customMethodId, setCustomMethodId] = useState<string>(() => {
+    const params = new URLSearchParams(query);
+    return params.get('method') || '';
   });
   const [nextResp, setNextResp] = useState<NextStepsResponse | null>(null);
   const [loadingNext, setLoadingNext] = useState(false);
   const [nextError, setNextError] = useState('');
   const [branchFilter, setBranchFilter] = useState('');
+
+  useEffect(() => {
+    const params = new URLSearchParams(query);
+    const m = params.get('method');
+    const s = params.get('step');
+    const pb = params.get('playbook');
+    if (pb) setSelectedPlaybookId(pb);
+    if (m) {
+      setCustomMethodId(m);
+      setSelectedStepId(m);
+    } else if (s) {
+      setCustomMethodId('');
+      setSelectedStepId(s);
+    }
+  }, [query]);
 
   useEffect(() => {
     let active = true;
@@ -261,22 +282,32 @@ export function PlaybooksView({ data, query = '' }: { data: AppData; query?: str
     return () => { active = false; };
   }, []);
 
+  const analysisMethods = useMemo(
+    () =>
+      data.pages
+        .filter((p): p is PageSummary<MethodMeta> => p.meta.type === 'method' && p.meta.method_kind === 'analysis' && p.meta.status !== 'archived')
+        .sort((a, b) => a.meta.title.localeCompare(b.meta.title)),
+    [data.pages],
+  );
+
   const playbooks = useMemo(() => normalizePlaybooks(serverPlaybooks, data.pages), [serverPlaybooks, data.pages]);
   const activePlaybook = playbooks.find((p) => p.id === selectedPlaybookId) ?? playbooks[0];
 
   useEffect(() => {
+    if (customMethodId) return;
     if (!activePlaybook?.steps.length) return;
     if (!activePlaybook.steps.some((s) => s.id === selectedStepId || s.method_id === selectedStepId)) {
       const preferred = activePlaybook.steps.find((s) => s.id === 'cell-type-annotation') ?? activePlaybook.steps[0];
       setSelectedStepId(preferred.id);
     }
-  }, [activePlaybook, selectedStepId]);
+  }, [activePlaybook, selectedStepId, customMethodId]);
 
-  const activeStep = activePlaybook?.steps.find((s) => s.id === selectedStepId) ?? activePlaybook?.steps[0];
-  const activeNodeId = activeStep?.method_id || activeStep?.id || selectedStepId;
+  const activeStep = customMethodId ? undefined : (activePlaybook?.steps.find((s) => s.id === selectedStepId) ?? activePlaybook?.steps[0]);
+  const activeNodeId = customMethodId || activeStep?.method_id || activeStep?.id || selectedStepId;
 
   useEffect(() => {
     if (!activeNodeId) return;
+    if (typeof fetch !== 'function') return;
     let active = true;
     setLoadingNext(true);
     setNextError('');
@@ -319,29 +350,83 @@ export function PlaybooksView({ data, query = '' }: { data: AppData; query?: str
     return set;
   }, [dag, activeStep]);
 
-  const branches: NextStepBranch[] = nextResp?.next_steps ?? [];
-  const filteredBranches = branchFilter.trim()
-    ? branches.filter((b) =>
-        `${b.direction} ${b.when} ${b.intermediate_interface} ${b.analysis_templates.join(' ')} ${b.viz_templates.join(' ')}`
-          .toLowerCase()
-          .includes(branchFilter.trim().toLowerCase()),
-      )
-    : branches;
-
   const activeMethodPage = resolvePageById(activeNodeId, data.pages);
+
+  // Use v2 curated_branches when returned, or synthesize from nextResp.next_steps / method frontmatter for SSR & legacy mocks.
+  const curatedBranches: CuratedBranchV2[] = useMemo(() => {
+    if (nextResp?.curated_branches?.length) return nextResp.curated_branches;
+    const rawSteps: NextStepBranch[] = nextResp?.next_steps?.length
+      ? nextResp.next_steps
+      : activeMethodPage?.meta.type === 'method'
+        ? activeMethodPage.meta.next_steps ?? []
+        : [];
+    return rawSteps.map((s, idx) => ({
+      branch_id: s.branch_id || `branch-${idx + 1}`,
+      direction: s.direction,
+      when: s.when,
+      hypothesis: s.hypothesis || s.when || s.direction,
+      required_object: s.required_object || '',
+      produced_interface: s.intermediate_interface,
+      next_methods: s.analysis_templates.map((tid) => {
+        const p = resolvePageById(tid, data.pages);
+        const clean = p && 'id' in p.meta ? p.meta.id : tid.replace(/^(methods|templates|recipes)\//, '').replace(/\.md$/, '');
+        return {
+          id: clean,
+          title: p?.meta.title ?? clean,
+          path: p?.path ?? `methods/${clean}.md`,
+          status: p && 'status' in p.meta ? p.meta.status : 'ready',
+        };
+      }),
+      reference_recipes: [],
+      viz_templates: s.viz_templates.map((vid) => {
+        const p = resolvePageById(vid, data.pages);
+        const clean = p && 'id' in p.meta ? p.meta.id : vid.replace(/^(templates|recipes|methods)\//, '').replace(/\.md$/, '');
+        return {
+          id: clean,
+          title: p?.meta.title ?? clean,
+          path: p?.path ?? `templates/${clean}.md`,
+          status: p && 'status' in p.meta ? p.meta.status : 'ready',
+          preview_url: p ? imageOf(p.meta) : null,
+        };
+      }),
+    }));
+  }, [nextResp, activeMethodPage, data.pages]);
+
+  const filterText = branchFilter.trim().toLowerCase();
+  const filteredCurated = filterText
+    ? curatedBranches.filter((b) =>
+        `${b.direction} ${b.when} ${b.hypothesis} ${b.produced_interface} ${b.next_methods.map((m) => `${m.id} ${m.title}`).join(' ')} ${b.viz_templates.map((v) => `${v.id} ${v.title}`).join(' ')}`
+          .toLowerCase()
+          .includes(filterText),
+      )
+    : curatedBranches;
+
+  const objectCandidates: ObjectCandidateV2[] = useMemo(() => {
+    const raw = nextResp?.object_compatible_candidates ?? [];
+    if (!filterText) return raw;
+    return raw.filter((c) =>
+      `${c.id} ${c.title} ${c.match_type} ${c.shared_interfaces.join(' ')}`.toLowerCase().includes(filterText),
+    );
+  }, [nextResp?.object_compatible_candidates, filterText]);
+
+  const selectMethodNode = (id: string) => {
+    const clean = id.replace(/^(methods|templates|recipes)\//, '').replace(/\.md$/, '');
+    setCustomMethodId(clean);
+    setSelectedStepId(clean);
+  };
 
   return (
     <section className="playbooks-workbench hiplot-playbooks">
       <header className="gallery-top-bar">
         <div className="gallery-title-group">
-          <span className="studio-eyebrow">BIOINFORMATICS STEPWISE PLAYBOOKS</span>
-          <h1>分析路线导航</h1>
+          <span className="studio-eyebrow">MULTI-BRANCH RESEARCH DECISION SANDBOX</span>
+          <h1>多路决策沙盘</h1>
           <p className="muted small">
-            选择当前所处的组学分析步骤，直接查看该阶段可产出的下游图表模版、输入格式要求并一键进入作图工作台。
+            科研下游从不是单一线性流程。选择任意分析方法或宏观路线节点，并行查看「精选条件分支」与「基于输出对象推导的兼容候选」，并直接进入出图工作台。
           </p>
         </div>
         <div className="gallery-top-actions">
-          <a className="button" href="#/gallery">浏览全部图库</a>
+          <a className="button" href="#/methods">返回分析方法库</a>
           <a className="button primary" href="#/studio">打开作图工作台</a>
         </div>
       </header>
@@ -352,9 +437,12 @@ export function PlaybooksView({ data, query = '' }: { data: AppData; query?: str
             key={pb.id}
             type="button"
             role="tab"
-            aria-selected={activePlaybook?.id === pb.id}
-            className={activePlaybook?.id === pb.id ? 'playbook-tab active' : 'playbook-tab'}
-            onClick={() => setSelectedPlaybookId(pb.id)}
+            aria-selected={!customMethodId && activePlaybook?.id === pb.id}
+            className={!customMethodId && activePlaybook?.id === pb.id ? 'playbook-tab active' : 'playbook-tab'}
+            onClick={() => {
+              setCustomMethodId('');
+              setSelectedPlaybookId(pb.id);
+            }}
           >
             <span className="playbook-tab-index">主线 {idx + 1}</span>
             <strong>{pb.title}</strong>
@@ -368,9 +456,26 @@ export function PlaybooksView({ data, query = '' }: { data: AppData; query?: str
           <div className="dag-header">
             <div>
               <h2>{activePlaybook.title}</h2>
-              <p className="small muted">点击下方任意步骤，立即查看该步骤对应的下游分析与出图模版。</p>
+              <p className="small muted">点击主线步骤，或在右侧下拉切换任意分析方法节点，即时查看多路可选下游分支。</p>
             </div>
             <div className="dag-step-select">
+              <label className="sandbox-method-picker small">
+                <span>任意方法节点：</span>
+                <select
+                  aria-label="切换任意方法节点"
+                  value={activeNodeId}
+                  onChange={(e) => selectMethodNode(e.target.value)}
+                >
+                  {!analysisMethods.some((m) => m.meta.id === activeNodeId) && (
+                    <option value={activeNodeId}>{activeNodeId}</option>
+                  )}
+                  {analysisMethods.map((m) => (
+                    <option key={m.meta.id} value={m.meta.id}>
+                      {m.meta.title} [{m.meta.id}]
+                    </option>
+                  ))}
+                </select>
+              </label>
               {resolvePageById(activePlaybook.path, data.pages) && (
                 <a className="button small" {...pageLink(activePlaybook.path)}>路线文档</a>
               )}
@@ -379,7 +484,7 @@ export function PlaybooksView({ data, query = '' }: { data: AppData; query?: str
 
           <div className="playbook-step-pills" role="tablist" aria-label="步骤切换">
             {activePlaybook.steps.map((step, sIdx) => {
-              const isSelected = activeStep?.id === step.id;
+              const isSelected = !customMethodId && activeStep?.id === step.id;
               return (
                 <button
                   key={step.id}
@@ -387,7 +492,10 @@ export function PlaybooksView({ data, query = '' }: { data: AppData; query?: str
                   role="tab"
                   aria-selected={isSelected}
                   className={isSelected ? 'step-pill-btn active' : 'step-pill-btn'}
-                  onClick={() => setSelectedStepId(step.id)}
+                  onClick={() => {
+                    setCustomMethodId('');
+                    setSelectedStepId(step.id);
+                  }}
                   title={step.description || step.title}
                 >
                   <span className="step-pill-num">{sIdx + 1}</span>
@@ -416,7 +524,7 @@ export function PlaybooksView({ data, query = '' }: { data: AppData; query?: str
                     const x2 = to.x;
                     const y2 = to.y + NODE_H / 2;
                     const dx = Math.max(36, (x2 - x1) * 0.5);
-                    const isActive = from.step.id === activeStep?.id || to.step.id === activeStep?.id;
+                    const isActive = !customMethodId && (from.step.id === activeStep?.id || to.step.id === activeStep?.id);
                     return (
                       <path
                         key={`${from.step.id}->${to.step.id}`}
@@ -429,7 +537,7 @@ export function PlaybooksView({ data, query = '' }: { data: AppData; query?: str
                 </svg>
 
                 {dag.nodes.map(({ step, x, y }) => {
-                  const isSelected = activeStep?.id === step.id;
+                  const isSelected = !customMethodId && activeStep?.id === step.id;
                   const isNeighbor = !isSelected && connectedIds.has(step.id);
                   const methodId = step.method_id || step.id;
                   return (
@@ -438,7 +546,10 @@ export function PlaybooksView({ data, query = '' }: { data: AppData; query?: str
                       type="button"
                       style={{ left: x, top: y, width: NODE_W, height: NODE_H }}
                       className={`dag-node${isSelected ? ' selected' : ''}${isNeighbor ? ' neighbor' : ''}`}
-                      onClick={() => setSelectedStepId(step.id)}
+                      onClick={() => {
+                        setCustomMethodId('');
+                        setSelectedStepId(step.id);
+                      }}
                       aria-pressed={isSelected}
                     >
                       <span className="dag-node-id">{methodId}</span>
@@ -453,14 +564,18 @@ export function PlaybooksView({ data, query = '' }: { data: AppData; query?: str
         </section>
       )}
 
-      <section className="next-steps-section" aria-label="当前步骤下游决策分支">
+      <section className="next-steps-section" aria-label="当前节点下游决策分支">
         <div className="next-steps-head">
           <div>
             <h2>
-              当前步骤：{activeStep?.title ?? activeNodeId}
+              当前方法节点：{activeMethodPage?.meta.title || activeStep?.title || activeNodeId}{' '}
+              <code>{activeNodeId}</code>
             </h2>
             <p className="small muted">
-              点击下方任意可视化模版卡片中的「打开工作台」，直接加载示例数据或上传自己的 CSV 出图。
+              {nextResp?.agent_guidance || '下游分支均为可选科研决策，无固定线性顺序；点击任意推荐方法可继续向下一跳推演，或直接打开模板工作台。'}
+            </p>
+            <p className="small muted">
+              Agent 结构化接口：<code>rwiki next {activeNodeId} --json</code>
             </p>
           </div>
           <div className="next-steps-actions">
@@ -468,132 +583,207 @@ export function PlaybooksView({ data, query = '' }: { data: AppData; query?: str
               type="search"
               value={branchFilter}
               onChange={(e) => setBranchFilter(e.target.value)}
-              placeholder="筛选分支 / 现象 / 模版"
+              placeholder="筛选分支 / 假设 / 模版"
               aria-label="筛选下游分支"
             />
             {activeMethodPage && (
               <>
-                <a className="button small" {...pageLink(activeMethodPage.path)}>方法详情</a>
+                <a className="button small" {...pageLink(activeMethodPage.path)}>方法工作站详情</a>
                 <a className="button primary small" href={studioHref((activeMethodPage.meta as MethodMeta).id ?? activeNodeId)}>
-                  在代码操控台中打开此方法
+                  在工作台中打开
                 </a>
               </>
             )}
           </div>
         </div>
 
-        {loadingNext && <p className="notice" role="status">正在查询 {activeNodeId} 的下游决策分支…</p>}
-        {nextError && !filteredBranches.length && (
-          <p className="notice">暂未从后端检索到 <code>{activeNodeId}</code> 的结构化 <code>next_steps</code>（{nextError}）。可切换到其他步骤或在方法库查看关联模版。</p>
+        {loadingNext && <p className="notice" role="status">正在查询 {activeNodeId} 的下游多路分支…</p>}
+        {nextError && !filteredCurated.length && !objectCandidates.length && (
+          <p className="notice">暂未从后端检索到 <code>{activeNodeId}</code> 的结构化 <code>next_steps</code>（{nextError}）。可在上方切换其他方法节点。</p>
         )}
 
-        {!loadingNext && filteredBranches.length === 0 && !nextError && (
-          <p className="notice">当前步骤 <code>{activeNodeId}</code> 暂无更多下游分支记录（可能已是终端解释/出图阶段）。</p>
-        )}
+        <div className="sandbox-split-section">
+          <h3>一、精选条件分支 (curated_branches · {filteredCurated.length})</h3>
+          {!loadingNext && filteredCurated.length === 0 ? (
+            <p className="notice small">当前节点暂无精选条件分支记录；可查看下方基于输出对象自动推导的兼容候选。</p>
+          ) : (
+            <div className="branch-grid">
+              {filteredCurated.map((branch, idx) => {
+                const ifacePage = branch.produced_interface
+                  ? resolvePageById(branch.produced_interface, data.pages)
+                  : undefined;
+                const ifaceMeta = ifacePage?.meta.type === 'interface' ? (ifacePage.meta as InterfaceMeta) : undefined;
+                return (
+                  <article key={`${branch.branch_id}:${idx}`} className="sheet branch-card">
+                    <div className="branch-card-top">
+                      <span className="branch-no">{branch.branch_id}</span>
+                      <h3>{branch.direction}</h3>
+                    </div>
 
-        <div className="branch-grid">
-          {filteredBranches.map((branch, idx) => {
-            const ifacePage = branch.intermediate_interface
-              ? resolvePageById(branch.intermediate_interface, data.pages)
-              : undefined;
-            const ifaceMeta = ifacePage?.meta.type === 'interface' ? (ifacePage.meta as InterfaceMeta) : undefined;
-            return (
-              <article key={`${branch.direction}:${idx}`} className="sheet branch-card">
-                <div className="branch-card-top">
-                  <span className="branch-no">分支 {idx + 1}</span>
-                  <h3>{branch.direction}</h3>
-                </div>
-
-                <div className="branch-when">
-                  <span className="branch-label">触发条件 / 观察现象</span>
-                  <p>{branch.when || '完成上一步验证后按研究问题触发'}</p>
-                </div>
-
-                {branch.intermediate_interface && (
-                  <div className="branch-interface">
-                    <span className="branch-label">标准中间表契约</span>
-                    <div className="branch-iface-row">
-                      {ifacePage ? (
-                        <a className="iface-pill" {...pageLink(ifacePage.path)}>
-                          <code>{branch.intermediate_interface}.csv</code>
-                          <span>{ifacePage.meta.title}</span>
-                        </a>
-                      ) : (
-                        <code className="iface-pill">{branch.intermediate_interface}.csv</code>
-                      )}
-                      {ifaceMeta && (
-                        <span className="small muted">
-                          核心列：{Object.keys(ifaceMeta.columns).slice(0, 6).join(', ')}
-                          {Object.keys(ifaceMeta.columns).length > 6 ? ' …' : ''}
-                        </span>
+                    <div className="branch-when">
+                      <span className="branch-label">触发条件 / 研究假设</span>
+                      <p>{branch.when || '完成上一步验证后按研究问题触发'}</p>
+                      {branch.hypothesis && branch.hypothesis !== branch.when && (
+                        <p className="small muted">假设：{branch.hypothesis}</p>
                       )}
                     </div>
-                  </div>
-                )}
 
-                {branch.analysis_templates.length > 0 && (
-                  <div className="branch-templates">
-                    <span className="branch-label">推荐分析模版 / 方法</span>
-                    <ul className="branch-chip-list">
-                      {branch.analysis_templates.map((tid) => {
-                        const page = resolvePageById(tid, data.pages);
-                        const resolvedId = page && 'id' in page.meta ? page.meta.id : tid.replace(/^(methods|templates|recipes)\//, '').replace(/\.md$/, '');
-                        return (
-                          <li key={tid} className="branch-template-item">
-                            <div className="branch-template-info">
-                              {page ? <a {...pageLink(page.path)}>{page.meta.title}</a> : <code>{tid}</code>}
-                              <span className="small muted">{resolvedId}</span>
-                            </div>
-                            <a className="button primary small" href={studioHref(resolvedId)}>
-                              在代码操控台中打开
-                            </a>
-                          </li>
-                        );
-                      })}
-                    </ul>
-                  </div>
-                )}
-
-                {branch.viz_templates.length > 0 && (
-                  <div className="branch-viz">
-                    <span className="branch-label">配套可视化模版（含预览）</span>
-                    <div className="branch-viz-grid">
-                      {branch.viz_templates.map((vid) => {
-                        const page = resolvePageById(vid, data.pages);
-                        const resolvedId = page && 'id' in page.meta ? page.meta.id : vid.replace(/^(templates|recipes|methods)\//, '').replace(/\.md$/, '');
-                        const imgUrl = page ? imageOf(page.meta) : `/files/wiki/templates/${encodeURIComponent(resolvedId)}/preview.png`;
-                        return (
-                          <div key={vid} className="branch-viz-card">
-                            <div className="branch-viz-thumb">
-                              {page ? (
-                                <FigureImage meta={page.meta} />
-                              ) : (
-                                <img src={imgUrl ?? undefined} alt={resolvedId} loading="lazy" />
-                              )}
-                            </div>
-                            <div className="branch-viz-meta">
-                              <div className="branch-viz-title">
-                                {page ? <a {...pageLink(page.path)}>{page.meta.title}</a> : <code>{resolvedId}</code>}
-                                {page && 'status' in page.meta && <StatusBadge status={page.meta.status} />}
-                              </div>
-                              <a className="button primary small" href={studioHref(resolvedId)}>
-                                打开工作台
+                    {(branch.required_object || branch.produced_interface) && (
+                      <div className="branch-interface">
+                        <span className="branch-label">对象与标准中间表契约</span>
+                        <div className="branch-iface-row">
+                          {branch.required_object && (
+                            <span className="small">需要：<code>{branch.required_object}</code></span>
+                          )}
+                          {branch.produced_interface && (
+                            ifacePage ? (
+                              <a className="iface-pill" {...pageLink(ifacePage.path)}>
+                                <code>{branch.produced_interface}.csv</code>
+                                <span>{ifacePage.meta.title}</span>
                               </a>
-                            </div>
-                          </div>
-                        );
-                      })}
-                    </div>
-                  </div>
-                )}
-              </article>
-            );
-          })}
+                            ) : (
+                              <code className="iface-pill">{branch.produced_interface}.csv</code>
+                            )
+                          )}
+                          {ifaceMeta && (
+                            <span className="small muted">
+                              核心列：{Object.keys(ifaceMeta.columns).slice(0, 5).join(', ')}
+                            </span>
+                          )}
+                        </div>
+                      </div>
+                    )}
+
+                    {branch.next_methods.length > 0 && (
+                      <div className="branch-templates">
+                        <span className="branch-label">推荐下游分析方法</span>
+                        <ul className="branch-chip-list">
+                          {branch.next_methods.map((m) => (
+                            <li key={m.id} className="branch-template-item">
+                              <div className="branch-template-info">
+                                <a {...pageLink(m.path)}>{m.title}</a>
+                                <span className="small muted">{m.id}</span>
+                              </div>
+                              <div className="branch-item-actions">
+                                <button type="button" className="button small" onClick={() => selectMethodNode(m.id)}>
+                                  沙盘推演此节点
+                                </button>
+                                <a className="button primary small" {...pageLink(m.path)}>进入方法</a>
+                              </div>
+                            </li>
+                          ))}
+                        </ul>
+                      </div>
+                    )}
+
+                    {branch.reference_recipes.length > 0 && (
+                      <div className="branch-templates">
+                        <span className="branch-label">参考源码配方</span>
+                        <ul className="branch-chip-list">
+                          {branch.reference_recipes.map((rec) => (
+                            <li key={rec.id} className="branch-template-item">
+                              <div className="branch-template-info">
+                                <a {...pageLink(rec.path)}>{rec.title}</a>
+                                <LicenseBadge license={rec.license} />
+                              </div>
+                              <a className="button small" href={studioHref(rec.id)}>工作台</a>
+                            </li>
+                          ))}
+                        </ul>
+                      </div>
+                    )}
+
+                    {branch.viz_templates.length > 0 && (
+                      <div className="branch-viz">
+                        <span className="branch-label">配套可视化模版（含预览）</span>
+                        <div className="branch-viz-grid">
+                          {branch.viz_templates.map((v) => {
+                            const page = resolvePageById(v.path || v.id, data.pages);
+                            const imgUrl = v.preview_url || (page ? imageOf(page.meta) : `/files/wiki/templates/${encodeURIComponent(v.id)}/preview.png`);
+                            return (
+                              <div key={v.id} className="branch-viz-card">
+                                <div className="branch-viz-thumb">
+                                  {page ? (
+                                    <FigureImage meta={page.meta} />
+                                  ) : imgUrl ? (
+                                    <img src={imgUrl} alt={v.title} loading="lazy" />
+                                  ) : (
+                                    <span className="preview-empty">暂无预览</span>
+                                  )}
+                                </div>
+                                <div className="branch-viz-meta">
+                                  <div className="branch-viz-title">
+                                    {page ? <a {...pageLink(page.path)}>{page.meta.title}</a> : <a {...pageLink(v.path)}>{v.title}</a>}
+                                    <StatusBadge status={v.status} label={v.status === 'ready' ? '图模板可用' : undefined} />
+                                  </div>
+                                  <a className="button primary small" href={studioHref(v.id)}>
+                                    打开工作台
+                                  </a>
+                                </div>
+                              </div>
+                            );
+                          })}
+                        </div>
+                      </div>
+                    )}
+                  </article>
+                );
+              })}
+            </div>
+          )}
         </div>
 
-        {!!nextResp?.structural_matches?.length && (
-          <details className="method-details">
-            <summary>接口结构匹配的其他下游模版 ({nextResp.structural_matches.length})</summary>
+        <div className="sandbox-split-section">
+          <h3>二、基于结果对象推导的兼容候选 (object_compatible_candidates · {objectCandidates.length})</h3>
+          <p className="small muted">
+            仅根据当前方法输出接口与下游必需/可选输入接口的交集自动推导，不代表科学语义已审查；使用前请核对单位、量纲与前提条件。
+          </p>
+          {objectCandidates.length > 0 ? (
+            <div className="candidate-grid sandbox-candidates">
+              {objectCandidates.map((cand) => (
+                <article key={`${cand.kind}:${cand.id}`} className="sheet candidate-card">
+                  <div className="candidate-card-head">
+                    <span className={`match-pill match-${cand.match_type}`}>
+                      {cand.match_type === 'full' ? '完整兼容 (full)' : '部分兼容 (partial)'}
+                    </span>
+                    <span className="badge">{cand.kind === 'method' ? '下游分析方法' : '可视化模板'}</span>
+                  </div>
+                  <h4><a {...pageLink(cand.path)}>{cand.title}</a></h4>
+                  <p className="small muted"><code>{cand.id}</code></p>
+                  <p className="small">
+                    共享接口：<code>{cand.shared_interfaces.join('、')}</code>
+                  </p>
+                  {cand.missing_required_interfaces.length > 0 && (
+                    <p className="small adaptation-note">
+                      缺必需接口：<code>{cand.missing_required_interfaces.join('、')}</code>
+                    </p>
+                  )}
+                  {!!cand.downstream_viz?.length && (
+                    <div className="candidate-viz-mini">
+                      {cand.downstream_viz.slice(0, 2).map((viz) => (
+                        <a key={viz.id} className="viz-mini-pill" {...pageLink(viz.path)}>
+                          {viz.preview_url && <img src={viz.preview_url} alt={viz.title} loading="lazy" />}
+                          <span>{viz.id}</span>
+                        </a>
+                      ))}
+                    </div>
+                  )}
+                  <div className="candidate-actions">
+                    {cand.kind === 'method' ? (
+                      <>
+                        <button type="button" className="button small" onClick={() => selectMethodNode(cand.id)}>
+                          在沙盘查看下一跳
+                        </button>
+                        <a className="button primary small" {...pageLink(cand.path)}>进入方法</a>
+                      </>
+                    ) : (
+                      <a className="button primary small" href={studioHref(cand.id)}>打开工作台</a>
+                    )}
+                  </div>
+                </article>
+              ))}
+            </div>
+          ) : nextResp?.structural_matches?.length ? (
             <div className="branch-struct-list">
               {nextResp.structural_matches.map((item) => (
                 <div key={item.path || item.id} className="branch-template-item">
@@ -601,12 +791,14 @@ export function PlaybooksView({ data, query = '' }: { data: AppData; query?: str
                     <a {...pageLink(item.path)}>{item.title}</a>
                     <span className="small muted">{item.type} · {item.id}</span>
                   </div>
-                  <a className="button small" href={studioHref(item.id)}>在代码操控台中打开</a>
+                  <a className="button small" href={studioHref(item.id)}>打开工作台</a>
                 </div>
               ))}
             </div>
-          </details>
-        )}
+          ) : (
+            <p className="small muted">当前节点暂无自动推导的对象兼容下游候选。</p>
+          )}
+        </div>
       </section>
     </section>
   );

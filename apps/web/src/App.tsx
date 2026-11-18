@@ -12,6 +12,7 @@ import { PageView } from './views/PageView';
 import { PlaybooksView } from './views/PlaybooksView';
 import { ProjectsView } from './views/ProjectsView';
 import { RecipesView } from './views/RecipesView';
+import { ResourcesView } from './views/ResourcesView';
 import { ScenariosView } from './views/ScenariosView';
 import { SearchView } from './views/SearchView';
 import { SourcesView } from './views/SourcesView';
@@ -35,7 +36,7 @@ class ViewBoundary extends Component<{ children: ReactNode }, { error: Error | n
   static getDerivedStateFromError(error: Error) { return { error }; }
   render() {
     return this.state.error
-      ? <p className="notice error" role="alert">这个页面显示出错（{this.state.error.message}）。返回 <a href="#/playbooks">步进导航</a> 或刷新后重试。</p>
+      ? <p className="notice error" role="alert">这个页面显示出错（{this.state.error.message}）。返回 <a href="#/methods">分析方法库</a> 或刷新后重试。</p>
       : this.props.children;
   }
 }
@@ -55,14 +56,21 @@ function withEffectiveStatus(graph: GraphData, pages: PageSummary[]): GraphData 
 }
 
 const NAV = [
-  ['gallery', '图库模版'],
-  ['studio', '作图工作台'],
-  ['playbooks', '分析路线'],
+  ['methods', '分析方法库'],
+  ['next', '多路决策沙盘'],
   ['projects', '课题记录'],
-  ['methods', '方法库'],
-  ['recipes', '配方库'],
-  ['search', '搜索'],
+  ['resources', '资料与检索'],
 ] as const;
+
+function isNavActive(navView: (typeof NAV)[number][0], currentView: string): boolean {
+  if (navView === 'methods') return currentView === 'methods';
+  if (navView === 'next') return currentView === 'next' || currentView === 'playbooks';
+  if (navView === 'projects') return currentView === 'projects';
+  if (navView === 'resources') {
+    return ['resources', 'search', 'gallery', 'recipes', 'sources', 'scenarios', 'figureya', 'log'].includes(currentView);
+  }
+  return false;
+}
 
 export function App() {
   const route = useRoute();
@@ -127,21 +135,22 @@ export function App() {
     else if (route.view === 'studio') content = <StudioView data={data} query={route.query} />;
     else if (route.view === 'projects') content = <ProjectsView data={data} />;
     else if (route.view === 'search') content = <SearchView query={route.query} />;
-    else if (route.view === 'methods') content = <MethodsView data={data} query={route.query} />;
+    else if (route.view === 'next' || route.view === 'playbooks') content = <PlaybooksView data={data} query={route.query} />;
+    else if (route.view === 'resources') content = <ResourcesView data={data} query={route.query} />;
     else if (route.view === 'recipes') content = <RecipesView data={data} />;
     else if (route.view === 'sources') content = <SourcesView data={data} query={route.query} />;
     else if (route.view === 'figureya') content = <FigureYaReview data={data} />;
     else if (route.view === 'scenarios') content = <ScenariosView data={data} />;
     else if (route.view === 'gallery') content = <Gallery data={data} />;
     else if (route.view === 'log') content = <LogView />;
-    else content = <PlaybooksView data={data} query={route.query} />;
+    else content = <MethodsView data={data} query={route.query} />;
     content = <ViewBoundary key={`${route.view}/${route.arg}`}>{content}</ViewBoundary>;
   }
 
   return (
     <div className="shell">
       <header className="masthead">
-        <a className="brand" href="#/gallery">
+        <a className="brand" href="#/methods">
           <svg className="brand-mark" viewBox="0 0 24 24" aria-hidden="true">
             <circle cx="12" cy="12" r="9" />
             <ellipse cx="12" cy="12" rx="9" ry="3.4" />
@@ -152,7 +161,7 @@ export function App() {
         </a>
         <nav aria-label="主导航">
           {NAV.map(([view, label]) => (
-            <a key={view} href={`#/${view}`} className={route.view === view ? 'active' : ''}>
+            <a key={view} href={`#/${view}`} className={isNavActive(view, route.view) ? 'active' : ''}>
               {label}
             </a>
           ))}

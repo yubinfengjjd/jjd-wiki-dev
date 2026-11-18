@@ -112,7 +112,7 @@ function readFileAsBase64(file: File): Promise<string> {
 
 type RightTab = 'preview' | 'code' | 'dispatch';
 
-export function StudioView({ data, query = '' }: { data: AppData; query?: string }) {
+export function StudioView({ data, query = '', embedded = false }: { data: AppData; query?: string; embedded?: boolean }) {
   const studioItems = useMemo(() => {
     return data.pages
       .filter((p): p is PageSummary<ItemMeta> =>
@@ -511,14 +511,18 @@ export function StudioView({ data, query = '' }: { data: AppData; query?: string
   const referencePreview = currentPage ? imageOf(currentPage.meta) : null;
 
   return (
-    <section className="studio-page hiplot-studio">
+    <section className={`studio-page hiplot-studio${embedded ? ' is-embedded' : ''}`}>
       {/* Clean Hiplot/SRplot Top Workbench Bar */}
       <header className="studio-topbar sheet">
         <div className="studio-topbar-left">
           <div className="studio-title-block">
             <span className="studio-eyebrow">BIO-TEMPLATE WORKBENCH · 代码模版操控台</span>
             <div className="studio-active-heading">
-              <h1>{currentPage?.meta.title || selectedId || '作图工作台'}</h1>
+              {embedded ? (
+                <h2>{currentPage?.meta.title || selectedId || '作图工作台'}</h2>
+              ) : (
+                <h1>{currentPage?.meta.title || selectedId || '作图工作台'}</h1>
+              )}
               {currentPage && (
                 <div className="studio-meta-badges">
                   <span className={`lang-pill lang-${language.toLowerCase()}`}>{language.toUpperCase()}</span>

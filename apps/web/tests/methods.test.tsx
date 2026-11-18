@@ -4,6 +4,7 @@ import { renderToStaticMarkup } from 'react-dom/server';
 import { MethodsView } from '../src/views/MethodsView';
 import { MethodOverview } from '../src/views/MethodOverview';
 import { PageView } from '../src/views/PageView';
+import { InlineStudioDrawer } from '../src/views/InlineStudioDrawer';
 import { Flow } from '../src/flow';
 import { api, pageCache } from '../src/api';
 import { CodeBranchList } from '../src/CodeViewer';
@@ -199,7 +200,7 @@ check('directory searches technical code and exposes explicit type filters', () 
       ] } };
   const html = renderToStaticMarkup(<MethodsView data={dataOf([...pages, code])} query="q=DotPlotScores" />);
   assert.ok(html.includes('href="#/page/methods/local-omics-analysis-guide.md"'), 'technical code must be searchable');
-  assert.ok(html.includes('代码与技术资料') && html.includes('组合流程') && html.includes('分析理论'));
+  assert.ok(html.includes('技术与适配代码') && html.includes('组合流程资料') && html.includes('分析方法库'));
   const only = renderToStaticMarkup(<MethodsView data={dataOf(pages)} query="kind=technical" />);
   assert.ok(only.includes('href="#/page/methods/technical-guide.md"'));
   assert.ok(!only.includes('href="#/page/methods/analysis-family.md"'), 'technical tab must not show analysis cards');
@@ -392,22 +393,22 @@ const taxPages = [
 const taxData = (query = '') => ({ ...dataOf(taxPages), taxonomy });
 check('domain and purpose navigation use backend vocabulary and distinct counts', () => {
   const html = renderToStaticMarkup(<MethodsView data={taxData()} query="kind=analysis" />);
-  assert.ok(html.includes('全部 3'));
-  assert.ok(html.includes('单细胞分析 3'));
-  assert.ok(html.includes('转录组 1'));
-  assert.ok(html.includes('降维与聚类 2'));
-  assert.ok(html.includes('模型评价 2'));
+  assert.ok(html.includes('<span>全部域</span><span class="pill-count">3</span>'));
+  assert.ok(html.includes('<span>单细胞分析</span><span class="pill-count">3</span>'));
+  assert.ok(html.includes('<span>转录组</span><span class="pill-count">1</span>'));
+  assert.ok(html.includes('<span>降维与聚类</span><span class="pill-count">2</span>'));
+  assert.ok(html.includes('<span>模型评价</span><span class="pill-count">2</span>'));
   assert.ok(html.includes('href="#/methods?domain=%E5%8D%95%E7%BB%86%E8%83%9E%E5%88%86%E6%9E%90&amp;kind=analysis"'));
 });
 check('one page appears once even with multiple domain and purpose memberships', () => {
   const html = renderToStaticMarkup(<MethodsView data={taxData()} query="" />);
-  const fronts = (id) => (html.match(new RegExp(`class="face front" href="#/page/methods/${id}\\.md"`, 'g')) || []).length;
+  const fronts = (id) => (html.match(new RegExp(`<h3 class="method-hub-title"><a href="#/page/methods/${id}\\.md"`, 'g')) || []).length;
   assert.equal(fronts('both'), 1);
   assert.equal(fronts('qc-umap'), 1);
 });
 check('domain and purpose selection is an intersection and keeps the same canonical page', () => {
   const html = renderToStaticMarkup(<MethodsView data={taxData()} query="?domain=%E5%8D%95%E7%BB%86%E8%83%9E%E5%88%86%E6%9E%90&purpose=%E6%A8%A1%E5%9E%8B%E8%AF%84%E4%BB%B7" />);
-  const main = html.slice(0, html.indexOf('<summary>辅助资料'));
+  const main = html.slice(0, html.indexOf('<summary>流程与技术资料'));
   assert.ok(main.includes('href="#/page/methods/reg-eval.md"'));
   assert.ok(main.includes('href="#/page/methods/both.md"'));
   assert.ok(!main.includes('href="#/page/methods/qc-umap.md"'));
@@ -427,13 +428,13 @@ check('search and empty results stay explicit with a return-to-all link', () => 
   assert.ok(!matched.includes('href="#/page/methods/both.md"'));
   const empty = renderToStaticMarkup(<MethodsView data={taxData()} query="?q=no-such-method" />);
   assert.ok(empty.includes('没有匹配的方法'));
-  assert.ok(empty.includes('href="#/methods?kind=all"'));
+  assert.ok(empty.includes('href="#/methods"'));
 });
 check('technical and workflow material stays out of analysis filtering', () => {
   const paths = filterAnalysisMethods(taxPages, taxonomy, { domain: '', purpose: '', q: '' }).map(p => p.path);
   assert.deepEqual(paths, ['methods/qc-umap.md', 'methods/reg-eval.md', 'methods/both.md']);
   const html = renderToStaticMarkup(<MethodsView data={taxData()} query="" />);
-  const auxiliaryAt = html.indexOf('class="method-auxiliary"');
+  const auxiliaryAt = html.indexOf('class="method-details method-auxiliary-fold"');
   assert.ok(auxiliaryAt > 0);
   assert.ok(html.slice(auxiliaryAt).includes('href="#/page/methods/flow-note.md"'));
 });
@@ -519,11 +520,11 @@ check('search matches purposes and is controlled by the URL query', () => {
 check('real API taxonomy drives SSR without a second word list or duplicate cards', () => {
   const data = { ...dataOf(REAL_API_PAGES), taxonomy: REAL_TAXONOMY } as any;
   const html = renderToStaticMarkup(<MethodsView data={data} query="kind=analysis" />);
-  assert.ok(html.includes('全部 15'));
-  assert.ok(html.includes('单细胞分析 13'));
-  assert.ok(html.includes('转录组 4'));
-  assert.ok(html.includes('轨迹与动态分析 3'));
-  const fronts = (id) => (html.match(new RegExp(`class="face front" href="#/page/methods/${id}\\.md"`, 'g')) || []).length;
+  assert.ok(html.includes('<span>全部域</span><span class="pill-count">15</span>'));
+  assert.ok(html.includes('<span>单细胞分析</span><span class="pill-count">13</span>'));
+  assert.ok(html.includes('<span>转录组</span><span class="pill-count">4</span>'));
+  assert.ok(html.includes('<span>轨迹与动态分析</span><span class="pill-count">3</span>'));
+  const fronts = (id) => (html.match(new RegExp(`<h3 class="method-hub-title"><a href="#/page/methods/${id}\\.md"`, 'g')) || []).length;
   assert.equal(fronts('gene-set-scoring'), 1, 'a page with two domain tags is one card');
   const filtered = renderToStaticMarkup(<MethodsView data={data} query="?domain=%E5%8D%95%E7%BB%86%E8%83%9E%E5%88%86%E6%9E%90&purpose=%E8%BD%A8%E8%BF%B9%E4%B8%8E%E5%8A%A8%E6%80%81%E5%88%86%E6%9E%90" />);
   for (const id of ['trajectory-inference', 'rna-velocity', 'dynamic-feature-analysis']) {
@@ -654,6 +655,215 @@ check('method LIST card figure stack qualifies template availability separately'
     'list card must qualify availability as the figure template');
   assert.ok(!html.includes('· 可用<'), 'bare availability reads as analysis ready');
   assert.ok(html.includes('暂无已验证实现'), 'unverified analysis state preserved');
+});
+
+check('default/empty/malformed routes resolve to methods and explicit v4 routes stay distinct', () => {
+  assert.equal(parseRoute('').view, 'methods');
+  assert.equal(parseRoute('#').view, 'methods');
+  assert.equal(parseRoute('#/').view, 'methods');
+  assert.equal(parseRoute('#/%E0%A4%A').view, 'methods');
+  assert.equal(parseRoute('#/next').view, 'next');
+  assert.equal(parseRoute('#/playbooks').view, 'playbooks');
+  assert.equal(parseRoute('#/resources?tab=interfaces').view, 'resources');
+  assert.equal(parseRoute('#/projects').view, 'projects');
+  assert.equal(parseRoute('#/studio?id=volcano').view, 'studio');
+});
+
+check('7x12 canonical data_domains and purposes drive MethodHubCard explorer without duplicates', () => {
+  const canonicalTaxonomy = {
+    total: 2,
+    domains: [],
+    data_domains: [
+      { value: 'single-cell', label: '单细胞转录组', count: 2, purposes: [{ value: '差异与功能分析', count: 1 }, { value: '轨迹与动态分析', count: 1 }] },
+      { value: 'spatial-omics', label: '空间转录组', count: 0, purposes: [] },
+      { value: 'bulk-transcriptomics', label: 'Bulk 转录组', count: 1, purposes: [{ value: '差异与功能分析', count: 1 }] },
+      { value: 'genomics-epigenomics', label: '基因组与表观遗传', count: 0, purposes: [] },
+      { value: 'clinical-prognosis', label: '临床与预后建模', count: 0, purposes: [] },
+      { value: 'multi-omics', label: '多组学整合与泛癌', count: 0, purposes: [] },
+      { value: 'general-viz-stats', label: '通用绘图与统计', count: 0, purposes: [] },
+    ],
+    domain_labels: {
+      'single-cell': '单细胞转录组',
+      'spatial-omics': '空间转录组',
+      'bulk-transcriptomics': 'Bulk 转录组',
+      'genomics-epigenomics': '基因组与表观遗传',
+      'clinical-prognosis': '临床与预后建模',
+      'multi-omics': '多组学整合与泛癌',
+      'general-viz-stats': '通用绘图与统计',
+    },
+    purposes: [{ value: '差异与功能分析', count: 1 }, { value: '轨迹与动态分析', count: 1 }],
+    unclassified: [],
+  };
+  const deMethod = {
+    path: 'methods/differential-expression.md',
+    meta: {
+      type: 'method', id: 'differential-expression', title: '差异表达分析', method_kind: 'analysis',
+      status: 'ready', tags: ['单细胞分析'], data_domains: ['single-cell', 'bulk-transcriptomics'],
+      purposes: ['差异与功能分析'], favorite: false, inputs: ['normalized-expression'], outputs: ['deg-result-table'],
+      summary: '检验组间基因表达差异', data_contract: { input: '标准化矩阵', output: 'deg-result-table' },
+      source: { kind: 'written' }, license: 'MIT', cite: [],
+    },
+    implementation_status: [],
+  };
+  const trajMethod = {
+    path: 'methods/trajectory-inference.md',
+    meta: {
+      type: 'method', id: 'trajectory-inference', title: '拟时序轨迹推断', method_kind: 'analysis',
+      status: 'ready', tags: ['单细胞分析'], data_domains: ['single-cell'],
+      purposes: ['轨迹与动态分析'], favorite: false, inputs: [], outputs: [],
+      summary: '推断细胞分化轨迹', source: { kind: 'written' }, license: 'MIT', cite: [],
+    },
+    implementation_status: [],
+  };
+  const html = renderToStaticMarkup(<MethodsView data={{ ...dataOf([deMethod, trajMethod]), taxonomy: canonicalTaxonomy } as any} />);
+  for (const label of ['单细胞转录组', '空间转录组', 'Bulk 转录组', '基因组与表观遗传', '临床与预后建模', '多组学整合与泛癌', '通用绘图与统计']) {
+    assert.ok(html.includes(label), `missing canonical domain ${label}`);
+  }
+  assert.ok(html.includes('进入方法与出图'));
+  assert.ok(html.includes('deg-result-table'));
+  assert.ok(html.includes('normalized-expression'));
+
+  const filtered = renderToStaticMarkup(
+    <MethodsView
+      data={{ ...dataOf([deMethod, trajMethod]), taxonomy: canonicalTaxonomy } as any}
+      query="?domain=bulk-transcriptomics&purpose=%E5%B7%AE%E5%BC%82%E4%B8%8E%E5%8A%9F%E8%83%BD%E5%88%86%E6%9E%90"
+    />,
+  );
+  assert.ok(filtered.includes('href="#/page/methods/differential-expression.md"'));
+  assert.ok(!filtered.includes('href="#/page/methods/trajectory-inference.md"'));
+});
+
+check('method workstation renders 3-layer visualizations, render_bridges extraction note, multi-branch next, and inline drawer', () => {
+  const hubPayload: any = {
+    id: 'differential-expression',
+    title: '差异表达分析',
+    path: 'methods/differential-expression.md',
+    status: 'ready',
+    summary: '在对比组间检验差异基因',
+    data_domains: ['single-cell'],
+    data_domain_labels: ['单细胞转录组'],
+    purposes: ['差异与功能分析'],
+    tags: [],
+    keywords: [],
+    inputs: [],
+    outputs: ['deg-result-table'],
+    data_contract: { input: '标准化矩阵', output: 'deg-result-table' },
+    render_bridges: [
+      { interface: 'render-de-results', from_output: 'deg-result-table', extractor_note: '映射 gene/log2FC/p_val_adj 到渲染表', unit: '基因×对比组' },
+    ],
+    implementations: [
+      { id: 'r-limma', title: 'R limma 分支', language: 'R', entrypoint: 'code/de.R:run', dependencies: ['limma'], verification: 'verification/limma.json' },
+    ],
+    implementation_status: [
+      { id: 'r-limma', title: 'R limma 分支', state: 'verified', scope: '固定模拟数据通过' },
+    ],
+    workflow: null,
+    next_steps_count: 1,
+    attached_visualizations: {
+      curated: [
+        {
+          id: 'volcano-curated', title: '火山图模板', path: 'templates/volcano-curated.md', status: 'ready',
+          language: 'r', chart_types: ['volcano'], tables: [], preview_url: '/files/wiki/templates/volcano-curated/preview.png',
+          primary: true, compatibility: 'adaptable', verification: { state: 'not_run', scope: '待运行' },
+          reason: '展示差异表达全景', adaptation: '转换列名', prerequisites: [],
+        },
+      ],
+      object_compatible: [
+        {
+          id: 'deg-dotplot', title: '差异基因点图', path: 'templates/deg-dotplot.md', status: 'ready',
+          language: 'r', chart_types: ['dotplot'], tables: [], preview_url: null,
+          match_type: 'full', matched_interfaces: ['deg-result-table'], missing_required_interfaces: [],
+        },
+      ],
+      render_bridged: [
+        {
+          id: 'bridged-volcano', title: '桥接火山图', path: 'templates/bridged-volcano.md', status: 'ready',
+          language: 'r', chart_types: ['volcano'], tables: [], preview_url: null,
+          via_bridge: 'render-de-results', from_output: 'deg-result-table',
+          extractor_note: '映射 gene/log2FC/p_val_adj 到渲染表', unit: '基因×对比组',
+          bridges: [], match_type: 'full', matched_interfaces: ['render-de-results'], missing_required_interfaces: [],
+        },
+      ],
+      all_previews: [],
+    },
+    reference_recipes: [
+      {
+        id: 'rec-volcano', title: 'FigureYa 火山图配方', path: 'recipes/rec-volcano.md', status: 'ready',
+        language: 'r', runner: 'rmd-knit', chart_types: ['volcano'], tags: [], data_domains: [],
+        confidence: 'curated', note: '差异表达参考源码', methods: ['differential-expression'], preview_url: null,
+      },
+    ],
+    unmapped_recipes_count: 1,
+  };
+  const nextPayload: any = {
+    schema_version: 2,
+    node_id: 'differential-expression',
+    decision_mode: 'multi_branch_optional',
+    agent_guidance: '下游分支均为可选科研决策',
+    curated_branches: [
+      {
+        branch_id: 'branch-1', direction: '通路富集分析', when: '已筛选显著差异基因',
+        hypothesis: '差异基因富集特定通路', required_object: 'deg-result-table', produced_interface: 'pathway-score-table',
+        next_methods: [{ id: 'gene-set-enrichment', title: '基因集富集分析', path: 'methods/gene-set-enrichment.md', status: 'ready' }],
+        reference_recipes: [],
+        viz_templates: [{ id: 'volcano-curated', title: '火山图模板', path: 'templates/volcano-curated.md', status: 'ready' }],
+      },
+    ],
+    object_compatible_candidates: [
+      {
+        id: 'survival-prognosis', kind: 'method', title: '生存与预后建模', path: 'methods/survival-prognosis.md',
+        status: 'ready', source: 'object_inferred', match_type: 'partial',
+        shared_interfaces: ['deg-result-table'], missing_required_interfaces: ['survival-time-event-group'],
+      },
+    ],
+    next_steps: [],
+  };
+  const overviewHtml = renderToStaticMarkup(
+    <MethodOverview
+      meta={{ ...method('differential-expression', 'analysis').meta, data_contract: { input: '标准化矩阵', output: 'deg-result-table' }, implementations: hubPayload.implementations }}
+      purposeHtml="<p>差异表达分析用途</p>"
+      implementationStatus={hubPayload.implementation_status}
+      figures={[]}
+      pages={[]}
+      hub={hubPayload}
+      nextSteps={nextPayload}
+      onOpenStudio={() => {}}
+    />,
+  );
+  assert.ok(overviewHtml.includes('首选 / 语义关联'));
+  assert.ok(overviewHtml.includes('对象直连兼容'));
+  assert.ok(overviewHtml.includes('经抽取表转换 (render_bridge)'));
+  assert.ok(overviewHtml.includes('映射 gene/log2FC/p_val_adj 到渲染表'));
+  assert.ok(overviewHtml.includes('rwiki next differential-expression --json'));
+  assert.ok(overviewHtml.includes('通路富集分析'));
+  assert.ok(overviewHtml.includes('survival-time-event-group'));
+  assert.ok(overviewHtml.includes('FigureYa 火山图配方'));
+  assert.ok(overviewHtml.includes('图模板可用 ≠ 分析方法已验证可运行'));
+  assert.ok(!overviewHtml.includes('>可用<'));
+
+  const drawerHtml = renderToStaticMarkup(
+    <InlineStudioDrawer templateId="volcano-curated" templateTitle="火山图模板" data={dataOf([])} onClose={() => {}} />,
+  );
+  assert.ok(drawerHtml.includes('role="dialog"'));
+  assert.ok(drawerHtml.includes('内联参数定制与本机试跑'));
+  assert.ok(!drawerHtml.includes('<h1>'), 'embedded studio drawer must not inject duplicate h1');
+});
+
+check('template alias URL displays canonical slug and alias resolution notice', () => {
+  const canonicalTpl: any = {
+    path: 'templates/volcano-curated.md',
+    meta: {
+      type: 'template', id: 'volcano-curated', title: '火山图模板', status: 'ready',
+      tags: [], favorite: false, language: 'r', layouts: [], panels: [], chart_types: ['volcano'],
+      aliases: ['legacy-volcano-alias'],
+    },
+    body: '# 火山图模板\n\n## 适用\n\n差异表达。\n\n<!-- user:start -->\n<!-- user:end -->\n',
+    backlinks: [], gallery: null, relations: [], implementation_status: [],
+  };
+  pageCache.set('templates/legacy-volcano-alias.md', canonicalTpl);
+  const html = renderToStaticMarkup(<PageView path="templates/legacy-volcano-alias.md" data={dataOf([canonicalTpl])} />);
+  assert.ok(html.includes('规范标识：<code>volcano-curated</code>'));
+  assert.ok(html.includes('已从旧别名 <code>templates/legacy-volcano-alias.md</code> 解析至规范条目'));
 });
 if (failed) process.exitCode = 1;
 }

@@ -163,6 +163,9 @@ export interface TemplateMeta extends ItemBase {
   /** May be empty for v2 templates derived from a recipe. */
   panels: string[];
   chart_types: string[];
+  primary_method?: string;
+  aliases?: string[];
+  data_domains?: string[];
 }
 
 /** v2 L1 recipe: a whole upstream module kept byte-for-byte and run as-is in the Wiki environment. */
@@ -231,6 +234,106 @@ export interface ImplementationStatus {
   runtime?: RuntimeFacts;
 }
 
+export interface RenderBridge {
+  interface: string;
+  from_output: string;
+  extractor_note: string;
+  unit?: string;
+}
+
+export interface AttachedVizTable {
+  key: string;
+  interface: string;
+  description: string;
+  required: boolean;
+}
+
+export interface AttachedVizCurated {
+  id: string;
+  title: string;
+  path: string;
+  status: Status;
+  language: string;
+  chart_types: string[];
+  tables: AttachedVizTable[];
+  preview_url: string | null;
+  primary: boolean;
+  compatibility: Compatibility | 'unreviewed' | string;
+  verification: Verification;
+  reason: string;
+  adaptation: string;
+  prerequisites: string[];
+}
+
+export interface AttachedVizCompatible {
+  id: string;
+  title: string;
+  path: string;
+  status: Status;
+  language: string;
+  chart_types: string[];
+  tables: AttachedVizTable[];
+  preview_url: string | null;
+  match_type: 'full' | 'partial' | string;
+  matched_interfaces: string[];
+  missing_required_interfaces: string[];
+}
+
+export interface AttachedVizBridged {
+  id: string;
+  title: string;
+  path: string;
+  status: Status;
+  language: string;
+  chart_types: string[];
+  tables: AttachedVizTable[];
+  preview_url: string | null;
+  via_bridge: string;
+  from_output: string;
+  extractor_note: string;
+  unit?: string;
+  bridges: RenderBridge[];
+  match_type: 'full' | 'partial' | string;
+  matched_interfaces: string[];
+  missing_required_interfaces: string[];
+}
+
+export interface AttachedVizPreview {
+  id: string;
+  title: string;
+  path: string;
+  preview_url: string | null;
+  source: 'curated' | 'render_bridged' | 'object_compatible' | string;
+  primary: boolean;
+  compatibility?: string | null;
+  match_type?: string | null;
+  chart_types: string[];
+  language: string;
+}
+
+export interface AttachedViz {
+  curated: AttachedVizCurated[];
+  object_compatible: AttachedVizCompatible[];
+  render_bridged: AttachedVizBridged[];
+  all_previews: AttachedVizPreview[];
+}
+
+export interface ReferenceRecipeSummary {
+  id: string;
+  title: string;
+  path: string;
+  status: Status;
+  language: string;
+  runner: string;
+  chart_types: string[];
+  tags: string[];
+  data_domains: string[];
+  confidence: string;
+  note: string;
+  methods: string[];
+  preview_url: string | null;
+}
+
 export interface MethodMeta extends ItemBase {
   type: 'method';
   /** Missing classification remains unclassified; it must not default to analysis. */
@@ -241,9 +344,13 @@ export interface MethodMeta extends ItemBase {
   theory_methods?: string[];
   /** Controlled analysis purpose list; discovery only, never an execution gate. */
   purposes?: string[];
+  /** Canonical 7 data-type domain slugs. */
+  data_domains?: string[];
+  aliases?: string[];
   keywords?: string[];
   summary?: string;
   data_contract?: { input: string; output: string };
+  render_bridges?: RenderBridge[];
   implementations?: MethodImplementation[];
   /** Interface slugs the analysis reads and the tables it is finally shaped into. */
   inputs: string[];
@@ -259,17 +366,101 @@ export interface MethodMeta extends ItemBase {
 }
 
 export interface NextStepBranch {
+  branch_id?: string;
   direction: string;
   when: string;
+  hypothesis?: string;
+  required_object?: string;
   analysis_templates: string[];
   intermediate_interface: string;
   viz_templates: string[];
 }
 
+export interface CuratedBranchMethodRef {
+  id: string;
+  title: string;
+  path: string;
+  status: Status;
+}
+
+export interface CuratedBranchRecipeRef {
+  id: string;
+  title: string;
+  path: string;
+  status: Status;
+  license?: string;
+  preview_url?: string | null;
+}
+
+export interface CuratedBranchVizRef {
+  id: string;
+  title: string;
+  path: string;
+  status: Status;
+  compatibility?: string;
+  preview_url?: string | null;
+  language?: string;
+  chart_types?: string[];
+}
+
+export interface CuratedBranchV2 {
+  branch_id: string;
+  direction: string;
+  when: string;
+  hypothesis: string;
+  required_object: string;
+  produced_interface: string;
+  next_methods: CuratedBranchMethodRef[];
+  reference_recipes: CuratedBranchRecipeRef[];
+  viz_templates: CuratedBranchVizRef[];
+}
+
+export interface ObjectCandidateV2 {
+  id: string;
+  kind: 'method' | 'template' | string;
+  title: string;
+  path: string;
+  status: Status;
+  source: string;
+  match_type: 'full' | 'partial' | string;
+  shared_interfaces: string[];
+  missing_required_interfaces: string[];
+  data_domains?: string[];
+  purposes?: string[];
+  language?: string;
+  chart_types?: string[];
+  preview_url?: string | null;
+  downstream_viz?: AttachedVizPreview[];
+}
+
+export interface NextCurrentNodeV2 {
+  id: string;
+  requested_id?: string;
+  kind: string;
+  title: string;
+  path: string;
+  status: Status;
+  data_domains?: string[];
+  purposes?: string[];
+  inputs?: string[];
+  outputs: string[];
+}
+
 export interface NextStepsResponse {
+  schema_version?: number;
   node_id: string;
+  requested_id?: string;
+  kind?: string;
   title?: string;
   path?: string;
+  page?: string;
+  outputs?: string[];
+  current_node?: NextCurrentNodeV2;
+  decision_mode?: string;
+  agent_guidance?: string;
+  curated_branches?: CuratedBranchV2[];
+  object_compatible_candidates?: ObjectCandidateV2[];
+  attached_visualizations?: AttachedViz;
   next_steps: NextStepBranch[];
   structural_matches?: {
     path: string;
@@ -480,12 +671,56 @@ export interface InputContract {
 
 export interface TaxonomyCount { value: string; count: number }
 export interface TaxonomyDomain extends TaxonomyCount { purposes: TaxonomyCount[] }
+export interface DataDomainGroup extends TaxonomyDomain {
+  label: string;
+}
 /** Vocabulary and distinct-page counts come from the backend; the UI holds no second word list. */
 export interface MethodTaxonomy {
   total: number;
   domains: TaxonomyDomain[];
+  data_domains?: DataDomainGroup[];
+  domain_labels?: Record<string, string>;
   purposes: TaxonomyCount[];
   unclassified: { id: string; title: string; path: string }[];
+}
+
+export interface MethodHubCard {
+  id: string;
+  title: string;
+  path: string;
+  status: Status;
+  summary: string;
+  data_domains: string[];
+  data_domain_labels: string[];
+  purposes: string[];
+  tags: string[];
+  keywords: string[];
+  inputs: string[];
+  outputs: string[];
+  data_contract: { input?: string; output?: string };
+  render_bridges: RenderBridge[];
+  implementations: MethodImplementation[];
+  implementation_status: ImplementationStatus[];
+  workflow: Workflow | null;
+  next_steps_count: number;
+  attached_visualizations: AttachedViz;
+  reference_recipes: ReferenceRecipeSummary[];
+  unmapped_recipes_count: number;
+}
+
+export interface MethodHubsResponse {
+  taxonomy: MethodTaxonomy;
+  data_domains: DataDomainGroup[];
+  methods: MethodHubCard[];
+  total: number;
+  filtered_total: number;
+  unmapped_recipes: ReferenceRecipeSummary[];
+  unmapped_recipes_count: number;
+}
+
+export interface MethodHubDetail extends MethodHubCard {
+  requested_id?: string;
+  next?: NextStepsResponse;
 }
 
 export interface HubMeta {
@@ -687,6 +922,16 @@ export const api = {
   },
   graph: () => request<GraphData>('/api/graph'),
   methodTaxonomy: () => request<MethodTaxonomy>('/api/method-taxonomy'),
+  methodHubs: (params?: { domain?: string; purpose?: string; q?: string }, signal?: AbortSignal) => {
+    const qs = new URLSearchParams();
+    if (params?.domain) qs.set('domain', params.domain);
+    if (params?.purpose) qs.set('purpose', params.purpose);
+    if (params?.q) qs.set('q', params.q);
+    const suffix = qs.toString();
+    return request<MethodHubsResponse>(`/api/method-hubs${suffix ? `?${suffix}` : ''}`, { signal });
+  },
+  methodHub: (id: string, signal?: AbortSignal) =>
+    request<MethodHubDetail>(`/api/methods/${encodeURIComponent(id)}/hub`, { signal }),
   codeFiles: (kind: Kind, id: string, signal?: AbortSignal) => request<CodeListing>(act(kind, id, 'code-files'), { signal }),
   code: (kind: Kind, id: string, variant: CodeVariant, path: string, signal?: AbortSignal) =>
     request<CodeText>(`${act(kind, id, 'code')}?${new URLSearchParams({ variant, path })}`, { signal }),

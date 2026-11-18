@@ -1,143 +1,503 @@
-import { useEffect, useState } from 'react';
-import { InterfaceMeta, isItem, MethodMeta, PageSummary } from '../api';
+import { useEffect, useMemo, useRef, useState } from 'react';
+import {
+  api,
+  DataDomainGroup,
+  InterfaceMeta,
+  isItem,
+  MethodHubCard,
+  MethodHubsResponse,
+  MethodMeta,
+  PageSummary,
+  ReferenceRecipeSummary,
+  studioHref,
+} from '../api';
 import type { AppData } from '../App';
-import { MethodCard, TypeMark } from '../components';
+import { LicenseBadge, TypeMark } from '../components';
 import { pageLink } from '../nav';
-import { methodFigures } from '../figureModels';
-import { filterAnalysisMethods, matchesMethodQuery, methodBrowseKind, methodSelectionHref, normalizeMethodSelection, parseMethodQuery, purposeOptionsFor, verifiedImplementations } from '../methods';
+import {
+  buildFallbackMethodHub,
+  CANONICAL_DATA_DOMAINS,
+  dataDomainGroups,
+  domainLabel,
+  filterAnalysisMethods,
+  matchesMethodQuery,
+  methodBrowseKind,
+  methodSelectionHref,
+  normalizeMethodSelection,
+  parseMethodQuery,
+  purposeOptionsFor,
+  verifiedImplementations,
+} from '../methods';
 import { MethodCodeCard } from './MethodCodeCard';
+
+function previewSourceBadge(item: MethodHubCard['attached_visualizations']['all_previews'][number], curatedItem?: MethodHubCard['attached_visualizations']['curated'][number]): string {
+  const readySuffix = curatedItem?.status === 'ready' ? ' · 图模板可用' : '';
+  if (item.source === 'render_bridged') return '经抽取表转换';
+  if (item.source === 'object_compatible') return item.match_type === 'partial' ? '部分对象匹配' : '对象直连兼容';
+  if (item.compatibility === 'adaptable') return `需要适配${readySuffix}`;
+  if (item.compatibility === 'direct') return `直接兼容${readySuffix || ' · 图模板可用'}`;
+  if (item.compatibility === 'unreviewed') return '主归属 · 待审查';
+  return `语义关联${readySuffix}`;
+}
+
+function HubMethodCard({ hub, taxonomy }: { hub: MethodHubCard; taxonomy: AppData['taxonomy'] }) {
+  const verifiedCount = verifiedImplementations(
+    { implementations: hub.implementations } as MethodMeta,
+    hub.implementation_status,
+  ).length;
+  const totalImpls = hub.implementations.length;
+  const previews = hub.attached_visualizations.all_previews.slice(0, 4);
+  const curatedById = new Map(hub.attached_visualizations.curated.map((c) => [c.id, c]));
+  const totalVizCount = new Set([
+    ...hub.attached_visualizations.curated.map((v) => v.id),
+    ...hub.attached_visualizations.object_compatible.map((v) => v.id),
+    ...hub.attached_visualizations.render_bridged.map((v) => v.id),
+  ]).size;
+
+  return (
+    <article className="sheet method-hub-card">
+      <div className="method-hub-head">
+        <div className="method-hub-badges">
+          {hub.data_domains.map((slug, idx) => (
+            <span key={slug} className="domain-pill">
+              {hub.data_domain_labels[idx] || domainLabel(slug, taxonomy)}
+            </span>
+          ))}
+          {hub.purposes.map((purpose) => (
+            <span key={purpose} className="purpose-pill">{purpose}</span>
+          ))}
+        </div>
+        <span className={`impl-status-pill ${verifiedCount > 0 ? 'verified' : 'unverified'}`}>
+          {verifiedCount > 0
+            ? `已验证 ${verifiedCount}/${totalImpls} 个实现`
+            : '理论与模板就绪 · 暂无已验证实现'}
+        </span>
+      </div>
+
+      <h3 className="method-hub-title">
+        <a {...pageLink(hub.path)}>{hub.title}</a>
+      </h3>
+      <p className="method-hub-summary small">{hub.summary || '分析理论与下游出图入口。'}</p>
+
+      <div className="method-object-flow" aria-label="输入与输出对象契约">
+        <div className="object-flow-side">
+          <span className="object-flow-label">输入</span>
+          {hub.inputs.length > 0 ? (
+            <div className="object-pill-row">
+              {hub.inputs.map((slug) => (
+                <a key={slug} className="object-pill" {...pageLink(`interfaces/${slug}.md`)}>
+                  <code>{slug}</code>
+                </a>
+              ))}
+            </div>
+          ) : (
+            <span className="object-pill text-only">{hub.data_contract?.input || '上游分析对象 / 表达矩阵'}</span>
+          )}
+        </div>
+        <span className="object-flow-arrow" aria-hidden="true">→</span>
+        <div className="object-flow-side">
+          <span className="object-flow-label">输出</span>
+          {hub.outputs.length > 0 ? (
+            <div className="object-pill-row">
+              {hub.outputs.map((slug) => (
+                <a key={slug} className="object-pill out" {...pageLink(`interfaces/${slug}.md`)}>
+                  <code>{slug}</code>
+                </a>
+              ))}
+            </div>
+          ) : (
+            <span className="object-pill out text-only">{hub.data_contract?.output || '结构化分析结果表'}</span>
+          )}
+        </div>
+      </div>
+
+      <div className="method-viz-strip" aria-label="配套可视化模板预览">
+        <div className="viz-strip-head">
+          <span className="small muted">配套出图模板（{totalVizCount}）</span>
+          {hub.render_bridges.length > 0 && (
+            <span className="bridge-mini-note">含 {hub.render_bridges.length} 条抽取表转换</span>
+          )}
+        </div>
+        {previews.length > 0 ? (
+          <div className="viz-strip-thumbs">
+            {previews.map((viz) => {
+              const curatedItem = curatedById.get(viz.id);
+              const badge = previewSourceBadge(viz, curatedItem);
+              return (
+                <a
+                  key={viz.id}
+                  className="viz-thumb-tile"
+                  {...pageLink(viz.path)}
+                  title={`${viz.title} (${viz.id}) · ${badge}`}
+                >
+                  <div className="viz-thumb-img">
+                    {viz.preview_url ? (
+                      <img src={viz.preview_url} alt={viz.title} loading="lazy" />
+                    ) : (
+                      <span className="viz-thumb-empty">{viz.chart_types[0] || viz.language || '模板'}</span>
+                    )}
+                  </div>
+                  <div className="viz-thumb-meta">
+                    <code className="viz-slug">{viz.id}</code>
+                    <span className="viz-compat-label">{badge}</span>
+                  </div>
+                </a>
+              );
+            })}
+          </div>
+        ) : (
+          <p className="viz-strip-empty small muted">暂无挂载可视化模板；可进入查看理论说明与下游分支。</p>
+        )}
+      </div>
+
+      <footer className="method-hub-foot">
+        <div className="method-hub-stats small muted">
+          <span>{hub.next_steps_count} 个下游方向</span>
+          <span>·</span>
+          <span>{hub.reference_recipes.length} 个参考配方</span>
+        </div>
+        <a className="button primary small" {...pageLink(hub.path)}>
+          进入方法与出图
+        </a>
+      </footer>
+    </article>
+  );
+}
+
+function UnmappedRecipesSection({ recipes }: { recipes: ReferenceRecipeSummary[] }) {
+  if (!recipes.length) {
+    return <p className="notice">当前所有参考配方均已映射到至少一个分析方法。</p>;
+  }
+  return (
+    <div className="unmapped-recipes-grid">
+      {recipes.map((rec) => (
+        <article key={rec.id} className="sheet unmapped-recipe-card">
+          <div className="unmapped-recipe-thumb">
+            {rec.preview_url ? (
+              <img src={rec.preview_url} alt={rec.title} loading="lazy" />
+            ) : (
+              <span className="muted small">暂无运行图</span>
+            )}
+          </div>
+          <div className="unmapped-recipe-body">
+            <div className="unmapped-recipe-top">
+              <h3><a {...pageLink(rec.path)}>{rec.title}</a></h3>
+              <span className="badge">未绑定单一方法</span>
+            </div>
+            <p className="small muted"><code>{rec.id}</code> · {rec.language.toUpperCase() || 'R'}</p>
+            {rec.note && <p className="small">{rec.note}</p>}
+            <div className="unmapped-recipe-actions">
+              <LicenseBadge license="CC-BY-NC-SA-4.0" />
+              <a className="button small" {...pageLink(rec.path)}>配方详情</a>
+              <a className="button primary small" href={studioHref(rec.id)}>打开工作台</a>
+            </div>
+          </div>
+        </article>
+      ))}
+    </div>
+  );
+}
 
 export function MethodsView({ data, query = '' }: { data: AppData; query?: string }) {
   const byPath = new Map(data.pages.map((p) => [p.path, p]));
-  const allMethods = data.pages.filter((p): p is PageSummary<MethodMeta> => p.meta.type === 'method' && p.meta.status !== 'archived');
-  const analysis = allMethods.filter(p => p.meta.method_kind === 'analysis');
-  const auxiliary = allMethods.filter(p => p.meta.method_kind !== 'analysis');
+  const params = new URLSearchParams(query.replace(/^\?/, ''));
+  const viewTab = params.get('tab') ?? '';
   const kind = methodBrowseKind(query);
   const interfaces = data.pages.filter((p): p is PageSummary<InterfaceMeta> => p.meta.type === 'interface');
-  const selection = normalizeMethodSelection(parseMethodQuery(query), data.taxonomy);
+
+  const [hubsData, setHubsData] = useState<MethodHubsResponse | null>(null);
+  const [hubsError, setHubsError] = useState('');
+  const abortRef = useRef<AbortController | null>(null);
+
+  const initialTaxonomy = hubsData?.taxonomy ?? data.taxonomy;
+  const selection = normalizeMethodSelection(parseMethodQuery(query), initialTaxonomy);
   const [search, setSearch] = useState(selection.q);
-  // The input is controlled by the URL selection, so clearing the query also
-  // clears the visible text after a hash change or a browser back/forward.
   useEffect(() => { setSearch(selection.q); }, [selection.q]);
-  const methods = kind === 'workflow' || kind === 'technical' ? [] : filterAnalysisMethods(data.pages, data.taxonomy, { ...selection, q: search });
-  const auxiliaryShown = auxiliary.filter(p => (kind === 'all' || p.meta.method_kind === kind)
+
+  useEffect(() => {
+    if (typeof fetch !== 'function') return;
+    abortRef.current?.abort();
+    const ctrl = new AbortController();
+    abortRef.current = ctrl;
+    setHubsError('');
+    api.methodHubs({ domain: selection.domain, purpose: selection.purpose, q: selection.q }, ctrl.signal)
+      .then((res) => {
+        if (!ctrl.signal.aborted && res && Array.isArray(res.methods)) {
+          setHubsData(res);
+        }
+      })
+      .catch((err: Error) => {
+        if (!ctrl.signal.aborted) setHubsError(err.message);
+      });
+    return () => ctrl.abort();
+  }, [selection.domain, selection.purpose, selection.q]);
+
+  const activeTaxonomy = hubsData?.taxonomy ?? data.taxonomy;
+  const domainGroups: DataDomainGroup[] = useMemo(() => {
+    if (hubsData?.data_domains?.length) return hubsData.data_domains;
+    if (activeTaxonomy.data_domains?.length) return activeTaxonomy.data_domains;
+    // Preserve legacy taxonomy.domains when a unit test supplies custom domain names without data_domains.
+    const hasCustomLegacy = activeTaxonomy.domains.some(
+      (d) => !CANONICAL_DATA_DOMAINS.some(([slug]) => slug === d.value),
+    );
+    if (hasCustomLegacy && activeTaxonomy.domains.length > 0) {
+      return activeTaxonomy.domains.map((d) => ({
+        value: d.value,
+        label: domainLabel(d.value, activeTaxonomy),
+        count: d.count,
+        purposes: d.purposes,
+      }));
+    }
+    return dataDomainGroups(activeTaxonomy, data.pages);
+  }, [hubsData, activeTaxonomy, data.pages]);
+
+  const allMethods = data.pages.filter((p): p is PageSummary<MethodMeta> => p.meta.type === 'method' && p.meta.status !== 'archived');
+  const auxiliary = allMethods.filter((p) => p.meta.method_kind !== 'analysis');
+  const auxiliaryShown = auxiliary.filter((p) =>
+    (kind === 'all' || p.meta.method_kind === kind)
     && (!selection.domain || p.meta.tags.includes(selection.domain))
-    && !selection.purpose && matchesMethodQuery(p.meta, search));
-  const purposeOptions = purposeOptionsFor(data.taxonomy, selection.domain);
+    && !selection.purpose
+    && matchesMethodQuery(p.meta, search),
+  );
+
+  const fallbackAnalysisPages = useMemo(
+    () => filterAnalysisMethods(data.pages, activeTaxonomy, { ...selection, q: search }),
+    [data.pages, activeTaxonomy, selection, search],
+  );
+
+  const hubCards: MethodHubCard[] = useMemo(() => {
+    if (kind === 'workflow' || kind === 'technical' || viewTab === 'unmapped') return [];
+    if (hubsData?.methods && search.trim() === selection.q.trim()) {
+      return hubsData.methods;
+    }
+    return fallbackAnalysisPages.map((page) => buildFallbackMethodHub(page, data.pages, data.graph, data.flow));
+  }, [kind, viewTab, hubsData, search, selection.q, fallbackAnalysisPages, data.pages, data.graph, data.flow]);
+
+  const purposeOptions = purposeOptionsFor(activeTaxonomy, selection.domain);
+  const unmappedRecipes = hubsData?.unmapped_recipes ?? [];
+  const unmappedCount = hubsData?.unmapped_recipes_count ?? unmappedRecipes.length;
+  const totalAnalysisCount = hubsData?.total ?? activeTaxonomy.total;
+
   const title = (path: string) => byPath.get(path)?.meta.title ?? path;
   const live = (paths: string[]) => paths.filter((path) => {
     const meta = byPath.get(path)?.meta;
     return meta !== undefined && (!isItem(meta) || meta.status !== 'archived');
   });
-  const href = (next: typeof selection, nextKind = kind) => {
+
+  const href = (next: typeof selection, nextKind = kind, nextTab = '') => {
     const base = methodSelectionHref(next);
-    return base + (base.includes('?') ? '&' : '?') + `kind=${nextKind}`;
+    const extra = new URLSearchParams();
+    if (nextKind && nextKind !== 'all') extra.set('kind', nextKind);
+    if (nextTab) extra.set('tab', nextTab);
+    const suffix = extra.toString();
+    return suffix ? `${base}${base.includes('?') ? '&' : '?'}${suffix}` : base;
   };
   const select = (changes: Partial<typeof selection>) =>
-    href(normalizeMethodSelection({ ...selection, ...changes }, data.taxonomy));
+    href(normalizeMethodSelection({ ...selection, ...changes }, activeTaxonomy), kind === 'all' ? 'analysis' : kind);
 
   return (
-    <section className="methods">
-      <header className="hero slim">
-        <div className="hero-text">
-          <h1>方法库</h1>
+    <section className="methods method-hub-explorer">
+      <header className="gallery-top-bar">
+        <div className="gallery-title-group">
+          <span className="studio-eyebrow">METHOD-CENTRIC BIOINFORMATICS HUB</span>
+          <h1>分析方法库</h1>
           <p className="lede">
-            方法理论、组合流程和代码复用入口在这里统一检索。分析家族保持语义去重；具体实现的验证状态与笔记确认分别展示。
+            以科研分析方法为核心入口，聚合数据对象契约、三层配套出图模板与多重可选下游分支；方法理论就绪不等于各实现分支已独立验证。
           </p>
-          <dl className="census">
-            <div><dt>分析家族</dt><dd>{data.taxonomy.total}</dd></div>
-            <div><dt>笔记已确认</dt><dd>{analysis.filter(m => m.meta.status === 'ready').length}</dd></div>
-            <div><dt>含已验证实现</dt><dd>{analysis.filter(m => verifiedImplementations(m.meta, m.implementation_status).length > 0).length}</dd></div>
-            <div><dt>流程与技术资料</dt><dd>{auxiliary.length}</dd></div>
-          </dl>
+        </div>
+        <div className="gallery-top-actions">
+          <a className="button" href="#/next">多路决策沙盘</a>
+          <a className="button" href="#/resources">资料与接口 ({interfaces.length})</a>
         </div>
       </header>
 
-      <nav className="taxonomy" aria-label="资料类型">
-        {([['all', '全部条目'], ['analysis', '分析理论'], ['workflow', '组合流程'], ['technical', '代码与技术资料']] as const).map(([value, label]) =>
-          <a key={value} href={href({domain: '', purpose: '', q: search}, value)} className={kind === value ? 'active' : ''} aria-current={kind === value ? 'page' : undefined}>
-            {label} {value === 'all' ? allMethods.length : allMethods.filter(p => p.meta.method_kind === value).length}
-          </a>)}
-      </nav>
-
-      {kind === 'analysis' && <nav className="taxonomy taxonomy-domains" aria-label="研究领域">
-        <span className="taxonomy-label">领域</span>
-        <a href={select({ domain: '', purpose: '' })} className={!selection.domain ? 'active' : ''} aria-current={!selection.domain ? 'page' : undefined}>全部 {data.taxonomy.total}</a>
-        {data.taxonomy.domains.map(domain => (
-          <a key={domain.value} href={select({ domain: domain.value })} className={selection.domain === domain.value ? 'active' : ''} aria-current={selection.domain === domain.value ? 'page' : undefined}>
-            {domain.value} {domain.count}
+      {/* Top 7 Canonical Data-Type Domains Bar */}
+      <nav className="domain-bar sheet" aria-label="七大数据类型域">
+        <div className="domain-bar-pills">
+          <a
+            href={href({ domain: '', purpose: '', q: search }, 'analysis')}
+            className={!selection.domain && viewTab !== 'unmapped' && kind !== 'technical' && kind !== 'workflow' ? 'domain-tab active' : 'domain-tab'}
+            aria-current={!selection.domain ? 'page' : undefined}
+          >
+            <span>全部域</span>
+            <span className="pill-count">{totalAnalysisCount}</span>
           </a>
-        ))}
-      </nav>}
-
-      {kind === 'analysis' && purposeOptions.length > 0 && (
-        <nav className="taxonomy taxonomy-purposes" aria-label="分析用途">
-          <span className="taxonomy-label">用途</span>
-          <a href={select({ purpose: '' })} className={!selection.purpose ? 'active' : ''} aria-current={!selection.purpose ? 'page' : undefined}>全部</a>
-          {purposeOptions.map(purpose => (
-            <a key={purpose.value} href={select({ purpose: purpose.value })} className={selection.purpose === purpose.value ? 'active' : ''} aria-current={selection.purpose === purpose.value ? 'page' : undefined}>
-              {purpose.value} {purpose.count}
+          {domainGroups.map((domain) => (
+            <a
+              key={domain.value}
+              href={select({ domain: domain.value })}
+              className={selection.domain === domain.value && viewTab !== 'unmapped' ? 'domain-tab active' : 'domain-tab'}
+              aria-current={selection.domain === domain.value ? 'page' : undefined}
+            >
+              <span>{domain.label || domain.value}</span>
+              <span className="pill-count">{domain.count}</span>
             </a>
           ))}
-        </nav>
-      )}
+        </div>
 
-      <form className="method-search" action="#/methods" onSubmit={(event) => {
-        event.preventDefault();
-        location.hash = href({ ...selection, q: search.trim() });
-      }}>
-        <input name="q" value={search} onChange={(event) => setSearch(event.target.value)}
-               placeholder="搜索方法、用途或关键词" aria-label="搜索方法" />
-        <button type="submit">搜索</button>
-        {selection.q && <a href={href({ ...selection, q: '' })}>清除</a>}
-      </form>
+        <form
+          className="method-search-inline"
+          action="#/methods"
+          onSubmit={(event) => {
+            event.preventDefault();
+            location.hash = href({ ...selection, q: search.trim() }, kind);
+          }}
+        >
+          <input
+            name="q"
+            type="search"
+            value={search}
+            onChange={(event) => setSearch(event.target.value)}
+            placeholder="搜索方法、输出表、模板或关键词"
+            aria-label="搜索方法"
+          />
+          <button type="submit" className="primary small">搜索</button>
+          {(selection.q || selection.domain || selection.purpose) && (
+            <a className="button small" href="#/methods">重置</a>
+          )}
+        </form>
+      </nav>
 
-      {methods.length === 0 && auxiliaryShown.length === 0 ? (
-        <p className="notice">
-          没有匹配的方法。分类与搜索只缩小发现范围；可以返回全部，或在上方换一个领域/用途。
-          {' '}<a href={href({ domain: '', purpose: '', q: '' }, 'all')}>查看全部</a>
-        </p>
-      ) : methods.length > 0 && (
-        <>
-          <p className="muted small taxonomy-result">显示 {methods.length} / {data.taxonomy.total} 个分析家族；同一页面即使属于多个领域或用途也只计一次。</p>
-          <div className="grid">
-            {methods.map((m, i) => (
-              <MethodCard
-                key={m.path}
-                path={m.path}
-                meta={m.meta}
-                number={i + 1}
-                outputs={data.flow.outputs(m.path).map((path) => ({ path, title: title(path) }))}
-                figures={methodFigures(m.path, data.pages, data.graph, data.flow)}
-                implementationStatus={m.implementation_status}
-              />
-            ))}
+      <div className="method-explorer-layout">
+        {/* Left Purpose & Scope Rail */}
+        <aside className="method-purpose-rail sheet" aria-label="研究目的与资料入口">
+          <div className="sidebar-block">
+            <span className="sidebar-label">研究目的 (Purpose)</span>
+            <div className="sidebar-pills vertical">
+              <a
+                href={select({ purpose: '' })}
+                className={!selection.purpose && viewTab !== 'unmapped' ? 'sidebar-pill active' : 'sidebar-pill'}
+                aria-current={!selection.purpose ? 'page' : undefined}
+              >
+                <span>全部用途</span>
+                <span className="pill-count">
+                  {selection.domain
+                    ? domainGroups.find((d) => d.value === selection.domain)?.count ?? hubCards.length
+                    : totalAnalysisCount}
+                </span>
+              </a>
+              {purposeOptions.map((purpose) => (
+                <a
+                  key={purpose.value}
+                  href={select({ purpose: purpose.value })}
+                  className={selection.purpose === purpose.value ? 'sidebar-pill active' : 'sidebar-pill'}
+                  aria-current={selection.purpose === purpose.value ? 'page' : undefined}
+                >
+                  <span>{purpose.value}</span>
+                  <span className="pill-count">{purpose.count}</span>
+                </a>
+              ))}
+            </div>
           </div>
-        </>
-      )}
 
-      {auxiliaryShown.length > 0 && <section className="method-auxiliary">
-        <h2>流程与代码资料 · {auxiliaryShown.length}</h2>
-        <p className="muted small">保留资料分类与来源；同一实现的多份项目副本不重复计为分析家族。验证范围见各入口。</p>
-        <div className="source-grid">{auxiliaryShown.map(page => <MethodCodeCard key={page.path} page={page} pages={data.pages} />)}</div>
-      </section>}
+          <div className="sidebar-block">
+            <span className="sidebar-label">附属资源与工具</span>
+            <div className="sidebar-pills vertical">
+              <a
+                href={href({ domain: '', purpose: '', q: '' }, 'all', 'unmapped')}
+                className={viewTab === 'unmapped' ? 'sidebar-pill active' : 'sidebar-pill'}
+              >
+                <span>未映射辅助配方</span>
+                <span className="pill-count">{unmappedCount}</span>
+              </a>
+              <a
+                href="#/resources?tab=technical"
+                className={kind === 'technical' ? 'sidebar-pill active' : 'sidebar-pill'}
+              >
+                <span>技术与适配代码</span>
+                <span className="pill-count">{allMethods.filter((m) => m.meta.method_kind === 'technical').length}</span>
+              </a>
+              <a
+                href="#/resources?tab=workflow"
+                className={kind === 'workflow' ? 'sidebar-pill active' : 'sidebar-pill'}
+              >
+                <span>组合流程资料</span>
+                <span className="pill-count">{allMethods.filter((m) => m.meta.method_kind === 'workflow').length}</span>
+              </a>
+            </div>
+          </div>
+        </aside>
 
-      <details className="method-details method-interfaces">
-        <summary>数据接口 {interfaces.length}</summary>
-        <p className="muted small">
-          方法与图之间的内部执行约定。外部数据不必改名为 <code>&lt;接口&gt;.csv</code>：用 <code>render --bindings</code> 显式映射文件和列；固定文件名只保留为标准输入的兼容入口。
-        </p>
-        <ul className="links interface-links">
-          {interfaces.map((p) => (
-            <li key={p.path}>
-              <TypeMark type="interface" />
-              <a {...pageLink(p.path)}>{p.meta.title}</a>
-              <code>{p.meta.slug}.csv</code>
-              <span className="muted small"> · {live(data.flow.inputs(p.path)).map((m) => title(m)).join('、') || '暂无产出方法'}</span>
-            </li>
-          ))}
-        </ul>
-      </details>
+        {/* Right Method Hub Grid */}
+        <div className="method-explorer-stage">
+          {hubsError && !hubCards.length && (
+            <p className="notice small">已使用本地目录缓存展示（实时聚合接口提示：{hubsError}）。</p>
+          )}
+
+          {viewTab === 'unmapped' ? (
+            <section className="unmapped-fallback-panel">
+              <div className="gallery-result-bar">
+                <h2>未映射到单一方法的辅助工具配方（{unmappedCount}）</h2>
+                <a className="button small" href="#/methods">返回分析方法库</a>
+              </div>
+              <UnmappedRecipesSection recipes={unmappedRecipes} />
+            </section>
+          ) : kind === 'technical' || kind === 'workflow' ? (
+            <section className="method-auxiliary">
+              <div className="gallery-result-bar">
+                <h2>{kind === 'technical' ? '技术与适配代码' : '组合流程资料'} · {auxiliaryShown.length}</h2>
+                <a className="button small" href="#/methods">返回分析方法库</a>
+              </div>
+              <div className="source-grid">
+                {auxiliaryShown.map((page) => <MethodCodeCard key={page.path} page={page} pages={data.pages} />)}
+              </div>
+            </section>
+          ) : (
+            <>
+              <div className="gallery-result-bar">
+                <span className="small muted">
+                  当前显示 <strong>{hubCards.length}</strong> / {totalAnalysisCount} 个核心分析方法（按方法语义去重，同一方法跨多域只计一次）
+                </span>
+                {unmappedCount > 0 && (
+                  <a className="small" href={href({ domain: '', purpose: '', q: '' }, 'all', 'unmapped')}>
+                    另有 {unmappedCount} 个未映射辅助配方 →
+                  </a>
+                )}
+              </div>
+
+              {hubCards.length === 0 && auxiliaryShown.length === 0 ? (
+                <p className="notice">
+                  没有匹配的方法。分类与搜索只缩小发现范围；可以返回全部，或在上方/左侧切换数据类型域或研究目的。
+                  {' '}<a href="#/methods">查看全部</a>
+                </p>
+              ) : (
+                <div className="method-hub-grid">
+                  {hubCards.map((hub) => (
+                    <HubMethodCard key={hub.id} hub={hub} taxonomy={activeTaxonomy} />
+                  ))}
+                </div>
+              )}
+
+              {kind === 'all' && auxiliaryShown.length > 0 && (
+                <details className="method-details method-auxiliary-fold">
+                  <summary>流程与技术资料（{auxiliaryShown.length} · 不计入分析方法）</summary>
+                  <p className="muted small">保留资料分类与来源；同一实现的多份项目副本不重复计为分析方法。验证范围见各入口。</p>
+                  <div className="source-grid">
+                    {auxiliaryShown.map((page) => <MethodCodeCard key={page.path} page={page} pages={data.pages} />)}
+                  </div>
+                </details>
+              )}
+            </>
+          )}
+
+          <details className="method-details method-interfaces">
+            <summary>数据接口契约（{interfaces.length} 个标准表）</summary>
+            <p className="muted small">
+              方法与图之间的内部执行约定。外部数据不必改名为 <code>&lt;接口&gt;.csv</code>：用 <code>render --bindings</code> 显式映射文件和列；固定文件名只保留为标准输入的兼容入口。
+            </p>
+            <ul className="links interface-links">
+              {interfaces.map((p) => (
+                <li key={p.path}>
+                  <TypeMark type="interface" />
+                  <a {...pageLink(p.path)}>{p.meta.title}</a>
+                  <code>{p.meta.slug}.csv</code>
+                  <span className="muted small"> · {live(data.flow.inputs(p.path)).map((m) => title(m)).join('、') || '暂无产出方法'}</span>
+                </li>
+              ))}
+            </ul>
+          </details>
+        </div>
+      </div>
     </section>
   );
 }

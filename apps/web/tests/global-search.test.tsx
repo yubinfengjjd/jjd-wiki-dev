@@ -50,6 +50,9 @@ async function main() {
   assert.ok(source.includes('尚未核对') && !source.includes('运行证据：unknown'));
   assert.equal(effectiveStatus({type: 'template', status: 'ready'} as any,
     {stage: 'unknown', queue: null, label: '尚未核对', reason: '', templates: []}), 'pending_template');
+  assert.equal(parseRoute('').view, 'methods');
+  assert.equal(parseRoute('#/next').view, 'next');
+  assert.equal(parseRoute('#/resources?tab=search').view, 'resources');
   console.log('global search: latest requests, escaped text, filters and section links passed');
 }
 main().catch(error => {console.error(error); process.exit(1);});
