@@ -11,7 +11,7 @@ import { Gallery, PlottingCodeShelf } from '../src/views/Gallery';
 import { PageView } from '../src/views/PageView';
 import { PlaybooksView } from '../src/views/PlaybooksView';
 import { ProjectsView } from '../src/views/ProjectsView';
-import { RecipesView } from '../src/views/RecipesView';
+import { buildRecipeMethodIndex, RecipesView } from '../src/views/RecipesView';
 import { ResourcesView } from '../src/views/ResourcesView';
 import { ScenariosView } from '../src/views/ScenariosView';
 import { StudioView } from '../src/views/StudioView';
@@ -316,6 +316,48 @@ async function main() {
     pageCache.set(page.path, page);
     const detailHtml = renderToStaticMarkup(<PageView path={page.path} data={dataOf(pages)} />);
     assert.ok(detailHtml.includes('#/studio?id=t-v2'), 'template detail page links to Studio');
+  });
+
+  await check('buildRecipeMethodIndex organizes FigureYa recipes by domain and method without duplication', () => {
+    const idx = buildRecipeMethodIndex({
+      taxonomy: TAXONOMY as any,
+      data_domains: [],
+      methods: [
+        {
+          id: 'drug-sensitivity-repositioning',
+          title: '药物敏感性预测、CMap 重定位与靶点关联分析',
+          path: 'methods/drug-sensitivity-repositioning.md',
+          status: 'ready',
+          summary: '',
+          data_domains: ['bulk-transcriptomics', 'multi-omics'],
+          data_domain_labels: ['Bulk 转录组', '多组学整合与泛癌'],
+          purposes: ['差异与功能分析'],
+          tags: [],
+          keywords: [],
+          inputs: [],
+          outputs: [],
+          data_contract: {},
+          render_bridges: [],
+          implementations: [],
+          implementation_status: [],
+          workflow: null,
+          next_steps_count: 0,
+          attached_visualizations: { curated: [], object_compatible: [], render_bridged: [], all_previews: [] },
+          reference_recipes: [
+            { id: 'figureya-131cmap-update', title: 'CMap', path: 'recipes/figureya-131cmap-update.md', status: 'ready', language: 'r', runner: 'r', chart_types: [], tags: [], data_domains: [], confidence: 'curated', note: '', methods: ['drug-sensitivity-repositioning'], preview_url: null },
+          ],
+          unmapped_recipes_count: 1,
+        },
+      ],
+      total: 1,
+      filtered_total: 1,
+      unmapped_recipes: [
+        { id: 'figureya-28color', title: 'Color', path: 'recipes/figureya-28color.md', status: 'ready', language: 'r', runner: 'r', chart_types: [], tags: [], data_domains: [], confidence: 'curated', note: '', methods: [], preview_url: null },
+      ],
+      unmapped_recipes_count: 1,
+    });
+    assert.equal(idx.methodsForRecipe.get('figureya-131cmap-update')?.[0]?.id, 'drug-sensitivity-repositioning');
+    assert.ok(idx.unmappedIds.has('figureya-28color'));
   });
 
   if (failed) process.exitCode = 1;

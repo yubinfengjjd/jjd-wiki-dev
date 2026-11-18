@@ -219,6 +219,7 @@ export function MethodOverview({
 }: Props) {
   const [selectedIface, setSelectedIface] = useState<string>('');
   const [copiedNextCli, setCopiedNextCli] = useState(false);
+  const [showAllRecipes, setShowAllRecipes] = useState(false);
 
   const inputSlugs = hub?.inputs ?? meta.inputs ?? [];
   const outputSlugs = hub?.outputs ?? meta.outputs ?? [];
@@ -463,7 +464,61 @@ export function MethodOverview({
             ))}
           </div>
         ) : (
-          <p className="muted small">暂无已挂载的可视化模板；可查阅下方理论说明或通过多路下游分支探索。</p>
+          <p className="muted small">暂无已挂载的可视化模板；可查阅下方参考源码配方或通过多路下游分支探索。</p>
+        )}
+      </section>
+
+      {/* Section 2b: FigureYa L1 参考源码配方（已按方法域挂接，直接展示） */}
+      <section className="method-reference-recipes-section" aria-label="FigureYa L1 参考源码配方">
+        <div className="method-ref-recipes-head">
+          <div>
+            <h2>参考源码配方（FigureYa L1 · {referenceRecipes.length}）</h2>
+            <p className="muted small">保留上游完整源码与运行收据，按当前方法语义挂接；使用前请核对各自许可证与引用文献。</p>
+          </div>
+          {referenceRecipes.length > 0 && (
+            <div className="method-ref-recipes-actions">
+              {referenceRecipes.length > 6 && (
+                <button
+                  type="button"
+                  className="ghost small"
+                  onClick={() => setShowAllRecipes((v) => !v)}
+                >
+                  {showAllRecipes ? '收起到前 6 条' : `展开全部 ${referenceRecipes.length} 条`}
+                </button>
+              )}
+              <a className="button small" href={`#/recipes?method=${encodeURIComponent(meta.id)}`}>
+                在配方库按方法查看 ({referenceRecipes.length}) →
+              </a>
+            </div>
+          )}
+        </div>
+        {referenceRecipes.length === 0 ? (
+          <p className="small muted">当前方法暂无已映射的 FigureYa 参考源码配方。</p>
+        ) : (
+          <div className="reference-recipes-grid">
+            {(showAllRecipes ? referenceRecipes : referenceRecipes.slice(0, 6)).map((rec) => {
+              const resolvedLicense = rec.license ?? (pages.find((p) => p.path === rec.path)?.meta as { license?: string } | undefined)?.license;
+              return (
+                <article key={rec.id} className="reference-recipe-item">
+                  {rec.preview_url && (
+                    <a className="ref-recipe-thumb" {...pageLink(rec.path)}>
+                      <img src={rec.preview_url} alt={rec.title} loading="lazy" />
+                    </a>
+                  )}
+                  <div className="ref-recipe-meta">
+                    <h4><a {...pageLink(rec.path)}>{rec.title}</a></h4>
+                    <p className="small muted"><code>{rec.id}</code> · {rec.language.toUpperCase() || 'R'} · {rec.confidence}</p>
+                    {rec.note && <p className="small">{rec.note}</p>}
+                    <div className="ref-recipe-actions">
+                      {resolvedLicense && <LicenseBadge license={resolvedLicense} />}
+                      <a className="button small" {...pageLink(rec.path)}>查看配方</a>
+                      <a className="button primary small" href={studioHref(rec.id)}>工作台</a>
+                    </div>
+                  </div>
+                </article>
+              );
+            })}
+          </div>
         )}
       </section>
 
@@ -601,39 +656,6 @@ export function MethodOverview({
 
       {/* Section 4: 具体实现分支与逐分支验证收据 */}
       <MethodImplementations meta={meta} implementationStatus={effectiveImplStatus} />
-
-      {/* Section 5: 参考源码配方折叠栏 (FigureYa L1) */}
-      <details className="method-details method-reference-recipes">
-        <summary>参考源码配方（FigureYa L1 · {referenceRecipes.length}）</summary>
-        {referenceRecipes.length === 0 ? (
-          <p className="small muted">当前方法暂无已映射的参考源码配方。</p>
-        ) : (
-          <div className="reference-recipes-grid">
-            {referenceRecipes.map((rec) => {
-              const resolvedLicense = rec.license ?? (pages.find((p) => p.path === rec.path)?.meta as { license?: string } | undefined)?.license;
-              return (
-                <article key={rec.id} className="reference-recipe-item">
-                  {rec.preview_url && (
-                    <a className="ref-recipe-thumb" {...pageLink(rec.path)}>
-                      <img src={rec.preview_url} alt={rec.title} loading="lazy" />
-                    </a>
-                  )}
-                  <div className="ref-recipe-meta">
-                    <h4><a {...pageLink(rec.path)}>{rec.title}</a></h4>
-                    <p className="small muted"><code>{rec.id}</code> · {rec.language.toUpperCase() || 'R'} · {rec.confidence}</p>
-                    {rec.note && <p className="small">{rec.note}</p>}
-                    <div className="ref-recipe-actions">
-                      {resolvedLicense && <LicenseBadge license={resolvedLicense} />}
-                      <a className="button small" {...pageLink(rec.path)}>查看配方</a>
-                      <a className="button primary small" href={studioHref(rec.id)}>工作台</a>
-                    </div>
-                  </div>
-                </article>
-              );
-            })}
-          </div>
-        )}
-      </details>
 
       <p className="small"><a href={wikiFile(`methods/${meta.id}.md`)} target="_blank" rel="noreferrer">查看完整 Wiki 记录与来源元数据</a></p>
     </section>

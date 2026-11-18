@@ -137,7 +137,7 @@ export function App() {
     else if (route.view === 'search') content = <SearchView query={route.query} />;
     else if (route.view === 'next' || route.view === 'playbooks') content = <PlaybooksView data={data} query={route.query} />;
     else if (route.view === 'resources') content = <ResourcesView data={data} query={route.query} />;
-    else if (route.view === 'recipes') content = <RecipesView data={data} />;
+    else if (route.view === 'recipes') content = <RecipesView data={data} query={route.query} />;
     else if (route.view === 'sources') content = <SourcesView data={data} query={route.query} />;
     else if (route.view === 'figureya') content = <FigureYaReview data={data} />;
     else if (route.view === 'scenarios') content = <ScenariosView data={data} />;

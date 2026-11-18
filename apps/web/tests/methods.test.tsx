@@ -898,6 +898,8 @@ check('hubsData key guard rejects stale domain/purpose payloads and resolves rec
   );
   assert.ok(overviewHtml.includes('>MIT<'), 'resolved license from page meta must be rendered');
   assert.ok(!overviewHtml.includes('非商业'), 'must never invent CC-BY-NC-SA-4.0 when recipe license is absent');
+  assert.ok(overviewHtml.includes('method-reference-recipes-section'), 'FigureYa L1 section must be expanded cleanly');
+  assert.ok(overviewHtml.includes('href="#/recipes?method=m-lic"'), 'must link cleanly to filtered recipes view');
 });
 
 check('PlaybooksView query reset clears customMethodId and matchNextResponse guards stale nodes', () => {

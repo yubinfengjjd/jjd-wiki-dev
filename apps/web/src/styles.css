@@ -3646,3 +3646,120 @@ a.chain-item:hover {
     grid-template-columns: minmax(0, 1fr);
   }
 }
+
+/* === FigureYa L1 Reference Recipes & Method-Domain Organization === */
+.viz-thumb-recipe {
+  border-style: dashed;
+}
+.viz-badge-l1 {
+  background: #f5f0e6;
+  color: #6b4e16;
+}
+.method-recipe-count-link {
+  color: var(--indigo);
+  text-decoration: none;
+  font-weight: 500;
+}
+.method-recipe-count-link:hover {
+  text-decoration: underline;
+}
+.method-reference-recipes-section {
+  margin-top: 22px;
+  padding: 18px 20px;
+  border: 1px solid var(--rule);
+  border-radius: 10px;
+  background: #fcfcfa;
+}
+.method-ref-recipes-head {
+  display: flex;
+  flex-wrap: wrap;
+  justify-content: space-between;
+  align-items: flex-start;
+  gap: 12px;
+  margin-bottom: 14px;
+}
+.method-ref-recipes-head h2 {
+  margin: 0 0 4px;
+  font-size: 1.05rem;
+}
+.method-ref-recipes-head p {
+  margin: 0;
+}
+.method-ref-recipes-actions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+  align-items: center;
+}
+.recipes-domain-tabs {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+  margin: 14px 0 10px;
+}
+.recipe-method-groups {
+  display: flex;
+  flex-direction: column;
+  gap: 24px;
+  margin-top: 14px;
+}
+.recipe-method-group {
+  border: 1px solid var(--rule);
+  border-radius: 10px;
+  padding: 16px 18px;
+  background: var(--paper);
+}
+.recipe-method-group-head {
+  display: flex;
+  flex-wrap: wrap;
+  justify-content: space-between;
+  align-items: center;
+  gap: 12px;
+  padding-bottom: 12px;
+  margin-bottom: 14px;
+  border-bottom: 1px solid var(--rule);
+}
+.recipe-method-group-title h2 {
+  margin: 4px 0 0;
+  font-size: 1.1rem;
+}
+.recipe-group-domains {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+}
+.recipe-group-count {
+  font-size: 0.9rem;
+  font-weight: 400;
+  color: var(--muted);
+}
+.recipe-hub-item {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+}
+.recipe-method-chips {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+  padding: 0 2px;
+}
+.recipe-method-chip {
+  display: inline-flex;
+  align-items: center;
+  gap: 5px;
+  font-size: 11.5px;
+  padding: 3px 8px;
+  border-radius: 999px;
+  border: 1px solid var(--rule);
+  background: #f8f9fb;
+  color: var(--ink);
+  text-decoration: none;
+}
+.recipe-method-chip:hover {
+  border-color: var(--indigo);
+}
+.recipe-chip-domain {
+  color: var(--indigo);
+  font-weight: 600;
+}

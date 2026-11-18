@@ -48,6 +48,8 @@ function HubMethodCard({ hub, taxonomy }: { hub: MethodHubCard; taxonomy: AppDat
   ).length;
   const totalImpls = hub.implementations.length;
   const previews = hub.attached_visualizations.all_previews.slice(0, 4);
+  const recipeSlots = Math.max(0, 4 - previews.length);
+  const previewRecipes = recipeSlots > 0 ? hub.reference_recipes.slice(0, recipeSlots) : [];
   const curatedById = new Map(hub.attached_visualizations.curated.map((c) => [c.id, c]));
   const totalVizCount = new Set([
     ...hub.attached_visualizations.curated.map((v) => v.id),
@@ -119,7 +121,7 @@ function HubMethodCard({ hub, taxonomy }: { hub: MethodHubCard; taxonomy: AppDat
             <span className="bridge-mini-note">含 {hub.render_bridges.length} 条抽取表转换</span>
           )}
         </div>
-        {previews.length > 0 ? (
+        {(previews.length > 0 || previewRecipes.length > 0) ? (
           <div className="viz-strip-thumbs">
             {previews.map((viz) => {
               const curatedItem = curatedById.get(viz.id);
@@ -145,6 +147,26 @@ function HubMethodCard({ hub, taxonomy }: { hub: MethodHubCard; taxonomy: AppDat
                 </a>
               );
             })}
+            {previewRecipes.map((rec) => (
+              <a
+                key={`ref-${rec.id}`}
+                className="viz-thumb-tile viz-thumb-recipe"
+                {...pageLink(rec.path)}
+                title={`${rec.title} (${rec.id}) · L1 FigureYa 源码参考`}
+              >
+                <div className="viz-thumb-img">
+                  {rec.preview_url ? (
+                    <img src={rec.preview_url} alt={rec.title} loading="lazy" />
+                  ) : (
+                    <span className="viz-thumb-empty">{rec.chart_types[0] || 'L1 配方'}</span>
+                  )}
+                </div>
+                <div className="viz-thumb-meta">
+                  <code className="viz-slug">{rec.id}</code>
+                  <span className="viz-compat-label viz-badge-l1">L1 源码参考</span>
+                </div>
+              </a>
+            ))}
           </div>
         ) : (
           <p className="viz-strip-empty small muted">暂无挂载可视化模板；可进入查看理论说明与下游分支。</p>
@@ -155,7 +177,13 @@ function HubMethodCard({ hub, taxonomy }: { hub: MethodHubCard; taxonomy: AppDat
         <div className="method-hub-stats small muted">
           <span>{hub.next_steps_count} 个下游方向</span>
           <span>·</span>
-          <span>{hub.reference_recipes.length} 个参考配方</span>
+          {hub.reference_recipes.length > 0 ? (
+            <a className="method-recipe-count-link" href={`#/recipes?method=${encodeURIComponent(hub.id)}`}>
+              {hub.reference_recipes.length} 个 FigureYa 参考 →
+            </a>
+          ) : (
+            <span>0 个参考配方</span>
+          )}
         </div>
         <a className="button primary small" {...pageLink(hub.path)}>
           进入方法与出图
