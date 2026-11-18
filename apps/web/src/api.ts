@@ -337,13 +337,14 @@ export interface StudioSniffResponse {
 export interface StudioParamSchema {
   name: string;
   label?: string;
-  type: 'select' | 'palette' | 'number' | 'range' | 'boolean' | 'string' | 'text' | string;
+  type: 'select' | 'palette' | 'number' | 'range' | 'float' | 'int' | 'boolean' | 'bool' | 'string' | 'str' | 'text' | string;
   default?: string | number | boolean;
   choices?: string[];
   min?: number;
   max?: number;
-  step?: number;
+  step?: number | null;
   description?: string;
+  help?: string;
 }
 
 export interface StudioRenderRequest {
@@ -358,7 +359,7 @@ export interface StudioSpecTable {
   interface?: string;
   description?: string;
   required?: boolean;
-  columns?: InputContractColumn[];
+  columns?: InputContractColumn[] | Record<string, { type?: string; description?: string; required?: boolean }>;
 }
 
 export interface StudioRenderResponse {
@@ -369,8 +370,11 @@ export interface StudioRenderResponse {
   spec: {
     id?: string;
     title?: string;
+    tier?: number;
+    kind?: string;
     language?: string;
     entry?: string;
+    dependencies?: string[];
     tables?: Record<string, StudioSpecTable>;
     parameters?: StudioParamSchema[] | Record<string, Omit<StudioParamSchema, 'name'>>;
     [key: string]: unknown;

@@ -40,9 +40,9 @@ function normalizeParams(raw: StudioRenderResponse['spec']['parameters']): { sch
 }
 
 function defaultValueOf(param: StudioParamSchema): string | number | boolean {
-  if (param.default !== undefined) return param.default;
-  if (param.type === 'boolean') return false;
-  if (param.type === 'number' || param.type === 'range') return param.min ?? 1;
+  if (param.default !== undefined && param.default !== null) return param.default;
+  if (param.type === 'boolean' || param.type === 'bool') return false;
+  if (param.type === 'number' || param.type === 'range' || param.type === 'float' || param.type === 'int') return param.min ?? 1;
   if (param.choices?.length) return param.choices[0];
   return '';
 }
@@ -204,16 +204,24 @@ export function StudioView({ data, query = '' }: { data: AppData; query?: string
       return Object.entries(renderResp.spec.tables).map(([key, tbl]) => {
         const ifaceSlug = tbl.interface || '';
         const ifacePage = data.pages.find((p) => p.meta.type === 'interface' && p.meta.slug === ifaceSlug);
-        const cols: InputContractColumn[] = tbl.columns?.length
-          ? tbl.columns
-          : ifacePage?.meta.type === 'interface'
-            ? Object.entries(ifacePage.meta.columns).map(([name, c]) => ({
+        const rawCols = tbl.columns;
+        const cols: InputContractColumn[] = Array.isArray(rawCols)
+          ? rawCols
+          : rawCols && typeof rawCols === 'object' && Object.keys(rawCols).length > 0
+            ? Object.entries(rawCols).map(([name, c]) => ({
                 name,
-                type: c.type,
-                description: c.description,
-                required: c.required !== false,
+                type: String(c?.type ?? 'str'),
+                description: String(c?.description ?? ''),
+                required: c?.required !== false,
               }))
-            : [];
+            : ifacePage?.meta.type === 'interface'
+              ? Object.entries(ifacePage.meta.columns).map(([name, c]) => ({
+                  name,
+                  type: c.type,
+                  description: c.description,
+                  required: c.required !== false,
+                }))
+              : [];
         return { key, interface: ifaceSlug, description: tbl.description || '', required: tbl.required !== false, columns: cols };
       });
     }
@@ -406,7 +414,10 @@ export function StudioView({ data, query = '' }: { data: AppData; query?: string
   const diffInfo = useMemo(() => computeLineDiff(baselineCode, editorCode), [baselineCode, editorCode]);
   const editorLines = useMemo(() => (editorCode || '').split('\n'), [editorCode]);
   const language = renderResp?.language || (currentPage?.meta && 'language' in currentPage.meta ? String(currentPage.meta.language) : 'R');
-  const deps = currentPage?.runtime ? allPackages(currentPage.runtime) : [];
+  const tier = renderResp?.spec?.tier ?? (isTier1 ? 1 : 2);
+  const deps = renderResp?.spec?.dependencies?.length
+    ? renderResp.spec.dependencies
+    : currentPage?.runtime ? allPackages(currentPage.runtime) : [];
 
   return (
     <section className="studio-page">
@@ -421,7 +432,7 @@ export function StudioView({ data, query = '' }: { data: AppData; query?: string
               <span className="badge">{TYPE_LABEL[currentPage.meta.type]}</span>
               <StatusBadge status={effectiveStatus(currentPage.meta)} label={displayStatus(currentPage.meta)} />
               <span className="lang">{language.toUpperCase()}</span>
-              <span className="badge">{isTier1 ? 'Tier 1 全表单操控' : 'Tier 2 轻量源码操控'}</span>
+              <span className="badge">{tier === 1 ? 'Tier 1 全表单操控' : 'Tier 2 轻量源码操控'}</span>
               {deps.length > 0 && <span className="small muted">依赖：{deps.slice(0, 4).join('、')}{deps.length > 4 ? '…' : ''}</span>}
               <a className="button small" href={pageHref(currentPage.path)}>查看详情页</a>
             </>
@@ -625,9 +636,9 @@ export function StudioView({ data, query = '' }: { data: AppData; query?: string
                     </div>
                   );
                 }
-                if (param.type === 'boolean') {
+                if (param.type === 'boolean' || param.type === 'bool') {
                   return (
-                    <label key={param.name} className="param-check">
+                    <label key={param.name} className="param-check" title={param.help || param.description || ''}>
                       <input
                         type="checkbox"
                         checked={Boolean(value)}
@@ -639,7 +650,7 @@ export function StudioView({ data, query = '' }: { data: AppData; query?: string
                 }
                 if ((param.type === 'select' || param.choices?.length) && param.choices?.length) {
                   return (
-                    <label key={param.name} className="param-field">
+                    <label key={param.name} className="param-field" title={param.help || param.description || ''}>
                       <span className="param-label">{param.label || param.name}</span>
                       <select
                         value={String(value)}
@@ -650,13 +661,13 @@ export function StudioView({ data, query = '' }: { data: AppData; query?: string
                     </label>
                   );
                 }
-                if (param.type === 'number' || param.type === 'range') {
+                if (param.type === 'number' || param.type === 'range' || param.type === 'float' || param.type === 'int') {
                   const min = param.min ?? 0;
                   const max = param.max ?? 100;
-                  const step = param.step ?? 0.1;
+                  const step = param.step ?? (param.type === 'int' ? 1 : max <= 1 ? 0.01 : 0.1);
                   const numVal = Number(value) || 0;
                   return (
-                    <div key={param.name} className="param-field">
+                    <div key={param.name} className="param-field" title={param.help || param.description || ''}>
                       <div className="param-label-row">
                         <span className="param-label">{param.label || param.name}</span>
                         <input
@@ -687,7 +698,7 @@ export function StudioView({ data, query = '' }: { data: AppData; query?: string
                     <input
                       type="text"
                       value={String(value)}
-                      placeholder={param.description || ''}
+                      placeholder={param.help || param.description || ''}
                       onChange={(e) => setParameters((prev) => ({ ...prev, [param.name]: e.target.value }))}
                     />
                   </label>
