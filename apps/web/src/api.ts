@@ -325,6 +325,7 @@ export interface ReferenceRecipeSummary {
   status: Status;
   language: string;
   runner: string;
+  license?: string;
   chart_types: string[];
   tags: string[];
   data_domains: string[];

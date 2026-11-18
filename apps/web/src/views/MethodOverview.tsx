@@ -482,10 +482,14 @@ export function MethodOverview({
               type="button"
               className="button small"
               onClick={() => {
-                void navigator.clipboard?.writeText(nextCliCmd).then(() => {
-                  setCopiedNextCli(true);
-                  setTimeout(() => setCopiedNextCli(false), 2000);
-                });
+                const write = navigator.clipboard?.writeText(nextCliCmd);
+                if (!write) return;
+                void write
+                  .then(() => {
+                    setCopiedNextCli(true);
+                    setTimeout(() => setCopiedNextCli(false), 2000);
+                  })
+                  .catch(() => setCopiedNextCli(false));
               }}
             >
               {copiedNextCli ? '已复制' : '复制 Agent 命令'}
@@ -605,25 +609,28 @@ export function MethodOverview({
           <p className="small muted">当前方法暂无已映射的参考源码配方。</p>
         ) : (
           <div className="reference-recipes-grid">
-            {referenceRecipes.map((rec) => (
-              <article key={rec.id} className="reference-recipe-item">
-                {rec.preview_url && (
-                  <a className="ref-recipe-thumb" {...pageLink(rec.path)}>
-                    <img src={rec.preview_url} alt={rec.title} loading="lazy" />
-                  </a>
-                )}
-                <div className="ref-recipe-meta">
-                  <h4><a {...pageLink(rec.path)}>{rec.title}</a></h4>
-                  <p className="small muted"><code>{rec.id}</code> · {rec.language.toUpperCase() || 'R'} · {rec.confidence}</p>
-                  {rec.note && <p className="small">{rec.note}</p>}
-                  <div className="ref-recipe-actions">
-                    <LicenseBadge license="CC-BY-NC-SA-4.0" />
-                    <a className="button small" {...pageLink(rec.path)}>查看配方</a>
-                    <a className="button primary small" href={studioHref(rec.id)}>工作台</a>
+            {referenceRecipes.map((rec) => {
+              const resolvedLicense = rec.license ?? (pages.find((p) => p.path === rec.path)?.meta as { license?: string } | undefined)?.license;
+              return (
+                <article key={rec.id} className="reference-recipe-item">
+                  {rec.preview_url && (
+                    <a className="ref-recipe-thumb" {...pageLink(rec.path)}>
+                      <img src={rec.preview_url} alt={rec.title} loading="lazy" />
+                    </a>
+                  )}
+                  <div className="ref-recipe-meta">
+                    <h4><a {...pageLink(rec.path)}>{rec.title}</a></h4>
+                    <p className="small muted"><code>{rec.id}</code> · {rec.language.toUpperCase() || 'R'} · {rec.confidence}</p>
+                    {rec.note && <p className="small">{rec.note}</p>}
+                    <div className="ref-recipe-actions">
+                      {resolvedLicense && <LicenseBadge license={resolvedLicense} />}
+                      <a className="button small" {...pageLink(rec.path)}>查看配方</a>
+                      <a className="button primary small" href={studioHref(rec.id)}>工作台</a>
+                    </div>
                   </div>
-                </div>
-              </article>
-            ))}
+                </article>
+              );
+            })}
           </div>
         )}
       </details>

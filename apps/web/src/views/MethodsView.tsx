@@ -19,6 +19,7 @@ import {
   CANONICAL_DATA_DOMAINS,
   dataDomainGroups,
   domainLabel,
+  domainsForMeta,
   filterAnalysisMethods,
   matchesMethodQuery,
   methodBrowseKind,
@@ -164,36 +165,64 @@ function HubMethodCard({ hub, taxonomy }: { hub: MethodHubCard; taxonomy: AppDat
   );
 }
 
-function UnmappedRecipesSection({ recipes }: { recipes: ReferenceRecipeSummary[] }) {
+export function methodHubsQueryKey(selection: { domain: string; purpose: string; q: string }): string {
+  return JSON.stringify([selection.domain, selection.purpose, selection.q.trim()]);
+}
+
+export function selectMatchingHubs(
+  hubsState: { key: string; data: MethodHubsResponse } | null,
+  currentKey: string,
+  searchText: string,
+  selectionQ: string,
+): MethodHubsResponse | null {
+  if (!hubsState || hubsState.key !== currentKey) return null;
+  if (searchText.trim() !== selectionQ.trim()) return null;
+  return hubsState.data;
+}
+
+export function resolveRecipeLicense(
+  rec: Pick<ReferenceRecipeSummary, 'path' | 'license'>,
+  pages: PageSummary[],
+): string | undefined {
+  if (rec.license) return rec.license;
+  const page = pages.find((p) => p.path === rec.path);
+  const meta = page?.meta as { license?: string } | undefined;
+  return meta?.license;
+}
+
+function UnmappedRecipesSection({ recipes, pages }: { recipes: ReferenceRecipeSummary[]; pages: PageSummary[] }) {
   if (!recipes.length) {
     return <p className="notice">当前所有参考配方均已映射到至少一个分析方法。</p>;
   }
   return (
     <div className="unmapped-recipes-grid">
-      {recipes.map((rec) => (
-        <article key={rec.id} className="sheet unmapped-recipe-card">
-          <div className="unmapped-recipe-thumb">
-            {rec.preview_url ? (
-              <img src={rec.preview_url} alt={rec.title} loading="lazy" />
-            ) : (
-              <span className="muted small">暂无运行图</span>
-            )}
-          </div>
-          <div className="unmapped-recipe-body">
-            <div className="unmapped-recipe-top">
-              <h3><a {...pageLink(rec.path)}>{rec.title}</a></h3>
-              <span className="badge">未绑定单一方法</span>
+      {recipes.map((rec) => {
+        const license = resolveRecipeLicense(rec, pages);
+        return (
+          <article key={rec.id} className="sheet unmapped-recipe-card">
+            <div className="unmapped-recipe-thumb">
+              {rec.preview_url ? (
+                <img src={rec.preview_url} alt={rec.title} loading="lazy" />
+              ) : (
+                <span className="muted small">暂无运行图</span>
+              )}
             </div>
-            <p className="small muted"><code>{rec.id}</code> · {rec.language.toUpperCase() || 'R'}</p>
-            {rec.note && <p className="small">{rec.note}</p>}
-            <div className="unmapped-recipe-actions">
-              <LicenseBadge license="CC-BY-NC-SA-4.0" />
-              <a className="button small" {...pageLink(rec.path)}>配方详情</a>
-              <a className="button primary small" href={studioHref(rec.id)}>打开工作台</a>
+            <div className="unmapped-recipe-body">
+              <div className="unmapped-recipe-top">
+                <h3><a {...pageLink(rec.path)}>{rec.title}</a></h3>
+                <span className="badge">未绑定单一方法</span>
+              </div>
+              <p className="small muted"><code>{rec.id}</code> · {rec.language.toUpperCase() || 'R'}</p>
+              {rec.note && <p className="small">{rec.note}</p>}
+              <div className="unmapped-recipe-actions">
+                {license && <LicenseBadge license={license} />}
+                <a className="button small" {...pageLink(rec.path)}>配方详情</a>
+                <a className="button primary small" href={studioHref(rec.id)}>打开工作台</a>
+              </div>
             </div>
-          </div>
-        </article>
-      ))}
+          </article>
+        );
+      })}
     </div>
   );
 }
@@ -205,12 +234,15 @@ export function MethodsView({ data, query = '' }: { data: AppData; query?: strin
   const kind = methodBrowseKind(query);
   const interfaces = data.pages.filter((p): p is PageSummary<InterfaceMeta> => p.meta.type === 'interface');
 
-  const [hubsData, setHubsData] = useState<MethodHubsResponse | null>(null);
+  const [hubsState, setHubsState] = useState<{ key: string; data: MethodHubsResponse } | null>(null);
   const [hubsError, setHubsError] = useState('');
   const abortRef = useRef<AbortController | null>(null);
 
-  const initialTaxonomy = hubsData?.taxonomy ?? data.taxonomy;
-  const selection = normalizeMethodSelection(parseMethodQuery(query), initialTaxonomy);
+  const rawSelection = parseMethodQuery(query);
+  const rawKey = methodHubsQueryKey(rawSelection);
+  const initialTaxonomy = (hubsState?.key === rawKey ? hubsState.data.taxonomy : undefined) ?? data.taxonomy;
+  const selection = normalizeMethodSelection(rawSelection, initialTaxonomy);
+  const currentKey = methodHubsQueryKey(selection);
   const [search, setSearch] = useState(selection.q);
   useEffect(() => { setSearch(selection.q); }, [selection.q]);
 
@@ -219,22 +251,27 @@ export function MethodsView({ data, query = '' }: { data: AppData; query?: strin
     abortRef.current?.abort();
     const ctrl = new AbortController();
     abortRef.current = ctrl;
+    const reqKey = currentKey;
     setHubsError('');
     api.methodHubs({ domain: selection.domain, purpose: selection.purpose, q: selection.q }, ctrl.signal)
       .then((res) => {
         if (!ctrl.signal.aborted && res && Array.isArray(res.methods)) {
-          setHubsData(res);
+          setHubsState({ key: reqKey, data: res });
         }
       })
       .catch((err: Error) => {
-        if (!ctrl.signal.aborted) setHubsError(err.message);
+        if (!ctrl.signal.aborted) {
+          setHubsState(null);
+          setHubsError(err.message);
+        }
       });
     return () => ctrl.abort();
-  }, [selection.domain, selection.purpose, selection.q]);
+  }, [currentKey, selection.domain, selection.purpose, selection.q]);
 
-  const activeTaxonomy = hubsData?.taxonomy ?? data.taxonomy;
+  const matchedHubs = selectMatchingHubs(hubsState, currentKey, search, selection.q);
+  const activeTaxonomy = matchedHubs?.taxonomy ?? data.taxonomy;
   const domainGroups: DataDomainGroup[] = useMemo(() => {
-    if (hubsData?.data_domains?.length) return hubsData.data_domains;
+    if (matchedHubs?.data_domains?.length) return matchedHubs.data_domains;
     if (activeTaxonomy.data_domains?.length) return activeTaxonomy.data_domains;
     // Preserve legacy taxonomy.domains when a unit test supplies custom domain names without data_domains.
     const hasCustomLegacy = activeTaxonomy.domains.some(
@@ -249,13 +286,13 @@ export function MethodsView({ data, query = '' }: { data: AppData; query?: strin
       }));
     }
     return dataDomainGroups(activeTaxonomy, data.pages);
-  }, [hubsData, activeTaxonomy, data.pages]);
+  }, [matchedHubs, activeTaxonomy, data.pages]);
 
   const allMethods = data.pages.filter((p): p is PageSummary<MethodMeta> => p.meta.type === 'method' && p.meta.status !== 'archived');
   const auxiliary = allMethods.filter((p) => p.meta.method_kind !== 'analysis');
   const auxiliaryShown = auxiliary.filter((p) =>
     (kind === 'all' || p.meta.method_kind === kind)
-    && (!selection.domain || p.meta.tags.includes(selection.domain))
+    && (!selection.domain || domainsForMeta(p.meta).includes(selection.domain) || p.meta.tags.includes(selection.domain))
     && !selection.purpose
     && matchesMethodQuery(p.meta, search),
   );
@@ -267,16 +304,16 @@ export function MethodsView({ data, query = '' }: { data: AppData; query?: strin
 
   const hubCards: MethodHubCard[] = useMemo(() => {
     if (kind === 'workflow' || kind === 'technical' || viewTab === 'unmapped') return [];
-    if (hubsData?.methods && search.trim() === selection.q.trim()) {
-      return hubsData.methods;
+    if (matchedHubs) {
+      return matchedHubs.methods;
     }
     return fallbackAnalysisPages.map((page) => buildFallbackMethodHub(page, data.pages, data.graph, data.flow));
-  }, [kind, viewTab, hubsData, search, selection.q, fallbackAnalysisPages, data.pages, data.graph, data.flow]);
+  }, [kind, viewTab, matchedHubs, fallbackAnalysisPages, data.pages, data.graph, data.flow]);
 
   const purposeOptions = purposeOptionsFor(activeTaxonomy, selection.domain);
-  const unmappedRecipes = hubsData?.unmapped_recipes ?? [];
-  const unmappedCount = hubsData?.unmapped_recipes_count ?? unmappedRecipes.length;
-  const totalAnalysisCount = hubsData?.total ?? activeTaxonomy.total;
+  const unmappedRecipes = matchedHubs?.unmapped_recipes ?? hubsState?.data.unmapped_recipes ?? [];
+  const unmappedCount = matchedHubs?.unmapped_recipes_count ?? hubsState?.data.unmapped_recipes_count ?? unmappedRecipes.length;
+  const totalAnalysisCount = matchedHubs?.total ?? activeTaxonomy.total;
 
   const title = (path: string) => byPath.get(path)?.meta.title ?? path;
   const live = (paths: string[]) => paths.filter((path) => {
@@ -420,7 +457,7 @@ export function MethodsView({ data, query = '' }: { data: AppData; query?: strin
 
         {/* Right Method Hub Grid */}
         <div className="method-explorer-stage">
-          {hubsError && !hubCards.length && (
+          {hubsError && (
             <p className="notice small">已使用本地目录缓存展示（实时聚合接口提示：{hubsError}）。</p>
           )}
 
@@ -430,7 +467,7 @@ export function MethodsView({ data, query = '' }: { data: AppData; query?: strin
                 <h2>未映射到单一方法的辅助工具配方（{unmappedCount}）</h2>
                 <a className="button small" href="#/methods">返回分析方法库</a>
               </div>
-              <UnmappedRecipesSection recipes={unmappedRecipes} />
+              <UnmappedRecipesSection recipes={unmappedRecipes} pages={data.pages} />
             </section>
           ) : kind === 'technical' || kind === 'workflow' ? (
             <section className="method-auxiliary">

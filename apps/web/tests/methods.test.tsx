@@ -1,10 +1,11 @@
 import assert from 'node:assert/strict';
 import React from 'react';
 import { renderToStaticMarkup } from 'react-dom/server';
-import { MethodsView } from '../src/views/MethodsView';
+import { methodHubsQueryKey, MethodsView, resolveRecipeLicense, selectMatchingHubs } from '../src/views/MethodsView';
 import { MethodOverview } from '../src/views/MethodOverview';
 import { PageView } from '../src/views/PageView';
 import { InlineStudioDrawer } from '../src/views/InlineStudioDrawer';
+import { matchNextResponse, resolvePlaybookQueryState } from '../src/views/PlaybooksView';
 import { Flow } from '../src/flow';
 import { api, pageCache } from '../src/api';
 import { CodeBranchList } from '../src/CodeViewer';
@@ -864,6 +865,72 @@ check('template alias URL displays canonical slug and alias resolution notice', 
   const html = renderToStaticMarkup(<PageView path="templates/legacy-volcano-alias.md" data={dataOf([canonicalTpl])} />);
   assert.ok(html.includes('规范标识：<code>volcano-curated</code>'));
   assert.ok(html.includes('已从旧别名 <code>templates/legacy-volcano-alias.md</code> 解析至规范条目'));
+});
+
+check('hubsData key guard rejects stale domain/purpose payloads and resolves recipe licenses honestly', () => {
+  const cachedKey = methodHubsQueryKey({ domain: 'single-cell', purpose: '', q: '' });
+  const fakePayload: any = { methods: [{ id: 'm1' }] };
+  assert.equal(selectMatchingHubs({ key: cachedKey, data: fakePayload }, cachedKey, '', ''), fakePayload);
+  const nextKey = methodHubsQueryKey({ domain: 'bulk-transcriptomics', purpose: '', q: '' });
+  assert.equal(selectMatchingHubs({ key: cachedKey, data: fakePayload }, nextKey, '', ''), null, 'domain change must invalidate stale hubsData');
+  assert.equal(selectMatchingHubs({ key: cachedKey, data: fakePayload }, cachedKey, 'deg', ''), null, 'live typing mismatch must fall back');
+
+  const recipePages: any[] = [
+    { path: 'recipes/rec-mit.md', meta: { type: 'recipe', id: 'rec-mit', title: 'MIT 配方', status: 'ready', license: 'MIT', tags: [], favorite: false, source: { id: 's', item: 'i', commit: 'c' }, cite: [], language: 'r', chart_types: [] } },
+  ];
+  assert.equal(resolveRecipeLicense({ path: 'recipes/rec-gpl.md', license: 'GPL-3.0' }, recipePages), 'GPL-3.0');
+  assert.equal(resolveRecipeLicense({ path: 'recipes/rec-mit.md' }, recipePages), 'MIT');
+  assert.equal(resolveRecipeLicense({ path: 'recipes/rec-unknown.md' }, recipePages), undefined);
+
+  const hubWithRecipes: any = {
+    id: 'm-lic', title: 'm-lic', path: 'methods/m-lic.md', status: 'ready', summary: 's',
+    data_domains: [], data_domain_labels: [], purposes: [], tags: [], keywords: [], inputs: [], outputs: [],
+    data_contract: {}, render_bridges: [], implementations: [], implementation_status: [], workflow: null, next_steps_count: 0,
+    attached_visualizations: { curated: [], object_compatible: [], render_bridged: [], all_previews: [] },
+    reference_recipes: [
+      { id: 'rec-mit', title: 'MIT 配方', path: 'recipes/rec-mit.md', status: 'ready', language: 'r', runner: 'r', chart_types: [], tags: [], data_domains: [], confidence: 'curated', note: '', methods: [], preview_url: null },
+      { id: 'rec-unknown', title: '未知许可配方', path: 'recipes/rec-unknown.md', status: 'ready', language: 'r', runner: 'r', chart_types: [], tags: [], data_domains: [], confidence: 'curated', note: '', methods: [], preview_url: null },
+    ],
+    unmapped_recipes_count: 0,
+  };
+  const overviewHtml = renderToStaticMarkup(
+    <MethodOverview meta={method('m-lic', 'analysis').meta} figures={[]} pages={recipePages} hub={hubWithRecipes} />,
+  );
+  assert.ok(overviewHtml.includes('>MIT<'), 'resolved license from page meta must be rendered');
+  assert.ok(!overviewHtml.includes('非商业'), 'must never invent CC-BY-NC-SA-4.0 when recipe license is absent');
+});
+
+check('PlaybooksView query reset clears customMethodId and matchNextResponse guards stale nodes', () => {
+  const custom = resolvePlaybookQueryState('method=differential-expression');
+  assert.equal(custom.customMethod, 'differential-expression');
+  const cleared = resolvePlaybookQueryState('');
+  assert.equal(cleared.customMethod, '', 'navigating back to #/next must clear customMethod');
+  assert.equal(cleared.step, 'cell-type-annotation');
+
+  assert.equal(matchNextResponse({ node_id: 'cell-type-annotation', next_steps: [] }, 'differential-expression'), null);
+  assert.ok(matchNextResponse({ node_id: 'differential-expression', requested_id: 'legacy-de', next_steps: [] }, 'legacy-de'));
+});
+
+check('auxiliary technical pages match canonical data_domains as well as tags', () => {
+  const techCanonical = {
+    path: 'methods/sc-tech.md',
+    meta: {
+      type: 'method', id: 'sc-tech', title: '单细胞辅助工具', method_kind: 'technical',
+      status: 'ready', tags: [], data_domains: ['single-cell'], favorite: false,
+      inputs: [], outputs: [], source: { kind: 'written' }, license: 'none', cite: [],
+    },
+    implementation_status: [],
+  };
+  const html = renderToStaticMarkup(
+    <MethodsView
+      data={{
+        ...dataOf([techCanonical]),
+        taxonomy: { total: 0, domains: [], data_domains: [{ value: 'single-cell', label: '单细胞转录组', count: 0, purposes: [] }], purposes: [], unclassified: [] },
+      } as any}
+      query="kind=technical&domain=single-cell"
+    />,
+  );
+  assert.ok(html.includes('href="#/page/methods/sc-tech.md"'));
 });
 if (failed) process.exitCode = 1;
 }

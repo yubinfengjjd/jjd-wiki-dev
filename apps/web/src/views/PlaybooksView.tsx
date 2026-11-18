@@ -234,27 +234,35 @@ function resolvePageById(id: string, pages: PageSummary[]): PageSummary | undefi
   });
 }
 
+export function resolvePlaybookQueryState(query = ''): { playbook: string; step: string; customMethod: string } {
+  const params = new URLSearchParams(query.replace(/^\?/, ''));
+  const pb = params.get('playbook') || 'scrna-stepwise-playbook';
+  const m = params.get('method') || '';
+  const s = params.get('step') || '';
+  if (m) return { playbook: pb, step: m, customMethod: m };
+  if (s) return { playbook: pb, step: s, customMethod: '' };
+  return { playbook: pb, step: 'cell-type-annotation', customMethod: '' };
+}
+
+export function matchNextResponse(nextResp: NextStepsResponse | null, activeNodeId: string): NextStepsResponse | null {
+  if (!nextResp) return null;
+  if (nextResp.node_id === activeNodeId || nextResp.requested_id === activeNodeId) return nextResp;
+  return null;
+}
+
 export function PlaybooksView({ data, query = '' }: { data: AppData; query?: string }) {
+  const initial = resolvePlaybookQueryState(query);
   const [serverPlaybooks, setServerPlaybooks] = useState<PlaybookItem[]>([]);
-  const [selectedPlaybookId, setSelectedPlaybookId] = useState<string>(() => {
-    const params = new URLSearchParams(query);
-    return params.get('playbook') || 'scrna-stepwise-playbook';
-  });
-  const [selectedStepId, setSelectedStepId] = useState<string>(() => {
-    const params = new URLSearchParams(query);
-    return params.get('method') || params.get('step') || 'cell-type-annotation';
-  });
-  const [customMethodId, setCustomMethodId] = useState<string>(() => {
-    const params = new URLSearchParams(query);
-    return params.get('method') || '';
-  });
+  const [selectedPlaybookId, setSelectedPlaybookId] = useState<string>(initial.playbook);
+  const [selectedStepId, setSelectedStepId] = useState<string>(initial.step);
+  const [customMethodId, setCustomMethodId] = useState<string>(initial.customMethod);
   const [nextResp, setNextResp] = useState<NextStepsResponse | null>(null);
   const [loadingNext, setLoadingNext] = useState(false);
   const [nextError, setNextError] = useState('');
   const [branchFilter, setBranchFilter] = useState('');
 
   useEffect(() => {
-    const params = new URLSearchParams(query);
+    const params = new URLSearchParams(query.replace(/^\?/, ''));
     const m = params.get('method');
     const s = params.get('step');
     const pb = params.get('playbook');
@@ -265,6 +273,8 @@ export function PlaybooksView({ data, query = '' }: { data: AppData; query?: str
     } else if (s) {
       setCustomMethodId('');
       setSelectedStepId(s);
+    } else {
+      setCustomMethodId('');
     }
   }, [query]);
 
@@ -311,7 +321,7 @@ export function PlaybooksView({ data, query = '' }: { data: AppData; query?: str
     let active = true;
     setLoadingNext(true);
     setNextError('');
-    api.nextSteps(activeNodeId, branchFilter)
+    api.nextSteps(activeNodeId)
       .then((res) => {
         if (!active) return;
         setNextResp(res);
@@ -336,7 +346,9 @@ export function PlaybooksView({ data, query = '' }: { data: AppData; query?: str
         setLoadingNext(false);
       });
     return () => { active = false; };
-  }, [activeNodeId, branchFilter, data.pages]);
+  }, [activeNodeId, data.pages]);
+
+  const currentNextResp = matchNextResponse(nextResp, activeNodeId);
 
   const dag = useMemo(() => layoutDag(activePlaybook?.steps ?? []), [activePlaybook]);
   const connectedIds = useMemo(() => {
@@ -352,11 +364,11 @@ export function PlaybooksView({ data, query = '' }: { data: AppData; query?: str
 
   const activeMethodPage = resolvePageById(activeNodeId, data.pages);
 
-  // Use v2 curated_branches when returned, or synthesize from nextResp.next_steps / method frontmatter for SSR & legacy mocks.
+  // Use v2 curated_branches when returned, or synthesize from currentNextResp.next_steps / method frontmatter for SSR & legacy mocks.
   const curatedBranches: CuratedBranchV2[] = useMemo(() => {
-    if (nextResp?.curated_branches?.length) return nextResp.curated_branches;
-    const rawSteps: NextStepBranch[] = nextResp?.next_steps?.length
-      ? nextResp.next_steps
+    if (currentNextResp?.curated_branches?.length) return currentNextResp.curated_branches;
+    const rawSteps: NextStepBranch[] = currentNextResp?.next_steps?.length
+      ? currentNextResp.next_steps
       : activeMethodPage?.meta.type === 'method'
         ? activeMethodPage.meta.next_steps ?? []
         : [];
@@ -390,7 +402,7 @@ export function PlaybooksView({ data, query = '' }: { data: AppData; query?: str
         };
       }),
     }));
-  }, [nextResp, activeMethodPage, data.pages]);
+  }, [currentNextResp, activeMethodPage, data.pages]);
 
   const filterText = branchFilter.trim().toLowerCase();
   const filteredCurated = filterText
@@ -402,12 +414,12 @@ export function PlaybooksView({ data, query = '' }: { data: AppData; query?: str
     : curatedBranches;
 
   const objectCandidates: ObjectCandidateV2[] = useMemo(() => {
-    const raw = nextResp?.object_compatible_candidates ?? [];
+    const raw = currentNextResp?.object_compatible_candidates ?? [];
     if (!filterText) return raw;
     return raw.filter((c) =>
       `${c.id} ${c.title} ${c.match_type} ${c.shared_interfaces.join(' ')}`.toLowerCase().includes(filterText),
     );
-  }, [nextResp?.object_compatible_candidates, filterText]);
+  }, [currentNextResp?.object_compatible_candidates, filterText]);
 
   const selectMethodNode = (id: string) => {
     const clean = id.replace(/^(methods|templates|recipes)\//, '').replace(/\.md$/, '');
@@ -572,7 +584,7 @@ export function PlaybooksView({ data, query = '' }: { data: AppData; query?: str
               <code>{activeNodeId}</code>
             </h2>
             <p className="small muted">
-              {nextResp?.agent_guidance || '下游分支均为可选科研决策，无固定线性顺序；点击任意推荐方法可继续向下一跳推演，或直接打开模板工作台。'}
+              {currentNextResp?.agent_guidance || '下游分支均为可选科研决策，无固定线性顺序；点击任意推荐方法可继续向下一跳推演，或直接打开模板工作台。'}
             </p>
             <p className="small muted">
               Agent 结构化接口：<code>rwiki next {activeNodeId} --json</code>
@@ -783,9 +795,9 @@ export function PlaybooksView({ data, query = '' }: { data: AppData; query?: str
                 </article>
               ))}
             </div>
-          ) : nextResp?.structural_matches?.length ? (
+          ) : currentNextResp?.structural_matches?.length ? (
             <div className="branch-struct-list">
-              {nextResp.structural_matches.map((item) => (
+              {currentNextResp.structural_matches.map((item) => (
                 <div key={item.path || item.id} className="branch-template-item">
                   <div className="branch-template-info">
                     <a {...pageLink(item.path)}>{item.title}</a>

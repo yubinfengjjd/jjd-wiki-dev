@@ -49,7 +49,16 @@ export function ResourcesView({ data, query = '' }: { data: AppData; query?: str
 
   useEffect(() => {
     setTab(parseTab(query));
+    setFilterText('');
   }, [query]);
+
+  const selectTab = (next: ResourceTab) => {
+    setTab(next);
+    setFilterText('');
+    if (typeof location !== 'undefined') {
+      location.hash = next === 'technical' ? '#/resources' : `#/resources?tab=${next}`;
+    }
+  };
 
   const technicalPages = useMemo(
     () =>
@@ -156,7 +165,7 @@ export function ResourcesView({ data, query = '' }: { data: AppData; query?: str
             role="tab"
             aria-selected={tab === id}
             className={tab === id ? 'resource-tab active' : 'resource-tab'}
-            onClick={() => setTab(id)}
+            onClick={() => selectTab(id)}
           >
             <span>{label}</span>
             {count !== null && <span className="pill-count">{count}</span>}
