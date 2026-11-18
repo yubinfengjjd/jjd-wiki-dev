@@ -42,19 +42,22 @@ def load_spec(template_dir: Path) -> dict:
     for name, table in tables.items():
         if not isinstance(table, dict):
             raise WikiError(f"tables.{name} 必须为对象")
-        unknown = table.keys() - {"interface", "description", "required", "filename", "columns"}
-        if unknown:
-            raise WikiError(f"tables.{name} 不支持字段: {', '.join(sorted(unknown))}；"
-                            "只允许 interface、description、required、filename 和 columns")
-        if "required" in table and not isinstance(table["required"], bool):
-            raise WikiError(f"tables.{name}.required 必须为布尔值")
         slug = table.get("interface")
         if slug is not None and not isinstance(slug, str):
             raise WikiError(f"tables.{name}.interface 必须为字符串")
         slug = (slug or "").strip()
+        allowed_keys = ({"interface", "description", "required"} if slug
+                        else {"interface", "description", "required", "filename", "columns"})
+        unknown = table.keys() - allowed_keys
+        if unknown:
+            raise WikiError(f"tables.{name} 不支持字段: {', '.join(sorted(unknown))}；"
+                            + ("只允许 interface、description 和 required" if slug
+                               else "只允许 interface、description、required、filename 和 columns"))
+        if "required" in table and not isinstance(table["required"], bool):
+            raise WikiError(f"tables.{name}.required 必须为布尔值")
         if not isinstance(table.get("description"), str):
             raise WikiError(f"tables.{name}.description 必须为字符串")
-        filename = table.get("filename")
+        filename = table.get("filename") if not slug else None
         if filename is not None and (not isinstance(filename, str) or not filename.strip()
                                      or Path(filename).anchor or "/" in filename or "\\" in filename):
             raise WikiError(f"tables.{name}.filename 必须为表目录下纯文件名: {filename}")
