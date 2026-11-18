@@ -531,6 +531,9 @@ def lint(config: Config, ci: bool = False) -> list[str]:
         report("WARN", index, "index.md 与页面不一致，请运行 save")
     if vocab_error:
         diagnostics.append(f"ERROR taxonomy: {vocab_error}")
+    from .curation_workflow import method_map_errors
+    for message in method_map_errors(config):
+        diagnostics.append(f"ERROR recipes/method-map.json: {message}")
     from .finder import CATALOG, render_catalog
     catalog = root / CATALOG
     if (catalog.read_text(encoding="utf-8") if catalog.is_file() else "") != render_catalog(config):

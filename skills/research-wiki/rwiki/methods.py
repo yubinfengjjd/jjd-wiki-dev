@@ -5,17 +5,23 @@ import shutil
 from pathlib import Path
 
 from .config import Config
+from .dedup import assert_no_high_duplicate
 from .errors import WikiError
+from .naming import title_hygiene_issues, validate_new_id
 from .pages import read_page, write_page
 
 
 def scaffold_method(config: Config, id: str, title: str, license: str,
                     from_entry: str | None = None, from_path: Path | None = None,
                     url: str | None = None, commit: str | None = None,
-                    written: bool = False) -> None:
-    if not re.fullmatch(r"[a-z0-9-]+", id):
-        raise WikiError("方法 id 只允许 [a-z0-9-]")
-    if not title.strip() or not license.strip():
+                    written: bool = False, *, dedup_note: str = "", force: bool = False) -> None:
+    id_issues = validate_new_id("method", id)
+    if id_issues:
+        raise WikiError("；".join(id_issues))
+    title_issues = title_hygiene_issues(title, entry_id=id, strict_content_name=False)
+    if title_issues:
+        raise WikiError("；".join(title_issues))
+    if not license.strip():
         raise WikiError("方法 title 和 license 必须为非空字符串")
     if sum((from_entry is not None, from_path is not None, written)) != 1:
         raise WikiError("须选择 from_entry、from_path 或 written 一种来源")
@@ -27,6 +33,14 @@ def scaffold_method(config: Config, id: str, title: str, license: str,
     page = target.with_suffix(".md")
     if target.exists() or page.exists():
         raise WikiError(f"方法页或目录已存在: {id}")
+    assert_no_high_duplicate(
+        config,
+        kind="method",
+        entry_id=id,
+        title=title,
+        dedup_note=dedup_note,
+        force=force,
+    )
     if written:
         source_meta = {"kind": "written"}
     else:
@@ -50,9 +64,14 @@ def scaffold_method(config: Config, id: str, title: str, license: str,
     meta = {"type": "method", "id": id, "title": title, "status": "draft",
             "tags": [], "inputs": [], "outputs": [], "source": source_meta,
             "license": license, "cite": [], "favorite": False}
+    sections = []
+    for heading in ("用途", "适用", "不适用", "输入", "怎么做", "代码", "输出", "知识关联检查", "使用记录"):
+        if heading == "知识关联检查" and dedup_note.strip():
+            sections.append(f"## {heading}\n\n查重说明：{dedup_note.strip()}\n\n")
+        else:
+            sections.append(f"## {heading}\n\n")
     body = (f"# {title}\n\n<!-- facts:start -->\n<!-- facts:end -->\n\n"
-            + "".join(f"## {heading}\n\n" for heading in
-                      ("用途", "适用", "不适用", "输入", "怎么做", "代码", "输出", "知识关联检查", "使用记录"))
+            + "".join(sections)
             + "<!-- user:start -->\n<!-- user:end -->\n")
     write_page(page, meta, body)
     from .store import save

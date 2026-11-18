@@ -125,12 +125,18 @@ def parser() -> argparse.ArgumentParser:
     commands.add_parser("mark-ready", help="作者确认；多个 id 时先全部核对，任一不通过则全部不改").add_argument(
         "entry_ids", nargs="+")
     scaffold = commands.add_parser("scaffold-template")
-    scaffold.add_argument("entry_id", help="版式 id；--from-recipe 时为配方 id")
+    scaffold.add_argument("entry_id", help="版式 id；--from-recipe 时为配方 id；--native 时为新模板 id")
     scaffold.add_argument("--chart-type", required=True)
     scaffold.add_argument("--panels", help="版式 panel 字母（从版式拆出时必填）")
     scaffold.add_argument("--from-recipe", action="store_true", help="v2：从 L1 配方开 L2 模板")
+    scaffold.add_argument("--native", action="store_true", help="直接新建规范短 slug 原生模板（绑定 --primary-method）")
+    scaffold.add_argument("--id", dest="template_id", help="配合 --from-recipe 使用，指定语义短 slug（替代旧的 <recipe>--<chart>）")
+    scaffold.add_argument("--primary-method", help="关联的主分析方法 id（method_kind=analysis）")
+    scaffold.add_argument("--sources", nargs="*", help="配合 --native 使用，来源页面列表")
     scaffold.add_argument("--language", choices=("python", "r"))
-    scaffold.add_argument("--title", help="concise panel name; defaults to the chart type")
+    scaffold.add_argument("--title", help="简明中文内容名")
+    scaffold.add_argument("--dedup-note", default="", help="高相似既有条目时填写的差异保留说明")
+    scaffold.add_argument("--force", action="store_true", help="强制跳过查重确认门槛")
     interface = commands.add_parser("add-interface")
     interface.add_argument("slug")
     interface.add_argument("--title", required=True)
@@ -145,6 +151,30 @@ def parser() -> argparse.ArgumentParser:
     source.add_argument("--written", action="store_true")
     method.add_argument("--url")
     method.add_argument("--commit")
+    method.add_argument("--dedup-note", default="", help="高相似既有条目时填写的差异保留说明")
+    method.add_argument("--force", action="store_true", help="强制跳过查重确认门槛")
+    dedup_cmd = commands.add_parser("check-dup", help="入库前多维查重（方法域+图型+接口+标题语义）")
+    dedup_cmd.add_argument("--kind", required=True, choices=("template", "method", "recipe"))
+    dedup_cmd.add_argument("--id", dest="entry_id", default="")
+    dedup_cmd.add_argument("--title", default="")
+    dedup_cmd.add_argument("--primary-method", default="")
+    dedup_cmd.add_argument("--methods", nargs="*", default=[])
+    dedup_cmd.add_argument("--chart-type", dest="chart_types", nargs="*", default=[])
+    dedup_cmd.add_argument("--interface", dest="interfaces", nargs="*", default=[])
+    dedup_cmd.add_argument("--summary", default="")
+    dedup_cmd.add_argument("--keyword", dest="keywords", nargs="*", default=[])
+    dedup_cmd.add_argument("--json", action="store_true")
+    map_cmd = commands.add_parser("map-method", help="绑定模板 primary_method、更新 method-map.json 或体检方法域覆盖")
+    map_cmd.add_argument("--template", dest="template_id")
+    map_cmd.add_argument("--recipe", dest="recipe_id")
+    map_cmd.add_argument("--primary-method")
+    map_cmd.add_argument("--methods", nargs="*", default=[])
+    map_cmd.add_argument("--unmapped", action="store_true")
+    map_cmd.add_argument("--note", default="")
+    map_cmd.add_argument("--audit", action="store_true", help="只读输出方法域整理全库体检报告")
+    map_cmd.add_argument("--json", action="store_true")
+    audit_cmd = commands.add_parser("curate-audit", help="只读审计方法-可视化覆盖率、断链、命名规范与重复簇")
+    audit_cmd.add_argument("--json", action="store_true")
     attach = commands.add_parser("attach-template")
     attach.add_argument("entry_id")
     attach.add_argument("template_id")
@@ -378,7 +408,8 @@ def main(argv: list[str] | None = None) -> int:
         if config is not None and args.command not in {
                 'project', 'find', 'show', 'use', 'serve', 'lint', 'pending',
                 'suggest', 'suggest-methods', 'suggest-pipeline', 'discover-methods',
-                'next', 'contact-sheet', 'render', 'render-layout', 'check-entry'}:
+                'next', 'contact-sheet', 'render', 'render-layout', 'check-entry',
+                'check-dup', 'curate-audit'} and not (args.command == 'map-method' and args.audit):
             from .asset_checkout import assert_writable
             # run --dir writes only the already copied project directory.
             if not (args.command == 'run' and getattr(args, 'dir', None)):
@@ -437,8 +468,9 @@ def main(argv: list[str] | None = None) -> int:
             errors = (content_errors + runtime_errors
                       + (['验收记录与当前内容不同，请核对后 --record'] if stale else []))
             from .method_taxonomy import missing_purpose
+            from .naming import naming_audit_for_page
             warnings = (['purposes 缺失：请按分析用途分类；不影响已有状态，但不是完整分类']
-                        if missing_purpose(meta) else []) + runtime_warnings
+                        if missing_purpose(meta) else []) + runtime_warnings + naming_audit_for_page(meta)
             report = {'page': page.relative_to(config.wiki_root).as_posix(), 'passed': not errors,
                       'errors': errors, 'warnings': warnings,
                       'scope': '结构和当前回放检查，不代替科学审查或作者确认'}
@@ -451,21 +483,115 @@ def main(argv: list[str] | None = None) -> int:
             if errors and not (args.record and not content_errors and not runtime_errors):
                 return 1
         elif args.command == "scaffold-template":
-            if args.from_recipe:
+            if args.native:
+                from .curation_workflow import scaffold_native_template
+                if not args.primary_method:
+                    raise WikiError("--native 新建原生模板必须指定 --primary-method <分析方法id>")
+                if not args.title:
+                    raise WikiError("--native 新建原生模板必须指定简洁中文 --title")
+                scaffold_native_template(
+                    config,
+                    args.entry_id,
+                    chart_type=args.chart_type,
+                    title=args.title,
+                    primary_method=args.primary_method,
+                    language=args.language or "r",
+                    sources=args.sources,
+                    dedup_note=args.dedup_note,
+                    force=args.force,
+                )
+            elif args.from_recipe:
                 from .templates import scaffold_from_recipe
-                scaffold_from_recipe(config, args.entry_id, args.chart_type, args.title, args.language)
+                scaffold_from_recipe(
+                    config,
+                    args.entry_id,
+                    args.chart_type,
+                    args.title,
+                    args.language,
+                    template_id=args.template_id,
+                    primary_method=args.primary_method,
+                    dedup_note=args.dedup_note,
+                    force=args.force,
+                )
             elif not args.panels:
-                raise WikiError("从版式拆模板需要 --panels；从配方开模板用 --from-recipe")
+                raise WikiError("从版式拆模板需要 --panels；从配方开模板用 --from-recipe；新建原生模板用 --native")
             else:
-                scaffold_template(config, args.entry_id, args.chart_type,
-                                  args.panels.split(","), title=args.title)
+                scaffold_template(
+                    config,
+                    args.entry_id,
+                    args.chart_type,
+                    args.panels.split(","),
+                    title=args.title,
+                    primary_method=args.primary_method,
+                    dedup_note=args.dedup_note,
+                    force=args.force,
+                )
         elif args.command in ("find", "show", "use", "source", "promote", "run", "restore", "deps"):
             return _v2_dispatch(args, config)
         elif args.command == "add-interface":
             add_interface(config, args.slug, args.title, args.columns)
         elif args.command == "scaffold-method":
-            scaffold_method(config, args.entry_id, args.title, args.license,
-                            args.from_entry, args.from_path, args.url, args.commit, args.written)
+            scaffold_method(
+                config,
+                args.entry_id,
+                args.title,
+                args.license,
+                args.from_entry,
+                args.from_path,
+                args.url,
+                args.commit,
+                args.written,
+                dedup_note=args.dedup_note,
+                force=args.force,
+            )
+        elif args.command == "check-dup":
+            from .dedup import check_duplicates
+            report = check_duplicates(
+                config,
+                kind=args.kind,
+                entry_id=args.entry_id,
+                title=args.title,
+                primary_method=args.primary_method,
+                methods=args.methods,
+                chart_types=args.chart_types,
+                interfaces=args.interfaces,
+                summary=args.summary,
+                keywords=args.keywords,
+            )
+            if args.json:
+                _print(report)
+            elif not report["candidates"]:
+                print("OK: 未发现高相似既有条目，可继续新建。")
+            else:
+                for cand in report["candidates"]:
+                    print(f"[{cand['severity']}] {cand['kind']}/{cand['id']} 《{cand['title']}》 "
+                          f"(score={cand['score']}): {'；'.join(cand['reasons'])}")
+        elif args.command in ("map-method", "curate-audit"):
+            from .curation_workflow import curate_audit, map_method
+            if args.command == "curate-audit" or args.audit:
+                report = curate_audit(config)
+                if args.json:
+                    _print(report)
+                else:
+                    print(f"分析方法: {report['methods_total']} | "
+                          f"未映射配方: {report['unmapped_recipes_count']} | "
+                          f"缺主方法模板: {len(report['templates_missing_primary_method'])} | "
+                          f"无图方法: {len(report['methods_without_viz'])} | "
+                          f"命名待清洗: {report['naming_hygiene_count']} | "
+                          f"潜在重复簇: {report['duplicate_clusters_count']}")
+                    for err in report["method_map_errors"]:
+                        print(f"ERROR method-map: {err}")
+            else:
+                res = map_method(
+                    config,
+                    template_id=args.template_id,
+                    recipe_id=args.recipe_id,
+                    primary_method=args.primary_method,
+                    methods=args.methods,
+                    unmapped=args.unmapped,
+                    note=args.note,
+                )
+                _print(res) if args.json else print(json.dumps(res, ensure_ascii=False))
         elif args.command == "attach-template":
             attach_template(config, args.entry_id, args.template_id, args.panels.split(","))
         elif args.command == "render":

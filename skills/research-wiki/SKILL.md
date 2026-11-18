@@ -47,8 +47,9 @@ medfig-render、medpaper-pipeline 出图前先 `rwiki find`：有可用模板或
 3. `rwiki deps <配方…>` 列缺包，整理成一批清单交作者；作者按批次批准后 `rwiki deps <配方…> --install`（只装进 Wiki 专用 R 库）。
 4. `rwiki run <配方…> [--jobs N]` 原样运行；看收据与 preview.png，补页面判断。缺包写 not_run，不伪造。
 5. 作者确认一批：`rwiki mark-ready <id…>`（任一不通过则全部不改）。
-6. 默认同步整理代码复用层（成熟依赖优先复用既有闭包/原生调用适配，避免重复建模板）；确需单 panel 模板时：`rwiki scaffold-template <配方 id> --from-recipe --chart-type <slug> --title …` → 写 `code\`、`example\` 与 spec → `rwiki verify-template <模板 id>` → `rwiki mark-ready <模板 id>`。复刻图：sci-figure-replica 复刻后 `rwiki ingest-figure <画廊条目>` → `rwiki scaffold-template <版式 id> --chart-type … --panels …`（相同画法用 `attach-template`）→ `verify-template` → `mark-ready`。
-7. 方法：按 AGENTS.md 的四步（读目的与输入 → 查库语义去重 → 提炼与验证 → 知识整合与确认），骨架用 `rwiki scaffold-method`。
+6. 入库前查重与规范命名：`rwiki check-dup --kind template|method --title … [--primary-method …] [--chart-type …]` 先核对是否可复用既有条目；新建模板优先用规范短 slug（禁含 `fy-`/`figureya`/`v2`/`plus`/`--`）并直接通过 `--primary-method <分析方法id>` 绑定归属。高相似既有条目时须传 `--dedup-note "<差异说明>"` 写入关联检查，不硬性封死正当变体。
+7. 模板与方法映射：`rwiki scaffold-template <模板id> --native --primary-method <方法id> --chart-type <slug> --title <中文名>`（或从配方升级 `scaffold-template <配方id> --from-recipe --id <语义slug> --chart-type <slug> --title …`，自动沿 `method-map.json` 推断主方法）→ 写 `code\`、`example\` 与 spec → `rwiki verify-template <模板id>` → `rwiki mark-ready <模板id>`。批量核对方法域归属与覆盖率用 `rwiki map-method` / `rwiki curate-audit`。复刻图：sci-figure-replica 复刻后 `rwiki ingest-figure <画廊条目>` → `rwiki scaffold-template <版式id> --chart-type … --panels …`（相同画法用 `attach-template`）→ `verify-template` → `mark-ready`。
+8. 方法：按 AGENTS.md 的四步（读目的与输入 → 查库语义去重 → 提炼与验证 → 知识整合与确认），骨架用 `rwiki scaffold-method`。
 
 细节见 references/sources-and-recipes.md 与 references/method-families.md。
 

@@ -46,8 +46,18 @@ def infer_type(values: list[str]) -> str:
 
 
 def scaffold_template(config: Config, entry_id: str, chart_type: str, panels: list[str],
-                      title: str | None = None) -> None:
+                      title: str | None = None, *, primary_method: str | None = None,
+                      dedup_note: str = "", force: bool = False) -> None:
     from .aliases import resolve_page_ref
+    from .curation_workflow import _validate_analysis_method
+    from .dedup import assert_no_high_duplicate
+    from .naming import title_hygiene_issues
+
+    if title is not None:
+        title_issues = title_hygiene_issues(title, chart_types=[chart_type], strict_content_name=False)
+        if title_issues:
+            raise WikiError("；".join(title_issues))
+    resolved_pm = _validate_analysis_method(config.wiki_root, primary_method) if primary_method else ""
 
     page = resolve_page_ref(config.wiki_root, entry_id, expected_type="layout") or (
         config.wiki_root / "layouts" / f"{entry_id}.md"
@@ -61,6 +71,17 @@ def scaffold_template(config: Config, entry_id: str, chart_type: str, panels: li
     if target.exists() or template_page.exists():
         raise WikiError(f"模板页或目录已存在: {tid}")
     check_panels(meta, chart_type, panels)
+    clean_title = (title or chart_type).strip()
+    assert_no_high_duplicate(
+        config,
+        kind="template",
+        entry_id=tid,
+        title=clean_title,
+        primary_method=resolved_pm,
+        chart_types=[chart_type],
+        dedup_note=dedup_note,
+        force=force,
+    )
     gallery = read_json(config.gallery_root / meta["gallery_entry"] / "meta.json")
     (target / "code").mkdir(parents=True)
     (target / "example").mkdir()
@@ -102,8 +123,11 @@ def scaffold_template(config: Config, entry_id: str, chart_type: str, panels: li
     template_meta = {"type": "template", "id": tid, "title": title, "status": "draft",
                      "layouts": [entry_id], "panels": panels, "language": language,
                      "tags": meta["tags"], "chart_types": [chart_type], "favorite": False}
+    if resolved_pm:
+        template_meta["primary_method"] = resolved_pm
+    relation_note = f"查重说明：{dedup_note.strip()}\n\n" if dedup_note.strip() else ""
     template_body = (f"# {title}\n\n<!-- facts:start -->\n<!-- facts:end -->\n\n"
-                     "## 适用\n\n## 不适用\n\n## 知识关联检查\n\n## 数据要求\n\n模板化后生成。\n\n"
+                     f"## 适用\n\n## 不适用\n\n## 知识关联检查\n\n{relation_note}## 数据要求\n\n模板化后生成。\n\n"
                      "## 使用记录\n\n<!-- user:start -->\n<!-- user:end -->\n")
     ensure_hubs(config, template_meta)
     write_page(template_page, template_meta, template_body)
@@ -115,20 +139,52 @@ def scaffold_template(config: Config, entry_id: str, chart_type: str, panels: li
 
 
 def scaffold_from_recipe(config: Config, recipe_id: str, chart_type: str, title: str | None = None,
-                         language: str | None = None) -> str:
+                         language: str | None = None, *, template_id: str | None = None,
+                         primary_method: str | None = None, dedup_note: str = "", force: bool = False) -> str:
     """v2: start an L2 template from an L1 recipe (no gallery layout needed).
 
     Copies nothing executable: the agent writes code/ (functionized from the recipe's
     source/) and example/ in the template's own interface format, then verify-template.
     """
+    from .curation_workflow import _validate_analysis_method, infer_primary_method_for_recipe
+    from .dedup import assert_no_high_duplicate
+    from .naming import title_hygiene_issues, validate_new_id
     from .recipes import load_recipe
 
     page, recipe, _ = load_recipe(config, recipe_id)
-    tid = f"{recipe_id}--{chart_type}"
+    if template_id is not None:
+        id_issues = validate_new_id("template", template_id)
+        if id_issues:
+            raise WikiError("；".join(id_issues))
+        tid = template_id
+    else:
+        tid = f"{recipe_id}--{chart_type}"
+    if title is not None:
+        title_issues = title_hygiene_issues(title, entry_id=tid, chart_types=[chart_type], strict_content_name=False)
+        if title_issues:
+            raise WikiError("；".join(title_issues))
     target = config.wiki_root / "templates" / tid
     template_page = target.with_suffix(".md")
     if target.exists() or template_page.exists():
         raise WikiError(f"模板页或目录已存在: {tid}")
+    resolved_pm = (
+        _validate_analysis_method(config.wiki_root, primary_method)
+        if primary_method
+        else infer_primary_method_for_recipe(config, recipe_id)
+    )
+    clean_title = (title or chart_type).strip()
+    assert_no_high_duplicate(
+        config,
+        kind="template",
+        entry_id=tid,
+        title=clean_title,
+        primary_method=resolved_pm,
+        chart_types=[chart_type],
+        keywords=recipe.get("keywords") or [],
+        exclude_ids={recipe_id},
+        dedup_note=dedup_note,
+        force=force,
+    )
     language = language or recipe.get("language", "r")
     if language not in ("python", "r"):
         raise WikiError("language 只能是 python 或 r")
@@ -148,13 +204,21 @@ def scaffold_from_recipe(config: Config, recipe_id: str, chart_type: str, title:
                                     encoding="utf-8", newline="\n")
     (target / "spec.json").write_text(json.dumps(spec, ensure_ascii=False, indent=2) + "\n",
                                       encoding="utf-8", newline="\n")
-    title = (title or chart_type).strip()
+    title = clean_title
     meta = {"type": "template", "id": tid, "title": title, "status": "draft", "layouts": [],
             "sources": [f"recipes/{recipe_id}"], "panels": [], "language": language,
             "license": recipe.get("license", ""), "tags": recipe.get("tags") or [],
             "chart_types": [chart_type], "keywords": recipe.get("keywords") or [], "favorite": False}
+    if resolved_pm:
+        meta["primary_method"] = resolved_pm
+    notes = []
+    if resolved_pm:
+        notes.append(f"主归属方法：[[methods/{resolved_pm}]]。")
+    if dedup_note.strip():
+        notes.append(f"查重说明：{dedup_note.strip()}")
+    check_text = " ".join(notes) + ("\n\n" if notes else "")
     body = (f"# {title}\n\n<!-- facts:start -->\n<!-- facts:end -->\n\n"
-            "## 适用\n\n## 不适用\n\n## 知识关联检查\n\n## 数据要求\n\n模板化后生成。\n\n"
+            f"## 适用\n\n## 不适用\n\n## 知识关联检查\n\n{check_text}## 数据要求\n\n模板化后生成。\n\n"
             "## 使用记录\n\n<!-- user:start -->\n<!-- user:end -->\n")
     ensure_hubs(config, meta)
     with guarded(config, template_page):
