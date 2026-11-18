@@ -48,8 +48,7 @@ function HubMethodCard({ hub, taxonomy }: { hub: MethodHubCard; taxonomy: AppDat
   ).length;
   const totalImpls = hub.implementations.length;
   const previews = hub.attached_visualizations.all_previews.slice(0, 4);
-  const recipeSlots = Math.max(0, 4 - previews.length);
-  const previewRecipes = recipeSlots > 0 ? hub.reference_recipes.slice(0, recipeSlots) : [];
+  const inlineRecipes = hub.reference_recipes.slice(0, previews.length === 0 ? 4 : 3);
   const curatedById = new Map(hub.attached_visualizations.curated.map((c) => [c.id, c]));
   const totalVizCount = new Set([
     ...hub.attached_visualizations.curated.map((v) => v.id),
@@ -121,7 +120,7 @@ function HubMethodCard({ hub, taxonomy }: { hub: MethodHubCard; taxonomy: AppDat
             <span className="bridge-mini-note">含 {hub.render_bridges.length} 条抽取表转换</span>
           )}
         </div>
-        {(previews.length > 0 || previewRecipes.length > 0) ? (
+        {previews.length > 0 ? (
           <div className="viz-strip-thumbs">
             {previews.map((viz) => {
               const curatedItem = curatedById.get(viz.id);
@@ -147,29 +146,42 @@ function HubMethodCard({ hub, taxonomy }: { hub: MethodHubCard; taxonomy: AppDat
                 </a>
               );
             })}
-            {previewRecipes.map((rec) => (
-              <a
-                key={`ref-${rec.id}`}
-                className="viz-thumb-tile viz-thumb-recipe"
-                {...pageLink(rec.path)}
-                title={`${rec.title} (${rec.id}) · L1 FigureYa 源码参考`}
-              >
-                <div className="viz-thumb-img">
-                  {rec.preview_url ? (
-                    <img src={rec.preview_url} alt={rec.title} loading="lazy" />
-                  ) : (
-                    <span className="viz-thumb-empty">{rec.chart_types[0] || 'L1 配方'}</span>
-                  )}
-                </div>
-                <div className="viz-thumb-meta">
-                  <code className="viz-slug">{rec.id}</code>
-                  <span className="viz-compat-label viz-badge-l1">L1 源码参考</span>
-                </div>
-              </a>
-            ))}
           </div>
-        ) : (
+        ) : inlineRecipes.length === 0 ? (
           <p className="viz-strip-empty small muted">暂无挂载可视化模板；可进入查看理论说明与下游分支。</p>
+        ) : null}
+
+        {inlineRecipes.length > 0 && (
+          <div className="method-recipe-strip" aria-label="关联 FigureYa 参考配方">
+            <div className="viz-strip-head">
+              <span className="small muted">FigureYa 参考配方（{hub.reference_recipes.length}）</span>
+              <a className="method-recipe-count-link small" href={`#/recipes?method=${encodeURIComponent(hub.id)}`}>
+                全部 {hub.reference_recipes.length} 个 →
+              </a>
+            </div>
+            <div className="viz-strip-thumbs">
+              {inlineRecipes.map((rec) => (
+                <a
+                  key={`ref-${rec.id}`}
+                  className="viz-thumb-tile viz-thumb-recipe"
+                  {...pageLink(rec.path)}
+                  title={`${rec.title} (${rec.id}) · L1 FigureYa 源码参考`}
+                >
+                  <div className="viz-thumb-img">
+                    {rec.preview_url ? (
+                      <img src={rec.preview_url} alt={rec.title} loading="lazy" />
+                    ) : (
+                      <span className="viz-thumb-empty">{rec.chart_types[0] || 'L1 配方'}</span>
+                    )}
+                  </div>
+                  <div className="viz-thumb-meta">
+                    <code className="viz-slug">{rec.id}</code>
+                    <span className="viz-compat-label viz-badge-l1">L1 源码参考</span>
+                  </div>
+                </a>
+              ))}
+            </div>
+          </div>
         )}
       </div>
 
@@ -342,6 +354,10 @@ export function MethodsView({ data, query = '' }: { data: AppData; query?: strin
   const unmappedRecipes = matchedHubs?.unmapped_recipes ?? hubsState?.data.unmapped_recipes ?? [];
   const unmappedCount = matchedHubs?.unmapped_recipes_count ?? hubsState?.data.unmapped_recipes_count ?? unmappedRecipes.length;
   const totalAnalysisCount = matchedHubs?.total ?? activeTaxonomy.total;
+  const totalRecipesCount = data.pages.filter((p) => p.meta.type === 'recipe' && p.meta.status !== 'archived').length;
+  const recipesFilterHref = selection.domain
+    ? `#/recipes?domain=${encodeURIComponent(selection.domain)}`
+    : '#/recipes';
 
   const title = (path: string) => byPath.get(path)?.meta.title ?? path;
   const live = (paths: string[]) => paths.filter((path) => {
@@ -371,6 +387,9 @@ export function MethodsView({ data, query = '' }: { data: AppData; query?: strin
           </p>
         </div>
         <div className="gallery-top-actions">
+          <a className="button primary" href={recipesFilterHref}>
+            FigureYa 配方库（按方法域 · {totalRecipesCount}）→
+          </a>
           <a className="button" href="#/next">多路决策沙盘</a>
           <a className="button" href="#/resources">资料与接口 ({interfaces.length})</a>
         </div>
@@ -458,6 +477,13 @@ export function MethodsView({ data, query = '' }: { data: AppData; query?: strin
           <div className="sidebar-block">
             <span className="sidebar-label">附属资源与工具</span>
             <div className="sidebar-pills vertical">
+              <a
+                href={recipesFilterHref}
+                className="sidebar-pill"
+              >
+                <span>FigureYa 源码配方库</span>
+                <span className="pill-count">{totalRecipesCount}</span>
+              </a>
               <a
                 href={href({ domain: '', purpose: '', q: '' }, 'all', 'unmapped')}
                 className={viewTab === 'unmapped' ? 'sidebar-pill active' : 'sidebar-pill'}

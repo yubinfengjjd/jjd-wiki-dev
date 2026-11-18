@@ -934,6 +934,25 @@ check('auxiliary technical pages match canonical data_domains as well as tags', 
   );
   assert.ok(html.includes('href="#/page/methods/sc-tech.md"'));
 });
+
+check('MethodsView exposes top-level FigureYa recipe entry with domain filter link', () => {
+  const recipePage: any = {
+    path: 'recipes/figureya-131cmap-update.md',
+    meta: { type: 'recipe', id: 'figureya-131cmap-update', title: 'CMap', status: 'ready', tags: ['transcriptomics'], favorite: false, source: { id: 'figureya', item: 'i', commit: 'c' }, cite: [], language: 'r', chart_types: [] },
+  };
+  const html = renderToStaticMarkup(
+    <MethodsView
+      data={{
+        ...dataOf([recipePage]),
+        taxonomy: { total: 0, domains: [], data_domains: [{ value: 'bulk-transcriptomics', label: 'Bulk 转录组', count: 0, purposes: [] }], purposes: [], unclassified: [] },
+      } as any}
+      query="?domain=bulk-transcriptomics"
+    />,
+  );
+  assert.ok(html.includes('href="#/recipes?domain=bulk-transcriptomics"'));
+  assert.ok(html.includes('FigureYa 配方库（按方法域 · 1）'));
+  assert.ok(html.includes('FigureYa 源码配方库'));
+});
 if (failed) process.exitCode = 1;
 }
 main().catch(error => { console.error(error); process.exitCode = 1; });

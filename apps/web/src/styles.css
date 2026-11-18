@@ -3763,3 +3763,8 @@ a.chain-item:hover {
   color: var(--indigo);
   font-weight: 600;
 }
+.method-recipe-strip {
+  margin-top: 10px;
+  padding-top: 10px;
+  border-top: 1px dashed var(--rule);
+}
