@@ -97,10 +97,13 @@ function CuratedVizCard({
   onOpenStudio?: (id: string, title?: string) => void;
 }) {
   const tplPage = pages.find((p) => p.path === item.path);
+  const resolvedLicense = item.license ?? (tplPage?.meta as { license?: string } | undefined)?.license;
   const compatLabel =
     item.compatibility === 'unreviewed'
       ? '待语义审查'
-      : COMPATIBILITY_LABEL[item.compatibility as keyof typeof COMPATIBILITY_LABEL] ?? item.compatibility;
+      : item.compatibility === 'curated'
+        ? '方法配套'
+        : COMPATIBILITY_LABEL[item.compatibility as keyof typeof COMPATIBILITY_LABEL] ?? item.compatibility;
 
   return (
     <article className="sheet viz-layer-card">
@@ -118,6 +121,7 @@ function CuratedVizCard({
           {item.primary && <span className="badge primary-mark">首选主关联</span>}
           <StatusBadge status={item.status} label={item.status === 'ready' ? '图模板可用' : undefined} />
           <span className={`compatibility compatibility-${item.compatibility}`}>{compatLabel}</span>
+          {resolvedLicense && <LicenseBadge license={resolvedLicense} />}
           {item.language && <span className={`lang-pill lang-${item.language.toLowerCase()}`}>{item.language.toUpperCase()}</span>}
         </div>
         <h4><a {...pageLink(item.path)}>{item.title}</a></h4>
@@ -219,7 +223,7 @@ export function MethodOverview({
 }: Props) {
   const [selectedIface, setSelectedIface] = useState<string>('');
   const [copiedNextCli, setCopiedNextCli] = useState(false);
-  const [showAllRecipes, setShowAllRecipes] = useState(false);
+  const [showAllCurated, setShowAllCurated] = useState(false);
 
   const inputSlugs = hub?.inputs ?? meta.inputs ?? [];
   const outputSlugs = hub?.outputs ?? meta.outputs ?? [];
@@ -239,7 +243,34 @@ export function MethodOverview({
   const purposes = hub?.purposes ?? meta.purposes ?? [];
   const effectiveImplStatus = hub?.implementation_status?.length ? hub.implementation_status : implementationStatus;
 
-  const curatedViz = hub?.attached_visualizations.curated ?? [];
+  const rawCurated = hub?.attached_visualizations.curated ?? [];
+  const rawCuratedIds = new Set(rawCurated.map((c) => c.id));
+  const mergedFallback: AttachedVizCurated[] = (hub?.reference_recipes ?? [])
+    .filter((rec) => !rawCuratedIds.has(rec.id))
+    .map((rec) => ({
+      id: rec.id,
+      title: rec.title,
+      path: rec.path,
+      kind: 'recipe',
+      status: rec.status,
+      language: rec.language,
+      license: rec.license,
+      chart_types: rec.chart_types ?? [],
+      tables: [],
+      preview_url: rec.preview_url,
+      primary: true,
+      compatibility: 'curated',
+      verification: {
+        state: rec.status === 'ready' ? 'verified' : 'not_run',
+        scope: '方法映射配套模板',
+        evidence: [],
+      },
+      reason: rec.note ?? '',
+      adaptation: '',
+      prerequisites: [],
+    }));
+  const curatedViz = [...rawCurated, ...mergedFallback];
+  const visibleCurated = showAllCurated || curatedViz.length <= 12 ? curatedViz : curatedViz.slice(0, 12);
   const compatibleViz = hub?.attached_visualizations.object_compatible ?? [];
   const bridgedViz = hub?.attached_visualizations.render_bridged ?? [];
   const hasHubViz = curatedViz.length > 0 || compatibleViz.length > 0 || bridgedViz.length > 0;
@@ -249,7 +280,6 @@ export function MethodOverview({
   const curatedBranches = resolvedNext?.curated_branches ?? [];
   const fallbackBranches = !curatedBranches.length ? (resolvedNext?.next_steps ?? meta.next_steps ?? []) : [];
   const objectCandidates = resolvedNext?.object_compatible_candidates ?? [];
-  const referenceRecipes = hub?.reference_recipes ?? [];
   const nextCliCmd = `rwiki next ${meta.id} --json`;
 
   const renderIfacePills = (slugs: string[], kind: 'in' | 'out') =>
@@ -400,9 +430,20 @@ export function MethodOverview({
           <div className="viz-tier-stack">
             {curatedViz.length > 0 && (
               <div className="viz-tier-group">
-                <h3 className="viz-tier-heading">1. 首选 / 语义关联 ({curatedViz.length})</h3>
+                <div className="method-ref-recipes-head">
+                  <h3 className="viz-tier-heading">1. 首选 / 语义关联 ({curatedViz.length})</h3>
+                  {curatedViz.length > 12 && (
+                    <button
+                      type="button"
+                      className="ghost small"
+                      onClick={() => setShowAllCurated((v) => !v)}
+                    >
+                      {showAllCurated ? '收起到前 12 个' : `展开全部 ${curatedViz.length} 个`}
+                    </button>
+                  )}
+                </div>
                 <div className="viz-layer-grid">
-                  {curatedViz.map((item) => (
+                  {visibleCurated.map((item) => (
                     <CuratedVizCard key={item.id} item={item} pages={pages} onOpenStudio={onOpenStudio} />
                   ))}
                 </div>
@@ -464,61 +505,7 @@ export function MethodOverview({
             ))}
           </div>
         ) : (
-          <p className="muted small">暂无已挂载的可视化模板；可查阅下方参考源码配方或通过多路下游分支探索。</p>
-        )}
-      </section>
-
-      {/* Section 2b: FigureYa L1 参考源码配方（已按方法域挂接，直接展示） */}
-      <section className="method-reference-recipes-section" aria-label="FigureYa L1 参考源码配方">
-        <div className="method-ref-recipes-head">
-          <div>
-            <h2>参考源码配方（FigureYa L1 · {referenceRecipes.length}）</h2>
-            <p className="muted small">保留上游完整源码与运行收据，按当前方法语义挂接；使用前请核对各自许可证与引用文献。</p>
-          </div>
-          {referenceRecipes.length > 0 && (
-            <div className="method-ref-recipes-actions">
-              {referenceRecipes.length > 6 && (
-                <button
-                  type="button"
-                  className="ghost small"
-                  onClick={() => setShowAllRecipes((v) => !v)}
-                >
-                  {showAllRecipes ? '收起到前 6 条' : `展开全部 ${referenceRecipes.length} 条`}
-                </button>
-              )}
-              <a className="button small" href={`#/recipes?method=${encodeURIComponent(meta.id)}`}>
-                在配方库按方法查看 ({referenceRecipes.length}) →
-              </a>
-            </div>
-          )}
-        </div>
-        {referenceRecipes.length === 0 ? (
-          <p className="small muted">当前方法暂无已映射的 FigureYa 参考源码配方。</p>
-        ) : (
-          <div className="reference-recipes-grid">
-            {(showAllRecipes ? referenceRecipes : referenceRecipes.slice(0, 6)).map((rec) => {
-              const resolvedLicense = rec.license ?? (pages.find((p) => p.path === rec.path)?.meta as { license?: string } | undefined)?.license;
-              return (
-                <article key={rec.id} className="reference-recipe-item">
-                  {rec.preview_url && (
-                    <a className="ref-recipe-thumb" {...pageLink(rec.path)}>
-                      <img src={rec.preview_url} alt={rec.title} loading="lazy" />
-                    </a>
-                  )}
-                  <div className="ref-recipe-meta">
-                    <h4><a {...pageLink(rec.path)}>{rec.title}</a></h4>
-                    <p className="small muted"><code>{rec.id}</code> · {rec.language.toUpperCase() || 'R'} · {rec.confidence}</p>
-                    {rec.note && <p className="small">{rec.note}</p>}
-                    <div className="ref-recipe-actions">
-                      {resolvedLicense && <LicenseBadge license={resolvedLicense} />}
-                      <a className="button small" {...pageLink(rec.path)}>查看配方</a>
-                      <a className="button primary small" href={studioHref(rec.id)}>工作台</a>
-                    </div>
-                  </div>
-                </article>
-              );
-            })}
-          </div>
+          <p className="muted small">暂无已挂载的可视化模板；可查阅理论说明或通过多路下游分支探索。</p>
         )}
       </section>
 

@@ -481,7 +481,7 @@ def suggest_next_steps(config: Config, node_id: str, query: str = "") -> dict:
                                 branch_pairs.append((nxt, _normalize_next_step(nxt)))
                         break
 
-        hub_ctx = _hub_context(config, include_recipes=False)
+        hub_ctx = _hub_context(config, include_recipes=True)
         relations = hub_ctx["relations"]
         rel_compat_by_figure = {
             rel["figure"]: rel["compatibility"]
@@ -497,6 +497,8 @@ def suggest_next_steps(config: Config, node_id: str, query: str = "") -> dict:
                 _normalize_render_bridges(meta.get("render_bridges")),
                 hub_ctx["templates"],
                 relations,
+                method_recipes=hub_ctx["recipes_by_method"].get(canonical_id, []),
+                extra_template_ids=hub_ctx.get("extra_templates_by_method", {}).get(canonical_id),
             )
         else:
             attached_visualizations = {

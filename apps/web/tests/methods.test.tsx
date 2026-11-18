@@ -898,8 +898,8 @@ check('hubsData key guard rejects stale domain/purpose payloads and resolves rec
   );
   assert.ok(overviewHtml.includes('>MIT<'), 'resolved license from page meta must be rendered');
   assert.ok(!overviewHtml.includes('非商业'), 'must never invent CC-BY-NC-SA-4.0 when recipe license is absent');
-  assert.ok(overviewHtml.includes('method-reference-recipes-section'), 'FigureYa L1 section must be expanded cleanly');
-  assert.ok(overviewHtml.includes('href="#/recipes?method=m-lic"'), 'must link cleanly to filtered recipes view');
+  assert.ok(!overviewHtml.includes('method-reference-recipes-section'), 'FigureYa must render inside unified templates section');
+  assert.ok(overviewHtml.includes('viz-layer-card') && overviewHtml.includes('rec-mit'), 'unified section renders merged item as template card');
 });
 
 check('PlaybooksView query reset clears customMethodId and matchNextResponse guards stale nodes', () => {
@@ -935,7 +935,7 @@ check('auxiliary technical pages match canonical data_domains as well as tags', 
   assert.ok(html.includes('href="#/page/methods/sc-tech.md"'));
 });
 
-check('MethodsView exposes top-level FigureYa recipe entry with domain filter link', () => {
+check('HubMethodCard renders unified visualization strip without separate FigureYa split', () => {
   const recipePage: any = {
     path: 'recipes/figureya-131cmap-update.md',
     meta: { type: 'recipe', id: 'figureya-131cmap-update', title: 'CMap', status: 'ready', tags: ['transcriptomics'], favorite: false, source: { id: 'figureya', item: 'i', commit: 'c' }, cite: [], language: 'r', chart_types: [] },
@@ -949,9 +949,8 @@ check('MethodsView exposes top-level FigureYa recipe entry with domain filter li
       query="?domain=bulk-transcriptomics"
     />,
   );
-  assert.ok(html.includes('href="#/recipes?domain=bulk-transcriptomics"'));
-  assert.ok(html.includes('FigureYa 配方库（按方法域 · 1）'));
-  assert.ok(html.includes('FigureYa 源码配方库'));
+  assert.ok(!html.includes('FigureYa 配方库（按方法域'));
+  assert.ok(!html.includes('method-recipe-strip'));
 });
 if (failed) process.exitCode = 1;
 }

@@ -67,7 +67,7 @@ def _write_template(
         "id": tid,
         "title": title,
         "status": status,
-        "sources": sources or ["recipes/rec-shared"],
+        "sources": sources or ["recipes/rec-unmapped"],
         "panels": [],
         "language": language,
         "chart_types": chart_types or ["volcano"],
@@ -478,12 +478,14 @@ def test_single_method_hub_attached_viz_semantic_boundary_bridges_and_recipes(hu
 
     viz = hub_canonical["attached_visualizations"]
 
-    # 1. Curated: never promote primary_method-only template to direct or verified!
+    # 1. Unified curated: includes both templates AND non-duplicated mapped FigureYa visualizations
     curated_by_id = {item["id"]: item for item in viz["curated"]}
-    assert set(curated_by_id) == {"tpl-de-adaptable", "tpl-de-primary-unreviewed"}
+    assert set(curated_by_id) == {"tpl-de-adaptable", "tpl-de-primary-unreviewed", "rec-shared", "rec-multi"}
     assert curated_by_id["tpl-de-adaptable"]["compatibility"] == "adaptable"
     assert curated_by_id["tpl-de-adaptable"]["primary"] is True
     assert curated_by_id["tpl-de-adaptable"]["verification"]["state"] == "not_run"
+    assert curated_by_id["rec-shared"]["kind"] == "recipe"
+    assert curated_by_id["rec-shared"]["compatibility"] == "curated"
 
     unreviewed = curated_by_id["tpl-de-primary-unreviewed"]
     assert unreviewed["primary"] is True
@@ -586,8 +588,13 @@ def test_suggest_next_steps_v2_cli_http_mcp_consistency(hub_env, capsys):
     assert cand_by_id[("template", "tpl-obj-full-optional")]["match_type"] == "full"
     assert cand_by_id[("template", "tpl-obj-partial")]["match_type"] == "partial"
 
-    # Attached visualizations present on v2 payload
-    assert len(nxt["attached_visualizations"]["curated"]) == 2
+    # Attached visualizations present on v2 payload (templates + unified FigureYa visualizations)
+    assert {item["id"] for item in nxt["attached_visualizations"]["curated"]} == {
+        "tpl-de-adaptable",
+        "tpl-de-primary-unreviewed",
+        "rec-shared",
+        "rec-multi",
+    }
 
     # Format text output includes multi-branch guidance & match type
     formatted = format_next_steps(nxt)
@@ -621,3 +628,37 @@ def test_suggest_next_steps_v2_cli_http_mcp_consistency(hub_env, capsys):
         "attached_visualizations",
     ):
         assert cli_payload[key] == http_payload[key] == mcp_payload[key]
+
+
+def test_promoted_template_deduplicates_source_recipe_across_methods(hub_env):
+    cfg, _, _ = hub_env
+    wiki = cfg.wiki_root
+    # Register a mapped recipe rec-shared-converted spanning two methods, and promote it via fy-converted
+    _write_recipe(wiki, "rec-converted", title="多方法转换测试配方", item="FigureYaConverted")
+    mmap_path = wiki / "recipes" / "method-map.json"
+    mmap = json.loads(mmap_path.read_text(encoding="utf-8"))
+    mmap["mappings"]["rec-converted"] = {
+        "methods": ["differential-expression", "gene-set-enrichment"],
+        "confidence": "curated",
+        "note": "已被 fy-converted 模板化的多方法配方。",
+    }
+    mmap_path.write_text(json.dumps(mmap, ensure_ascii=False, indent=2), encoding="utf-8")
+
+    _write_template(
+        wiki,
+        "fy-converted",
+        title="原生转换图",
+        tables={"de": {"interface": "render-de-results", "description": "渲染差异表"}},
+        primary_method="differential-expression",
+        sources=["recipes/rec-converted"],
+        chart_types=["volcano"],
+    )
+
+    de_curated = {item["id"]: item for item in build_method_hub(cfg, "differential-expression")["attached_visualizations"]["curated"]}
+    gse_curated = {item["id"]: item for item in build_method_hub(cfg, "gene-set-enrichment")["attached_visualizations"]["curated"]}
+    assert "fy-converted" in de_curated and de_curated["fy-converted"]["kind"] == "template"
+    assert "rec-converted" not in de_curated
+    assert "fy-converted" in gse_curated and gse_curated["fy-converted"]["kind"] == "template"
+    assert "rec-converted" not in gse_curated
+    assert "rec-multi" in gse_curated and gse_curated["rec-multi"]["kind"] == "recipe"
+

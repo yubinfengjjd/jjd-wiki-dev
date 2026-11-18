@@ -23,7 +23,7 @@ from .read_cache import _snapshot, read_session
 from .relations import all_relations
 from .spec import load_spec
 
-_COMPAT_ORDER = {"direct": 0, "adaptable": 1, "candidate": 2, "unreviewed": 3}
+_COMPAT_ORDER = {"direct": 0, "curated": 1, "adaptable": 2, "unreviewed": 3, "candidate": 4}
 
 
 def _session_ctx():
@@ -149,14 +149,22 @@ def _load_template_catalog(config: Config, hidden: set[str]) -> list[dict]:
             else:
                 primary_method_id = raw_pm.strip().removeprefix("methods/").removesuffix(".md")
 
+        sources = [
+            str(s).removesuffix(".md").removeprefix("recipes/")
+            for s in (meta.get("sources") or [])
+            if isinstance(s, str) and str(s).strip().startswith("recipes/")
+        ]
         catalog.append({
             "id": str(meta.get("id") or path.stem),
             "title": str(meta.get("title") or path.stem),
             "path": rel_path,
+            "kind": "template",
             "status": str(meta.get("status") or "draft"),
             "language": str(meta.get("language") or spec.get("language") or ""),
+            "license": str(meta.get("license") or ""),
             "chart_types": [str(c) for c in (meta.get("chart_types") or []) if isinstance(c, str)],
             "tables": tables,
+            "sources": sources,
             "primary_method_id": primary_method_id,
             "preview_url": template_preview_url(root, meta),
         })
@@ -181,6 +189,7 @@ def _load_recipes_index(
     hidden: set[str],
     mappings: dict[str, dict],
     unmapped_set: set[str],
+    promoted_recipes: set[str] | None = None,
 ) -> tuple[dict[str, list[dict]], list[dict]]:
     root = config.wiki_root
     by_method: dict[str, list[dict]] = {}
@@ -189,6 +198,7 @@ def _load_recipes_index(
     if not rec_dir.is_dir():
         return by_method, unmapped_recipes
 
+    promoted = promoted_recipes or set()
     for path in sorted(rec_dir.glob("*.md")):
         rel_path = path.relative_to(root).as_posix()
         if rel_path in hidden:
@@ -200,14 +210,18 @@ def _load_recipes_index(
         if meta.get("type") != "recipe" or meta.get("status") == "archived":
             continue
         rid = str(meta.get("id") or path.stem)
+        if rid in promoted:
+            continue
         entry = mappings.get(rid) if isinstance(mappings.get(rid), dict) else {}
         methods = [str(m) for m in (entry.get("methods") or []) if isinstance(m, str) and m.strip()]
         record = {
             "id": rid,
             "title": str(meta.get("title") or rid),
             "path": rel_path,
+            "kind": "recipe",
             "status": str(meta.get("status") or "draft"),
             "language": str(meta.get("language") or ""),
+            "license": str(meta.get("license") or ""),
             "runner": str(meta.get("runner") or ""),
             "chart_types": [str(c) for c in (meta.get("chart_types") or []) if isinstance(c, str)],
             "tags": [str(t) for t in (meta.get("tags") or []) if isinstance(t, str)],
@@ -232,18 +246,23 @@ def _attached_visualizations(
     render_bridges: list[dict],
     templates: list[dict],
     relations: list[dict],
+    *,
+    method_recipes: list[dict] | None = None,
+    extra_template_ids: set[str] | None = None,
 ) -> dict:
     rel_by_figure: dict[str, dict] = {}
     for rel in relations:
         if rel["method"] == method_rel_path and rel.get("target_kind") == "template":
             rel_by_figure[rel["figure"]] = rel
 
+    extra_ids = extra_template_ids or set()
     curated: list[dict] = []
     curated_ids: set[str] = set()
     for tpl in templates:
         rel = rel_by_figure.get(tpl["path"])
         is_primary = tpl["primary_method_id"] == method_id
-        if rel is None and not is_primary:
+        is_extra = tpl["id"] in extra_ids
+        if rel is None and not is_primary and not is_extra:
             continue
         curated_ids.add(tpl["id"])
         # Semantic boundary: primary_method alone NEVER upgrades compatibility or verification.
@@ -253,7 +272,7 @@ def _attached_visualizations(
             if rel is not None
             else {
                 "state": "not_run",
-                "scope": "仅声明 primary_method，尚未在方法页 figure_relations 完成语义配对审查。",
+                "scope": "仅声明所属方法，尚未在方法页 figure_relations 完成语义配对审查。",
                 "evidence": [],
             }
         )
@@ -261,8 +280,10 @@ def _attached_visualizations(
             "id": tpl["id"],
             "title": tpl["title"],
             "path": tpl["path"],
+            "kind": "template",
             "status": tpl["status"],
             "language": tpl["language"],
+            "license": tpl.get("license", ""),
             "chart_types": tpl["chart_types"],
             "tables": tpl["tables"],
             "preview_url": tpl["preview_url"],
@@ -274,7 +295,36 @@ def _attached_visualizations(
             "prerequisites": list(rel["prerequisites"]) if rel is not None else [],
         })
 
+    for rec in (method_recipes or []):
+        if rec["id"] in curated_ids:
+            continue
+        curated_ids.add(rec["id"])
+        is_ready = rec.get("status") == "ready"
+        curated.append({
+            "id": rec["id"],
+            "title": rec["title"],
+            "path": rec["path"],
+            "kind": "recipe",
+            "status": rec["status"],
+            "language": rec["language"],
+            "license": rec.get("license", ""),
+            "chart_types": rec["chart_types"],
+            "tables": [],
+            "preview_url": rec["preview_url"],
+            "primary": True,
+            "compatibility": "curated",
+            "verification": {
+                "state": "verified" if is_ready else "not_run",
+                "scope": "原样可运行模板，由方法映射挂载" if is_ready else "尚未在当前环境完成实跑验证",
+                "evidence": [],
+            },
+            "reason": rec.get("note", ""),
+            "adaptation": "",
+            "prerequisites": [],
+        })
+
     curated.sort(key=lambda item: (
+        item.get("kind") != "template",
         not item["primary"],
         _COMPAT_ORDER.get(item["compatibility"], 9),
         item["id"],
@@ -492,6 +542,7 @@ def _build_single_hub(
     templates: list[dict],
     relations: list[dict],
     recipes_by_method: dict[str, list[dict]],
+    extra_templates_by_method: dict[str, set[str]] | None = None,
     unmapped_recipes_count: int,
     sparse: bool,
 ) -> dict:
@@ -506,6 +557,7 @@ def _build_single_hub(
     impl_status = [] if sparse else implementation_status(path, meta)
     summary = str(meta.get("summary") or "").strip() or _section(body, "用途").strip()
     next_steps = [s for s in (meta.get("next_steps") or []) if isinstance(s, dict)]
+    method_recipes = list(recipes_by_method.get(method_id, []))
 
     return {
         "id": method_id,
@@ -535,8 +587,10 @@ def _build_single_hub(
             render_bridges,
             templates,
             relations,
+            method_recipes=method_recipes,
+            extra_template_ids=(extra_templates_by_method or {}).get(method_id),
         ),
-        "reference_recipes": list(recipes_by_method.get(method_id, [])),
+        "reference_recipes": method_recipes,
         "unmapped_recipes_count": unmapped_recipes_count,
     }
 
@@ -544,16 +598,38 @@ def _build_single_hub(
 def _hub_context(config: Config, *, include_recipes: bool = True) -> dict:
     root = config.wiki_root
     hidden = excluded_paths(config)
+    templates = _load_template_catalog(config, hidden)
+    promoted_recipes: set[str] = set()
+    extra_templates_by_method: dict[str, set[str]] = {}
     if include_recipes:
         mappings, unmapped_set = _load_method_map(root)
-        recipes_by_method, unmapped_recipes = _load_recipes_index(config, hidden, mappings, unmapped_set)
+        for tpl in templates:
+            pm = tpl.get("primary_method_id")
+            if not pm:
+                continue
+            for src in tpl.get("sources") or []:
+                entry = mappings.get(src) if isinstance(mappings.get(src), dict) else {}
+                mapped_methods = [str(m).strip() for m in (entry.get("methods") or []) if isinstance(m, str) and m.strip()]
+                if pm in mapped_methods:
+                    promoted_recipes.add(src)
+                    for mid in mapped_methods:
+                        if mid != pm:
+                            extra_templates_by_method.setdefault(mid, set()).add(tpl["id"])
+        recipes_by_method, unmapped_recipes = _load_recipes_index(
+            config,
+            hidden,
+            mappings,
+            unmapped_set,
+            promoted_recipes=promoted_recipes,
+        )
     else:
         recipes_by_method, unmapped_recipes = {}, []
     return {
         "hidden": hidden,
-        "templates": _load_template_catalog(config, hidden),
+        "templates": templates,
         "relations": all_relations(config, include_archived=False),
         "recipes_by_method": recipes_by_method,
+        "extra_templates_by_method": extra_templates_by_method,
         "unmapped_recipes": unmapped_recipes,
         "sparse": profile(config) == "light",
     }
@@ -582,6 +658,7 @@ def build_method_hub(config: Config, method_id: str) -> dict:
             templates=ctx["templates"],
             relations=ctx["relations"],
             recipes_by_method=ctx["recipes_by_method"],
+            extra_templates_by_method=ctx["extra_templates_by_method"],
             unmapped_recipes_count=len(ctx["unmapped_recipes"]),
             sparse=ctx["sparse"],
         )
@@ -664,6 +741,7 @@ def list_method_hubs(
                         templates=ctx["templates"],
                         relations=ctx["relations"],
                         recipes_by_method=ctx["recipes_by_method"],
+                        extra_templates_by_method=ctx["extra_templates_by_method"],
                         unmapped_recipes_count=len(ctx["unmapped_recipes"]),
                         sparse=ctx["sparse"],
                     )

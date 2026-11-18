@@ -252,8 +252,10 @@ export interface AttachedVizCurated {
   id: string;
   title: string;
   path: string;
+  kind?: 'template' | 'recipe' | string;
   status: Status;
   language: string;
+  license?: string;
   chart_types: string[];
   tables: AttachedVizTable[];
   preview_url: string | null;

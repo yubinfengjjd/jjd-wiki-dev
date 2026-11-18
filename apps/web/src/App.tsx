@@ -57,7 +57,6 @@ function withEffectiveStatus(graph: GraphData, pages: PageSummary[]): GraphData 
 
 const NAV = [
   ['methods', '分析方法库'],
-  ['recipes', 'FigureYa 配方库'],
   ['next', '多路决策沙盘'],
   ['projects', '课题记录'],
   ['resources', '资料与检索'],
@@ -65,11 +64,10 @@ const NAV = [
 
 function isNavActive(navView: (typeof NAV)[number][0], currentView: string): boolean {
   if (navView === 'methods') return currentView === 'methods';
-  if (navView === 'recipes') return currentView === 'recipes' || currentView === 'figureya';
   if (navView === 'next') return currentView === 'next' || currentView === 'playbooks';
   if (navView === 'projects') return currentView === 'projects';
   if (navView === 'resources') {
-    return ['resources', 'search', 'gallery', 'sources', 'scenarios', 'log'].includes(currentView);
+    return ['resources', 'search', 'gallery', 'recipes', 'sources', 'scenarios', 'figureya', 'log'].includes(currentView);
   }
   return false;
 }
