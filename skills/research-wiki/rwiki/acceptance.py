@@ -142,7 +142,10 @@ def ready_for_use(config, path, meta=None) -> bool:
         if layout_ready_errors(config, meta):
             return False
         for tid in meta.get('templates', []):
-            template_path = config.wiki_root / 'templates' / f'{tid}.md'
+            from .aliases import resolve_page_ref
+            template_path = resolve_page_ref(config.wiki_root, tid, expected_type='template') or (
+                config.wiki_root / 'templates' / f'{tid}.md'
+            )
             try:
                 template, _ = read_page(template_path)
             except (WikiError, OSError):

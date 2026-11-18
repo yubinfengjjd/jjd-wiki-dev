@@ -47,8 +47,13 @@ def infer_type(values: list[str]) -> str:
 
 def scaffold_template(config: Config, entry_id: str, chart_type: str, panels: list[str],
                       title: str | None = None) -> None:
-    page = config.wiki_root / "layouts" / f"{entry_id}.md"
+    from .aliases import resolve_page_ref
+
+    page = resolve_page_ref(config.wiki_root, entry_id, expected_type="layout") or (
+        config.wiki_root / "layouts" / f"{entry_id}.md"
+    )
     meta, body = read_page(page)
+    entry_id = meta["id"]
     require_pending(meta)
     tid = f"{entry_id}--{chart_type}"
     target = config.wiki_root / "templates" / tid
@@ -176,11 +181,19 @@ def check_panels(meta: dict, chart_type: str, panels: list[str]) -> None:
 
 
 def attach_template(config: Config, layout_id: str, template_id: str, panels: list[str]) -> None:
-    page = config.wiki_root / "layouts" / f"{layout_id}.md"
+    from .aliases import resolve_page_ref
+
+    page = resolve_page_ref(config.wiki_root, layout_id, expected_type="layout") or (
+        config.wiki_root / "layouts" / f"{layout_id}.md"
+    )
     meta, body = read_page(page)
+    layout_id = meta["id"]
     require_pending(meta)
-    template_page = config.wiki_root / "templates" / f"{template_id}.md"
+    template_page = resolve_page_ref(config.wiki_root, template_id, expected_type="template") or (
+        config.wiki_root / "templates" / f"{template_id}.md"
+    )
     tm, tb = read_page(template_page)
+    template_id = tm["id"]
     if tm["status"] != "ready":
         raise WikiError(f"复用模板必须为 ready: {template_id}")
     if len(tm["chart_types"]) != 1:
@@ -204,7 +217,11 @@ def layout_ready_errors(config: Config, meta: dict) -> list[str]:
     if set(meta["template_panels"]) != set(meta["templates"]):
         errors.append("template_panels 的模板键必须等于 templates")
     for tid in meta["templates"]:
-        path = config.wiki_root / "templates" / f"{tid}.md"
+        from .aliases import resolve_page_ref
+
+        path = resolve_page_ref(config.wiki_root, tid, expected_type="template") or (
+            config.wiki_root / "templates" / f"{tid}.md"
+        )
         if not path.is_file():
             errors.append(f"模板不存在: {tid}")
             continue
@@ -229,7 +246,10 @@ def layout_ready_errors(config: Config, meta: dict) -> list[str]:
 
 def render(config: Config, entry_id: str, data_dir: Path, out_dir: Path,
            style: Path | None = None, bindings: Path | None = None) -> None:
-    target = config.wiki_root / "templates" / entry_id
+    from .aliases import resolve_page_ref
+
+    page = resolve_page_ref(config.wiki_root, entry_id, expected_type="template")
+    target = page.with_suffix("") if page is not None else (config.wiki_root / "templates" / entry_id)
     spec = load_spec(target)
     if style is not None:
         overrides = read_json(style)
@@ -282,15 +302,18 @@ def render(config: Config, entry_id: str, data_dir: Path, out_dir: Path,
 
 
 def verify_template(config: Config, entry_id: str) -> None:
-    target = config.wiki_root / "templates" / entry_id
+    from .aliases import resolve_page_ref
+
+    page = resolve_page_ref(config.wiki_root, entry_id, expected_type="template")
+    target = page.with_suffix("") if page is not None else (config.wiki_root / "templates" / entry_id)
     out = target / "verify"
     example_style = target / "example/style.json"
     inputs = start_replay(target)
-    render(config, entry_id, target / "example", out,
+    render(config, target.name, target / "example", out,
            example_style if example_style.is_file() else None)
     record_preview(target, inputs=inputs,
                    executable=config.python_exe if load_spec(target)['language'] == 'python' else config.rscript_exe)
-    save(config, f"verify {entry_id}")
+    save(config, f"verify {target.name}")
 
 
 def mark_ready_many(config: Config, entry_ids: list[str]) -> list[str]:
@@ -331,7 +354,7 @@ def mark_ready_many(config: Config, entry_ids: list[str]) -> list[str]:
                 spec = load_spec(page.with_suffix(""))
                 start, end = section_bounds(body, "数据要求")
                 body = body[:start] + "\n" + requirements_markdown(spec) + "\n" + body[end:]
-                embed = f"![[templates/{entry_id}/preview.png]]"
+                embed = f"![[templates/{meta.get('id', page.stem)}/preview.png]]"
                 if embed not in body:
                     heading_end = body.index("\n") + 1
                     body = body[:heading_end] + f"\n{embed}\n" + body[heading_end:]
@@ -386,7 +409,7 @@ def mark_ready(config: Config, entry_id: str) -> None:
             raise WikiError('入库验收未通过：' + '；'.join(errors))
         start, end = section_bounds(body, "数据要求")
         body = body[:start] + "\n" + requirements_markdown(spec) + "\n" + body[end:]
-        embed = f"![[templates/{entry_id}/preview.png]]"
+        embed = f"![[templates/{meta.get('id', page.stem)}/preview.png]]"
         if embed not in body:
             heading_end = body.index("\n") + 1
             body = body[:heading_end] + f"\n{embed}\n" + body[heading_end:]

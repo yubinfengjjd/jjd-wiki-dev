@@ -38,12 +38,17 @@ def _text(value) -> bool:
 
 
 def _target(config, figure: str):
-    path = config.wiki_root / f"{figure}.md"
+    from .aliases import resolve_page_ref
+
+    expected = "template" if figure.startswith("templates/") else "layout"
+    direct = config.wiki_root / f"{figure}.md"
     # A relation is a Wiki reference, never permission to follow an external link.
+    if not direct.resolve().is_relative_to(config.wiki_root.resolve()):
+        raise WikiError("关系目标越出 Wiki")
+    path = resolve_page_ref(config.wiki_root, figure, expected_type=expected) or direct
     if not path.resolve().is_relative_to(config.wiki_root.resolve()):
         raise WikiError("关系目标越出 Wiki")
     meta, _ = read_page(path)
-    expected = "template" if figure.startswith("templates/") else "layout"
     if meta.get("type") != expected or meta.get("id") != path.stem:
         raise WikiError("关系目标页面类型或 id 不一致")
     statuses = (("draft", "ready", "archived") if expected == "template" else
@@ -58,7 +63,12 @@ def _target(config, figure: str):
 
 def _ready_covering_template(config, layout: dict, template_id: str) -> bool:
     """True when a ready template is the callable form of this source layout."""
-    template_path = config.wiki_root / "templates" / f"{template_id}.md"
+    from .aliases import resolve_page_ref
+
+    template_path = (
+        resolve_page_ref(config.wiki_root, template_id, expected_type="template")
+        or (config.wiki_root / "templates" / f"{template_id}.md")
+    )
     try:
         template, _ = read_page(template_path)
     except (WikiError, OSError):
@@ -191,14 +201,15 @@ def _collect_relations(config, include_archived: bool) -> list[dict]:
         records, _ = _checked(config, method)
         for record in records:
             figure = record["figure"]
-            _, target = _target(config, figure)
+            target_path, target = _target(config, figure)
+            canonical_figure_rel = target_path.relative_to(config.wiki_root).with_suffix("").as_posix()
             active = (method["status"] != "archived" and target["status"] != "archived"
-                      and f"{figure}.md" not in hidden)
+                      and f"{canonical_figure_rel}.md" not in hidden)
             if not active and not include_archived:
                 continue
             results.append({
                 "method": path.relative_to(config.wiki_root).as_posix(),
-                "figure": f"{figure}.md", "method_title": method["title"],
+                "figure": f"{canonical_figure_rel}.md", "method_title": method["title"],
                 "figure_title": target["title"], "method_status": method["status"],
                 "figure_status": target["status"], "compatibility": record["compatibility"],
                 "reason": record["reason"], "prerequisites": list(record["prerequisites"]),
@@ -215,6 +226,12 @@ def relations_for(config, path: str) -> list[dict]:
     """Forward or reverse lookup by root-relative canonical or .md page path."""
     if not isinstance(path, str) or not _PAGE.fullmatch(path):
         return []
-    page = path if path.endswith(".md") else f"{path}.md"
+    from .aliases import resolve_page_ref
+
+    resolved = resolve_page_ref(config.wiki_root, path, expected_types=("method", "template", "layout"))
+    if resolved is not None:
+        page = resolved.relative_to(config.wiki_root).as_posix()
+    else:
+        page = path if path.endswith(".md") else f"{path}.md"
     return [record for record in all_relations(config)
             if page in (record["method"], record["figure"])]

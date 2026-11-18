@@ -42,10 +42,11 @@ def read_page(path: Path) -> tuple[dict, str]:
 
 
 def visual_path(root: Path, entry_id: str) -> Path:
-    for kind in ("templates", "layouts", "methods", "recipes"):
-        path = root / kind / f"{entry_id}.md"
-        if path.is_file():
-            return path
+    from .aliases import resolve_page_ref
+
+    resolved = resolve_page_ref(root, entry_id, expected_types=("template", "layout", "method", "recipe"))
+    if resolved is not None:
+        return resolved
     raise WikiError(f"模板、配方、版式或方法页不存在: {entry_id}")
 
 

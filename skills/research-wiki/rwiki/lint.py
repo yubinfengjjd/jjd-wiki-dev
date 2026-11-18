@@ -2,6 +2,7 @@ import re
 import subprocess
 from pathlib import Path
 
+from .aliases import DIR_TO_TYPE, alias_errors, resolve_page_ref
 from .catalog import LAYOUT_STATUSES, METHOD_STATUSES, STATUSES, TEMPLATE_STATUSES, page_paths, render_index
 from .config import Config, read_json
 from .errors import WikiError
@@ -41,6 +42,10 @@ def metadata_errors(meta: dict, vocabulary: frozenset[str] | None = None) -> lis
     def finish(found: list[str]) -> list[str]:
         found.extend(tag_errors(meta, vocabulary))
         found.extend(keyword_errors(meta))
+        if "aliases" in meta:
+            ptype = str(meta.get("type") or "unknown")
+            pid = str(meta.get("id") or meta.get("slug") or "_unknown")
+            found.extend(alias_errors(meta, Path(f"{ptype}s/{pid}.md"), {}, {}))
         return found
 
     page_type = meta.get("type")
@@ -160,7 +165,10 @@ def adaptable_interface_diagnostics(config: Config, path, meta: dict, body: str)
         figure = record.get("figure")
         if not isinstance(figure, str) or not figure.startswith("templates/"):
             continue
-        target = config.wiki_root / figure.removesuffix(".md")
+        target = (
+            resolve_page_ref(config.wiki_root, figure, expected_type="template")
+            or (config.wiki_root / figure.removesuffix(".md"))
+        ).with_suffix("")
         try:
             spec = load_spec(target)
         except (WikiError, OSError, ValueError, KeyError, TypeError):
@@ -209,7 +217,8 @@ def visual_diagnostics(config: Config, path, meta: dict, body: str,
         if meta["type"] == "template" and not (target / "spec.json").is_file():
             diagnostics.append(("ERROR", "ready 模板缺少 spec.json"))
         if meta["type"] == "layout" and all(
-                config.wiki_root / "templates" / f"{tid}.md" in valid_metadata
+                (resolve_page_ref(config.wiki_root, tid, expected_type="template")
+                 or (config.wiki_root / "templates" / f"{tid}.md")) in valid_metadata
                 for tid in meta["templates"]):
             diagnostics.extend(("ERROR", error) for error in layout_ready_errors(config, meta))
     if meta["type"] == "layout" and (target / "layout.json").is_file():
@@ -222,10 +231,15 @@ def visual_diagnostics(config: Config, path, meta: dict, body: str,
                                        else ("layouts", "templates", "layouts"))
     if meta["type"] == "template":
         for value in meta.get("sources") or []:
-            if not (config.wiki_root / f"{str(value).removesuffix('.md')}.md").is_file():
+            raw = str(value).removesuffix('.md')
+            resolved = resolve_page_ref(config.wiki_root, raw) or (config.wiki_root / f"{raw}.md")
+            if not resolved.is_file():
                 diagnostics.append(("ERROR", f"引用的来源页不存在: {value}"))
     for entry_id in meta.get(own_list) or []:
-        other_path = config.wiki_root / directory / f"{entry_id}.md"
+        other_path = (
+            resolve_page_ref(config.wiki_root, entry_id, expected_type=DIR_TO_TYPE[directory])
+            or (config.wiki_root / directory / f"{entry_id}.md")
+        )
         if not other_path.is_file():
             diagnostics.append(("ERROR", f"引用的{'模板' if directory == 'templates' else '版式'}不存在: {entry_id}"))
             continue
@@ -250,9 +264,24 @@ def lint(config: Config, ci: bool = False) -> list[str]:
         # lint remains the unchanged scientific/receipt maintenance workflow.
         result = ['INFO checkout: 轻量检出仅核对页面结构；未核对完整资产和科学/执行证据，维护请切换 full。']
         vocabulary = load_vocabulary(config)
+        light_parsed = []
+        canonical_ids: dict[tuple[str, str], str] = {}
         for path in page_paths(config.wiki_root):
             meta, body, error = parse_page(path.read_text(encoding='utf-8'))
+            light_parsed.append((path, meta, body, error))
+            if not error:
+                ptype = meta.get('type')
+                cid = meta.get('id') or meta.get('slug') or path.stem
+                if isinstance(ptype, str) and isinstance(cid, str) and cid:
+                    canonical_ids[(ptype, cid)] = path.relative_to(config.wiki_root).as_posix()
+        seen_aliases: dict[tuple[str, str], str] = {}
+        for path, meta, body, error in light_parsed:
             findings = [error] if error else metadata_errors(meta, vocabulary)
+            if not error:
+                rel_path = Path(path.relative_to(config.wiki_root).as_posix())
+                for err in alias_errors(meta, rel_path, seen_aliases, canonical_ids):
+                    if err not in findings:
+                        findings.append(err)
             result.extend(f'ERROR {path.relative_to(config.wiki_root).as_posix()}: {message}'
                           for message in findings)
         return result
@@ -290,9 +319,25 @@ def lint(config: Config, ci: bool = False) -> list[str]:
             level = "LOCAL-ONLY"
         diagnostics.append(f"{level} {path.relative_to(root).as_posix()}: {' '.join(message.splitlines())}")
 
+    raw_parsed = []
+    canonical_ids: dict[tuple[str, str], str] = {}
     for path in page_paths(root):
         meta, body, parse_error = parse_page(path.read_text(encoding="utf-8"))
+        raw_parsed.append((path, meta, body, parse_error))
+        if not parse_error:
+            ptype = meta.get("type")
+            cid = meta.get("id") or meta.get("slug") or path.stem
+            if isinstance(ptype, str) and isinstance(cid, str) and cid:
+                canonical_ids[(ptype, cid)] = path.relative_to(root).as_posix()
+
+    seen_aliases: dict[tuple[str, str], str] = {}
+    for path, meta, body, parse_error in raw_parsed:
         errors = [parse_error] if parse_error else metadata_errors(meta, vocabulary)
+        if not parse_error:
+            rel_path = Path(path.relative_to(root).as_posix())
+            for err in alias_errors(meta, rel_path, seen_aliases, canonical_ids):
+                if err not in errors:
+                    errors.append(err)
         if not parse_error and meta.get("type") == "method":
             errors.extend(relation_errors(config, meta))
         elif "figure_relations" in meta:
@@ -359,10 +404,10 @@ def lint(config: Config, ci: bool = False) -> list[str]:
                         report('WARN', path, message)
             elif meta["type"] == "project":
                 for entry_id in meta["templates"]:
-                    if not any((root / kind / f"{entry_id}.md").is_file() for kind in ("templates", "layouts")):
+                    if resolve_page_ref(root, entry_id, expected_types=("template", "layout")) is None:
                         report("ERROR", path, f"引用的模板页不存在: {entry_id}")
                 for method_id in meta.get("methods", []):
-                    if not (root / "methods" / f"{method_id}.md").is_file():
+                    if resolve_page_ref(root, method_id, expected_type="method") is None:
                         report("ERROR", path, f"引用的方法页不存在: {method_id}")
             if meta["type"] == "scenario":
                 from .finder import record_for

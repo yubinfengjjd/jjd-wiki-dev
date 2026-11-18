@@ -336,7 +336,8 @@ def load_example_data(config: Config, entry_id: str) -> dict[str, Any]:
     suggested = _auto_bind_columns(spec, primary["sniff"])
     return {
         "ok": True,
-        "id": entry_id,
+        "id": spec["id"],
+        "requested_id": entry_id,
         "primary_file": primary["path"],
         "files": files_out,
         "sniff": primary["sniff"],
@@ -464,7 +465,8 @@ def render_studio_code(
 
     bindings_json = _build_bindings_json(spec, data_file, bindings_dict)
     return {
-        "id": entry_id,
+        "id": spec["id"],
+        "requested_id": entry_id,
         "code": code,
         "language": language,
         "bindings_json": bindings_json,
@@ -531,7 +533,8 @@ def dispatch_studio(
         parameters=parameters,
     )
     spec = rendered["spec"]
-    dest = project_path / "wiki-use" / entry_id
+    canonical_id = spec["id"]
+    dest = project_path / "wiki-use" / canonical_id
     written = _copy_minimal_assets(spec, dest)
 
     script_name = "run_studio.py" if rendered["language"] == "Python" else "run_studio.R"
@@ -679,11 +682,12 @@ def run_studio(
         parameters=parameters,
     )
     spec = rendered["spec"]
-    run_id = f"{re.sub(r'[^A-Za-z0-9_-]', '_', entry_id)}_{uuid.uuid4().hex[:8]}"
+    canonical_id = spec["id"]
+    run_id = f"{re.sub(r'[^A-Za-z0-9_-]', '_', canonical_id)}_{uuid.uuid4().hex[:8]}"
 
     if str(project_dir or "").strip():
         project_path = _validate_project_dir(config, project_dir)
-        workdir = project_path / "wiki-use" / entry_id
+        workdir = project_path / "wiki-use" / canonical_id
         _copy_minimal_assets(spec, workdir)
     else:
         workdir = _studio_outputs_root(config) / run_id / "workspace"

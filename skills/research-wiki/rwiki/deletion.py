@@ -59,29 +59,31 @@ def prepare(config, page):
         if clean(block(ob, 'user')) != block(ob, 'user'):
             raise WikiError(f'作者备注引用此条目，请先手动处理：{other.relative_to(root)}')
         original_meta = json.dumps(om, ensure_ascii=False, sort_keys=True)
+        deleted_names = {meta['id'], *(a for a in (meta.get('aliases') or []) if isinstance(a, str))}
         if meta['type'] in ('template', 'layout') and isinstance(om.get('figure_relations'), list):
-            deleted_figure = page.relative_to(root).with_suffix('').as_posix()
+            deleted_figures = {f"{page.parent.name}/{name}" for name in deleted_names}
             def kept_relation(record):
                 if not isinstance(record, dict) or not isinstance(record.get('figure'), str):
                     return True
                 # Canonical records omit .md. Also clean that legacy/malformed spelling
                 # so deletion cannot leave a future dangling declaration.
-                return record['figure'].removesuffix('.md') != deleted_figure
+                return record['figure'].removesuffix('.md') not in deleted_figures
             previous = om['figure_relations']
             om['figure_relations'] = [record for record in previous if kept_relation(record)]
             removed_count = len(previous) - len(om['figure_relations'])
             if removed_count:
                 relation_changes[other] = removed_count
         key = {'template': 'templates', 'layout': 'layouts', 'method': 'methods'}[meta['type']]
-        if isinstance(om.get(key), list): om[key] = [x for x in om[key] if x != meta['id']]
+        if isinstance(om.get(key), list): om[key] = [x for x in om[key] if x not in deleted_names]
         if meta['type'] == 'template' and isinstance(om.get('template_panels'), dict):
-            om['template_panels'].pop(meta['id'], None)
+            for name in deleted_names:
+                om['template_panels'].pop(name, None)
         blueprint = other.with_suffix('') / 'layout.json'
         if meta['type'] == 'template' and om['type'] == 'layout' and blueprint.is_file():
             layout = json.loads(blueprint.read_text(encoding='utf-8'))
-            removed = {p['letter'] for p in layout['panels'] if p['template'] == meta['id']}
+            removed = {p['letter'] for p in layout['panels'] if p['template'] in deleted_names}
             if removed:
-                layout['panels'] = [p for p in layout['panels'] if p['template'] != meta['id']]
+                layout['panels'] = [p for p in layout['panels'] if p['template'] not in deleted_names]
                 layout['labels'] = [p for p in layout['labels'] if p['text'] not in removed]
                 asset_edits.append((blueprint, json.dumps(layout, ensure_ascii=False, indent=2).encode() if layout['panels'] else None))
                 if om['status'] == 'ready': om['status'] = 'pending_template'

@@ -202,15 +202,17 @@ def _pick_recipe_script(asset_dir: Path, declared_entry: str) -> tuple[str, Path
 
 def load_unified_spec(config: Config, entry_id: str) -> dict[str, Any]:
     """Load unified Tier 1 (template) or Tier 2 (recipe/method) spec for Studio & MCP."""
+    from .aliases import resolve_page_ref
+
     root = config.wiki_root
-    for kind, folder in (("template", "templates"), ("recipe", "recipes"), ("method", "methods")):
-        page_path = root / folder / f"{entry_id}.md"
-        if page_path.is_file():
-            break
-    else:
+    page_path = resolve_page_ref(root, entry_id, expected_types=("template", "recipe", "method"))
+    if page_path is None:
         raise WikiError(f"未找到模板、配方或方法: {entry_id}")
 
+    kind = {"templates": "template", "recipes": "recipe", "methods": "method"}[page_path.parent.name]
     meta, _ = read_page(page_path)
+    canonical_id = str(meta.get("id") or page_path.stem)
+    canonical_page = page_path.relative_to(root).as_posix()
     asset_dir = page_path.with_suffix("")
 
     if kind == "template":
@@ -244,10 +246,11 @@ def load_unified_spec(config: Config, entry_id: str) -> dict[str, Any]:
             if skey in style and pkey in params and isinstance(style[skey], (int, float)):
                 params[pkey]["default"] = style[skey]
         return {
-            "id": entry_id,
+            "id": canonical_id,
+            "requested_id": entry_id,
             "kind": "template",
             "tier": 1,
-            "title": meta.get("title", entry_id),
+            "title": meta.get("title", canonical_id),
             "status": meta.get("status", "draft"),
             "language": _display_language(raw.get("language") or meta.get("language")),
             "entry": raw.get("entry", ""),
@@ -257,7 +260,7 @@ def load_unified_spec(config: Config, entry_id: str) -> dict[str, Any]:
             "parameters": params,
             "dependencies": [],
             "asset_dir": str(asset_dir),
-            "page": f"templates/{entry_id}.md",
+            "page": canonical_page,
         }
 
     if kind == "recipe":
@@ -287,10 +290,11 @@ def load_unified_spec(config: Config, entry_id: str) -> dict[str, Any]:
                 if isinstance(group, list):
                     deps.extend(str(p) for p in group)
         return {
-            "id": entry_id,
+            "id": canonical_id,
+            "requested_id": entry_id,
             "kind": "recipe",
             "tier": 2,
-            "title": meta.get("title", entry_id),
+            "title": meta.get("title", canonical_id),
             "status": meta.get("status", "draft"),
             "language": _display_language(meta.get("language")),
             "entry": rel_entry,
@@ -301,7 +305,7 @@ def load_unified_spec(config: Config, entry_id: str) -> dict[str, Any]:
             "parameters": normalize_parameters(meta.get("parameters"), include_defaults=True),
             "dependencies": list(dict.fromkeys(deps)),
             "asset_dir": str(asset_dir),
-            "page": f"recipes/{entry_id}.md",
+            "page": canonical_page,
         }
 
     # method (Tier 2 analysis method)
@@ -338,10 +342,11 @@ def load_unified_spec(config: Config, entry_id: str) -> dict[str, Any]:
             entry_rel = cands[0].relative_to(asset_dir).as_posix()
             lang = "Python" if cands[0].suffix.lower() == ".py" else "R"
     return {
-        "id": entry_id,
+        "id": canonical_id,
+        "requested_id": entry_id,
         "kind": "method",
         "tier": 2,
-        "title": meta.get("title", entry_id),
+        "title": meta.get("title", canonical_id),
         "status": meta.get("status", "draft"),
         "language": lang,
         "entry": entry_rel,
@@ -353,5 +358,5 @@ def load_unified_spec(config: Config, entry_id: str) -> dict[str, Any]:
         "outputs": list(meta.get("outputs") or []),
         "next_steps": list(meta.get("next_steps") or []),
         "asset_dir": str(asset_dir),
-        "page": f"methods/{entry_id}.md",
+        "page": canonical_page,
     }

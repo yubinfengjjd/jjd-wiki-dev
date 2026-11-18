@@ -178,10 +178,15 @@ def _set_profile(config, value: str) -> dict:
 def _page(config, entry_id: str) -> Path:
     if not isinstance(entry_id, str) or not IDENTITY.fullmatch(entry_id) or '..' in entry_id:
         raise WikiError('条目 ID 无效；使用页面 ID，不接受路径。')
-    for kind in PAGE_KINDS:
-        candidate = config.wiki_root / kind / f'{entry_id}.md'
-        if candidate.is_file():
-            return candidate
+    from .aliases import DIR_TO_TYPE, resolve_page_ref
+
+    resolved = resolve_page_ref(
+        config.wiki_root,
+        entry_id,
+        expected_types=[DIR_TO_TYPE[kind] for kind in PAGE_KINDS],
+    )
+    if resolved is not None:
+        return resolved
     raise WikiError(f'没有条目 {entry_id}；L0 来源获取继续使用 rwiki use。')
 
 

@@ -94,7 +94,12 @@ def _page(config: Config, page_path: str) -> tuple[Path, dict]:
     root = config.wiki_root.resolve()
     target = root.joinpath(*parts)
     if not _safe_existing(target, root) or not target.is_file():
-        raise WikiError("代码页面不存在")
+        from .aliases import resolve_page_ref
+
+        resolved = resolve_page_ref(root, page_path, expected_type=_KINDS[parts[0]])
+        if resolved is None or not _safe_existing(resolved, root) or not resolved.is_file():
+            raise WikiError("代码页面不存在")
+        target = resolved
     meta, _ = read_page(target)
     if meta.get("type") != _KINDS[parts[0]] or meta.get("id") != target.stem:
         raise WikiError("代码页面类型或标识不符")

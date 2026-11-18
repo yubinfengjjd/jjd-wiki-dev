@@ -147,9 +147,15 @@ def suggest(config: Config, chart_types: list[str],
             spec = load_spec(target)
             tables, style_keys = spec["tables"], list(spec["style"])
         else:
+            from .aliases import resolve_page_ref
             try:
-                specs = {tid: load_spec(config.wiki_root / "templates" / tid)
-                         for tid in meta["templates"]}
+                specs = {
+                    tid: load_spec(
+                        (resolve_page_ref(config.wiki_root, tid, expected_type="template")
+                         or (config.wiki_root / "templates" / f"{tid}.md")).with_suffix("")
+                    )
+                    for tid in meta["templates"]
+                }
             except (WikiError, OSError, ValueError, KeyError, TypeError):
                 # A layout whose callable template cannot be loaded is not a
                 # valid recommendation; skip it instead of failing the query.
@@ -203,7 +209,9 @@ def suggest_pipeline(config: Config, figure: str | None = None, query: str = "")
         if path.relative_to(config.wiki_root).as_posix() in hidden:
             continue
         template, body = read_page(path)
-        if not ready_for_use(config, path, template) or (figure is not None and template["id"] != figure):
+        if not ready_for_use(config, path, template) or (
+            figure is not None and figure not in (template["id"], *(template.get("aliases") or []))
+        ):
             continue
         spec = load_spec(path.with_suffix(""))
         required = {table["interface"] for table in spec["tables"].values()}
@@ -244,10 +252,15 @@ def suggest_pipeline(config: Config, figure: str | None = None, query: str = "")
 
 
 def _locate_node(config: Config, node_id: str):
-    for folder in ("methods", "interfaces", "templates", "recipes", "scenarios"):
-        path = config.wiki_root / folder / f"{node_id}.md"
-        if path.is_file():
-            return path
+    from .aliases import resolve_page_ref
+
+    resolved = resolve_page_ref(
+        config.wiki_root,
+        node_id,
+        expected_types=("method", "interface", "template", "recipe", "scenario"),
+    )
+    if resolved is not None:
+        return resolved
     raise WikiError(f"未找到节点页面: {node_id}")
 
 
@@ -276,7 +289,8 @@ def suggest_next_steps(config: Config, node_id: str, query: str = "") -> dict:
     path = _locate_node(config, node_id)
     meta, body = read_page(path)
     kind = meta.get("type", "")
-    title = meta.get("title", node_id)
+    canonical_id = str(meta.get("id") or meta.get("slug") or path.stem)
+    title = meta.get("title", canonical_id)
 
     raw_steps = meta.get("next_steps")
     next_steps: list[dict] = []
@@ -293,7 +307,7 @@ def suggest_next_steps(config: Config, node_id: str, query: str = "") -> dict:
     if kind == "method":
         outputs = {str(s) for s in (meta.get("outputs") or []) if isinstance(s, str) and s.strip()}
     elif kind == "interface":
-        outputs = {str(meta.get("slug") or node_id)}
+        outputs = {str(meta.get("slug") or canonical_id)}
     elif kind == "template":
         spec_path = path.with_suffix("") / "spec.json"
         if spec_path.is_file():
@@ -324,7 +338,7 @@ def suggest_next_steps(config: Config, node_id: str, query: str = "") -> dict:
                     "preview": f"/files/wiki/templates/{tid}/preview.png" if preview_file.is_file() else None,
                 })
         for mid, (mm, method_meta) in declarations(config.wiki_root, "methods").items():
-            if mm.get("status") == "archived" or mid == node_id:
+            if mm.get("status") == "archived" or mid == canonical_id:
                 continue
             ins = input_interfaces(method_meta)
             if ins and ins & outputs:
@@ -349,7 +363,7 @@ def suggest_next_steps(config: Config, node_id: str, query: str = "") -> dict:
             for idx, st in enumerate(steps):
                 if not isinstance(st, dict):
                     continue
-                if st.get("id") == node_id or st.get("method_id") == node_id:
+                if st.get("id") in (canonical_id, node_id) or st.get("method_id") in (canonical_id, node_id):
                     for nxt in steps[idx + 1:]:
                         if isinstance(nxt, dict) and (nxt.get("parent") == st.get("id") or idx + 1 == steps.index(nxt)):
                             next_steps.append(_normalize_next_step(nxt))
@@ -378,7 +392,8 @@ def suggest_next_steps(config: Config, node_id: str, query: str = "") -> dict:
             structural_matches = filtered_matches
 
     return {
-        "node_id": node_id,
+        "node_id": canonical_id,
+        "requested_id": node_id,
         "kind": kind,
         "title": title,
         "page": path.relative_to(config.wiki_root).as_posix(),

@@ -69,18 +69,33 @@ def relationship_facts(config: Config, path: str) -> str:
 
 def source_links(root, values) -> list[str]:
     """v2 template provenance: `recipes/<id>` (or other page paths) instead of a gallery layout."""
+    from .aliases import resolve_page_ref
+
     links = []
     for value in values or []:
-        path = root / f"{str(value).removesuffix('.md')}.md"
-        title = read_page(path)[0]["title"] if path.is_file() else value
-        links.append(f"[[{str(value).removesuffix('.md')}|{title}]]")
+        raw = str(value).removesuffix('.md')
+        path = resolve_page_ref(root, raw) or (root / f"{raw}.md")
+        if path.is_file():
+            target = path.relative_to(root).with_suffix("").as_posix()
+            title = read_page(path)[0]["title"]
+        else:
+            target = raw
+            title = value
+        links.append(f"[[{target}|{title}]]")
     return links
 
 
 def template_facts(config: Config, meta: dict) -> str:
+    from .aliases import resolve_page_ref
+
     root = config.wiki_root
-    layouts = [page_link("layouts", read_page(root / "layouts" / f"{lid}.md")[0])
-               for lid in meta.get("layouts") or []] + source_links(root, meta.get("sources"))
+    layouts = [
+        page_link(
+            "layouts",
+            read_page(resolve_page_ref(root, lid, expected_type="layout") or (root / "layouts" / f"{lid}.md"))[0],
+        )
+        for lid in meta.get("layouts") or []
+    ] + source_links(root, meta.get("sources"))
     charts = " · ".join(f"[[chart-types/{slug}]]" for slug in meta["chart_types"])
     spec_path = root / "templates" / meta["id"] / "spec.json"
     interfaces, compatible = [], []
@@ -106,8 +121,10 @@ def method_facts(config: Config, meta: dict) -> str:
     root = config.wiki_root
     source = meta["source"]
     if source["kind"] == "post":
+        from .aliases import resolve_page_ref
+
         lid = source["gallery_entry"].replace("/figures/", "__")
-        layout = root / "layouts" / f"{lid}.md"
+        layout = resolve_page_ref(root, lid, expected_type="layout") or (root / "layouts" / f"{lid}.md")
         origin = page_link("layouts", read_page(layout)[0]) if layout.is_file() else lid
     elif source["kind"] == "repo":
         origin = f"{source['url']}（{source['commit']}）"

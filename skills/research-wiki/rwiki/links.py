@@ -24,4 +24,15 @@ def resolve(wiki_root: Path, target: str) -> Path:
     path = Path(target)
     if not path.suffix:
         path = path.with_suffix(".md")
-    return wiki_root / path
+    direct = wiki_root / path
+    if direct.exists():
+        return direct
+    from .aliases import resolve_asset_subpath, resolve_page_ref
+
+    resolved = resolve_page_ref(wiki_root, target)
+    if resolved is not None:
+        return resolved
+    asset = resolve_asset_subpath(wiki_root, target)
+    if asset is not None:
+        return asset
+    return direct

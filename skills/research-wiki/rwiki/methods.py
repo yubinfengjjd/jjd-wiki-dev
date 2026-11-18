@@ -61,7 +61,9 @@ def scaffold_method(config: Config, id: str, title: str, license: str,
 
 
 def confirm_method(config: Config, id: str) -> None:
-    page = config.wiki_root / "methods" / f"{id}.md"
+    from .aliases import resolve_page_ref
+
+    page = resolve_page_ref(config.wiki_root, id, expected_type="method") or (config.wiki_root / "methods" / f"{id}.md")
     meta, body = read_page(page)
     if meta["status"] != "draft":
         raise WikiError(f"方法必须为 draft: {id} ({meta['status']})")

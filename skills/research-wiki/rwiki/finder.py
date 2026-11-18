@@ -156,7 +156,8 @@ def record_for(config: Config, entry_id: str) -> dict | None:
         if path.relative_to(config.wiki_root).as_posix() in excluded_paths(config):
             return None
         meta, body = read_page(path)
-        if meta.get("status") == "archived":
+        canonical_id = meta.get("id") or meta.get("slug") or path.stem
+        if canonical_id in removed_ids(config) or meta.get("status") == "archived":
             return None
         builder = {"recipe": _recipe_record, "template": _template_record, "method": _method_record}.get(meta["type"])
         return builder(config, path, meta, body) if builder else None
@@ -224,10 +225,15 @@ PAGE_KINDS = ("recipes", "templates", "methods", "scenarios", "sources", "interf
 
 
 def _page(config: Config, entry_id: str) -> Path:
-    for kind in PAGE_KINDS:
-        path = config.wiki_root / kind / f"{entry_id}.md"
-        if path.is_file():
-            return path
+    from .aliases import DIR_TO_TYPE, resolve_page_ref
+
+    resolved = resolve_page_ref(
+        config.wiki_root,
+        entry_id,
+        expected_types=[DIR_TO_TYPE[kind] for kind in PAGE_KINDS],
+    )
+    if resolved is not None:
+        return resolved
     raise WikiError(f"没有条目 {entry_id}（L0 目录项写成 <来源>:<条目>，如 figureya:FigureYa59volcanoV2）")
 
 
@@ -247,6 +253,7 @@ def show(config: Config, entry_id: str) -> dict:
     path = _page(config, entry_id)
     meta, body = read_page(path)
     kind = meta["type"]
+    canonical_id = str(meta.get("id") or meta.get("slug") or path.stem)
     sections = {title: _section(body, title) for title in
                 {"recipe": ("用途", "适用", "不适用", "输入", "怎么用", "输出"),
                  "template": ("适用", "不适用", "数据要求"),
@@ -257,7 +264,8 @@ def show(config: Config, entry_id: str) -> dict:
                  "interface": ("含义",),
                  "chart-type": ("回答什么问题", "什么时候选它", "什么时候不要用", "与相近图型怎么区分", "常见误用"),
                  "project": ("用途", "使用记录")}.get(kind, ())}
-    result = {"kind": kind, "path": path.relative_to(config.wiki_root).as_posix(), "meta": meta,
+    result = {"kind": kind, "id": canonical_id, "requested_id": entry_id,
+              "path": path.relative_to(config.wiki_root).as_posix(), "meta": meta,
               "sections": {key: value for key, value in sections.items() if value}}
     from .asset_checkout import assets_state, profile
     transport = assets_state(config, path)
@@ -418,17 +426,20 @@ def use(config: Config, entry_id: str, project: Path, name: str | None = None) -
         path = _page(config, entry_id)
         meta, _ = read_page(path)
         kind = meta["type"]
-        destination = _destination(project, name or entry_id)
+        canonical_id = str(meta.get("id") or meta.get("slug") or path.stem)
+        canonical_page = path.relative_to(config.wiki_root).as_posix()
+        destination = _destination(project, name or canonical_id)
         if kind == "recipe":
             from .recipes import integrity_errors
             errors = integrity_errors(path)
             if errors:
-                raise WikiError("；".join(errors) + f"（可先 wiki.py restore {entry_id}）")
+                raise WikiError("；".join(errors) + f"（可先 wiki.py restore {canonical_id}）")
             shutil.copytree(path.with_suffix("") / "source", destination)
             source = meta.get("source") or {}
-            origin = {"id": entry_id, "kind": "recipe", "level": "L1", "entry": Path(meta["entry"]).name,
+            origin = {"id": canonical_id, "requested_id": entry_id, "kind": "recipe", "level": "L1",
+                      "entry": Path(meta["entry"]).name,
                       "packages": meta.get("packages") or {}, "outputs": meta.get("outputs") or [],
-                      "license": meta.get("license"), "page": f"recipes/{entry_id}.md",
+                      "license": meta.get("license"), "page": canonical_page,
                       "upstream": f"{source.get('url', '').rstrip('/')}/tree/{source.get('commit')}/{source.get('item')}",
                       "commit": source.get("commit"), "copied_at": copied_at}
             title, inputs = meta["title"], meta.get("inputs") or []
@@ -457,11 +468,12 @@ def use(config: Config, entry_id: str, project: Path, name: str | None = None) -
                                            "columns": {column: column for column in columns}}
             (destination / "bindings.draft.json").write_text(
                 json.dumps(bindings, ensure_ascii=False, indent=2) + "\n", encoding="utf-8", newline="\n")
-            origin = {"id": entry_id, "kind": "template", "level": "L2", "entry": spec["entry"],
-                      "license": meta.get("license", ""), "page": f"templates/{entry_id}.md", "copied_at": copied_at}
+            origin = {"id": canonical_id, "requested_id": entry_id, "kind": "template", "level": "L2",
+                      "entry": spec["entry"], "license": meta.get("license", ""),
+                      "page": canonical_page, "copied_at": copied_at}
             title, inputs = meta["title"], []
             notice = license_notice(meta.get("license") or "", "许可见模板页与 runtime.json 的 source.license。")
-            commands = [f'wiki.py render {entry_id} --data <课题数据目录> --out <输出目录> --bindings '
+            commands = [f'wiki.py render {canonical_id} --data <课题数据目录> --out <输出目录> --bindings '
                         f'"{destination / "bindings.json"}"']
             extra = ["## 列映射", "",
                      "`bindings.draft.json` 的 `columns` 是“内部字段 → 课题列”。把右侧改成课题表的列名、`file` 改成课题文件名，"
@@ -474,8 +486,9 @@ def use(config: Config, entry_id: str, project: Path, name: str | None = None) -
             shutil.copytree(target / "code", destination / "code", ignore=shutil.ignore_patterns("__pycache__", "*.pyc"))
             if (target / "runtime.json").is_file():
                 shutil.copyfile(target / "runtime.json", destination / "runtime.json")
-            origin = {"id": entry_id, "kind": "method", "level": "L2", "entry": "",
-                      "license": meta.get("license", ""), "page": f"methods/{entry_id}.md", "copied_at": copied_at}
+            origin = {"id": canonical_id, "requested_id": entry_id, "kind": "method", "level": "L2",
+                      "entry": "", "license": meta.get("license", ""),
+                      "page": canonical_page, "copied_at": copied_at}
             title, inputs = meta["title"], []
             notice = license_notice(meta.get("license") or "")
             commands = [f"按 {origin['page']} 的“代码/怎么做”在课题环境调用 code/ 中的入口函数"]

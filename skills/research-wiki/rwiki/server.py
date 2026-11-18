@@ -10,6 +10,7 @@ from fastapi.exceptions import RequestValidationError
 from fastapi.responses import FileResponse, JSONResponse
 from pydantic import BaseModel, Field, StrictBool, StrictStr
 
+from .aliases import resolve_asset_subpath, resolve_page_ref
 from .catalog import readable_pages
 from .config import Config, read_json
 from .errors import WikiError
@@ -109,10 +110,16 @@ def safe_file(root: Path, value: str) -> Path:
     # Dot entries (.git, .obsidian, ...) are repository internals, never page assets.
     if any(part.startswith(".") for part in Path(value).parts):
         raise HTTPException(404, "文件不存在")
+    resolved_root = root.resolve()
     path = (root / value).resolve()
-    if not path.is_relative_to(root.resolve()) or not path.is_file():
-        raise HTTPException(404, "文件不存在")
-    return path
+    if path.is_relative_to(resolved_root) and path.is_file():
+        return path
+    aliased = resolve_page_ref(resolved_root, value) or resolve_asset_subpath(resolved_root, value)
+    if aliased is not None:
+        resolved = aliased.resolve()
+        if resolved.is_relative_to(resolved_root) and resolved.is_file():
+            return resolved
+    raise HTTPException(404, "文件不存在")
 
 
 def create_app(config: Config) -> FastAPI:
@@ -502,8 +509,8 @@ def create_app(config: Config) -> FastAPI:
         if profile(config) == 'light':
             return []
         if path is not None:
-            page_file(path)
-            return relations_for(config, path)
+            resolved = page_file(path)
+            return relations_for(config, resolved.relative_to(root).as_posix())
         return all_relations(config)
 
     def code_page(kind: str, entry_id: str) -> str:
@@ -572,10 +579,10 @@ def create_app(config: Config) -> FastAPI:
             raise HTTPException(409, "页面不是 draft")
         with guarded(config, path, path.with_suffix("") / "acceptance.json"):
             try:
-                confirm_method(config, entry_id)
+                confirm_method(config, meta["id"])
             except WikiError as error:
                 raise HTTPException(409, str(error)) from error
-            save(config, f"confirm {entry_id}")
+            save(config, f"confirm {meta['id']}")
         return response(path)
 
     @app.post("/api/recipes/{entry_id}/confirm")
@@ -585,7 +592,7 @@ def create_app(config: Config) -> FastAPI:
         if meta["status"] != "draft":
             raise HTTPException(409, "配方不是 draft")
         from .templates import mark_ready
-        mark_ready(config, entry_id)
+        mark_ready(config, meta["id"])
         return response(path)
 
     @app.post("/api/methods/{entry_id}/return")
