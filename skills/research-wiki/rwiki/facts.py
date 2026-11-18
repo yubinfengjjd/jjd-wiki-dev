@@ -279,7 +279,9 @@ def refresh_facts(config: Config) -> None:
         for path in sorted((config.wiki_root / kind).glob("*.md")):
             try:
                 meta, body = read_page(path)
-                updates.append((path, meta, set_block(body, "facts", page_facts(config, meta))))
+                updated = set_block(body, "facts", page_facts(config, meta))
+                if updated != body:
+                    updates.append((path, meta, updated))
             except (WikiError, KeyError, TypeError, ValueError, OSError):
                 continue
     for path, meta, body in updates:

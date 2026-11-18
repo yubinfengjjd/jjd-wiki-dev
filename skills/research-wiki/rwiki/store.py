@@ -71,13 +71,17 @@ def save(config: Config, message: str) -> None:
     assert_writable(config)
     from . import push_guard
     from .facts import refresh_facts
+    from .finder import write_catalog
+    from .read_cache import read_session
 
     root = config.wiki_root
     agent = os.environ.get("RWIKI_AGENT")
-    refresh_facts(config)
-    (root / "index.md").write_text(build_index(root), encoding="utf-8", newline="\n")
-    from .finder import write_catalog
-    write_catalog(config)
+    with read_session():
+        refresh_facts(config)
+        index_text = build_index(root)
+        if not (root / "index.md").is_file() or (root / "index.md").read_text(encoding="utf-8") != index_text:
+            (root / "index.md").write_text(index_text, encoding="utf-8", newline="\n")
+        write_catalog(config)
     # Every git mutation is pathspec-scoped to ``.`` — the working dir is
     # wiki_root, so ``.`` means the wiki subtree only. When the wiki lives
     # inside a larger repository, unrelated staged/index changes and untracked
