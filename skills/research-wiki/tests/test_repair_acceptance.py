@@ -62,15 +62,14 @@ def test_confirmation_creates_only_new_scope_record_and_preserves_original_fail(
     assert set(p for p in asset.rglob("*") if p.is_file())-set(before)=={asset/"repair-acceptance.json"}
 
 
-@pytest.mark.parametrize("mutation",["code_changed","code_missing","input_missing","new_file","receipt_changed","receipt_fail","manifest_changed","receipt_path_escape"])
+@pytest.mark.parametrize("mutation",["code_changed","code_missing","new_script","receipt_changed","receipt_fail","manifest_changed","receipt_path_escape"])
 def test_changed_or_missing_evidence_invalidates_confirmation(repaired,monkeypatch,mutation):
     from rwiki.repair_acceptance import record_repair_acceptance,validate_repair
     cfg,page,asset=repaired
     record_repair_acceptance(cfg,page)
     if mutation=="code_changed":(asset/"repair/run.R").write_text("changed",encoding="utf-8")
     elif mutation=="code_missing":(asset/"repair/run.R").unlink()
-    elif mutation=="input_missing":(asset/"repair/input.csv").unlink()
-    elif mutation=="new_file":(asset/"repair/other.txt").write_text("new file",encoding="utf-8")
+    elif mutation=="new_script":(asset/"repair/extra.R").write_text("# new script",encoding="utf-8")
     elif mutation.startswith("receipt") and mutation!="receipt_path_escape":
         path=asset/"repair-runs/20260102.json";data=json.loads(path.read_text(encoding="utf-8"))
         data["state" if mutation=="receipt_fail" else "note"]="fail" if mutation=="receipt_fail" else "changed receipt bytes"
@@ -82,6 +81,16 @@ def test_changed_or_missing_evidence_invalidates_confirmation(repaired,monkeypat
     report=validate_repair(cfg,page,require_approval=True)
     assert not report["valid"] and report["errors"]
     assert workflow(repaired,monkeypatch)["stage"]=="recipe_work"
+
+
+def test_slimmed_repair_without_data_files_stays_valid(repaired, monkeypatch):
+    from rwiki.repair_acceptance import record_repair_acceptance, validate_repair
+    cfg, page, asset = repaired
+    record_repair_acceptance(cfg, page)
+    # Remove large/duplicated non-script data file (mimics 1.72 GB repair/ slimming)
+    (asset / "repair/input.csv").unlink()
+    assert validate_repair(cfg, page, require_approval=True)["valid"]
+    assert workflow(repaired, monkeypatch)["stage"] == "repair_complete"
 
 
 @pytest.mark.parametrize("mutation",["missing_receipt","failed_receipt","wrong_scope","stale_code"])
@@ -125,7 +134,7 @@ def test_hash_memo_lasts_only_for_current_read_session(repaired,monkeypatch):
         initial=len(calls)
         assert ra.validate_repair(cfg,page,require_approval=True)["valid"]
         assert len(calls)==initial
-    (asset/"repair/input.csv").unlink()
+    (asset/"repair/run.R").unlink()
     with read_session():assert not ra.validate_repair(cfg,page,require_approval=True)["valid"]
     assert len(calls)>initial
 

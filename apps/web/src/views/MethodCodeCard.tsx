@@ -1,4 +1,4 @@
-import { MethodMeta, PageSummary } from '../api';
+import { MethodMeta, PageSummary, studioHref } from '../api';
 import { CodeButton } from '../CodeViewer';
 import { pageLink } from '../nav';
 import { methodKindLabel, verifiedImplementations } from '../methods';
@@ -21,6 +21,10 @@ export function MethodCodeCard({ page, pages }: { page: PageSummary<MethodMeta>;
       {count > 4 && <li>另有 {count - 4} 个实现，见详情</li>}
     </ul>}
     {theories.length > 0 && <p className="small theory-links">方法理论：{theories.map(p => <a key={p.path} {...pageLink(p.path)}>{p.meta.title}</a>)}</p>}
-    <div className="method-code-actions"><a {...pageLink(page.path)}>查看说明与验证范围</a>{count > 0 && <CodeButton meta={meta} />}</div>
+    <div className="method-code-actions">
+      <a {...pageLink(page.path)}>查看说明与验证范围</a>
+      <a className="button primary small" href={studioHref(meta.id)}>进入操控台</a>
+      {count > 0 && <CodeButton meta={meta} />}
+    </div>
   </article>;
 }

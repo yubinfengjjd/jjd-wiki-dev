@@ -86,3 +86,62 @@ def test_index_groups_and_sorts_all_page_types(workspace):
                      "## 图型\n\n- [[chart-types/bar|bar]]", "## 课题\n\n- [[projects/p|课题]]"):
         assert expected in index
     assert commit_count(root) == 2
+
+
+def test_save_commits_only_wiki_subtree(tmp_path):
+    """A wiki living inside a dirty outer repo must never commit siblings."""
+    import subprocess
+    from conftest import write_config
+    from rwiki.config import load_config
+
+    wiki = tmp_path / 'wiki'
+    cfg_path = write_config(tmp_path / 'c.json', wiki)
+    config = load_config(cfg_path)
+    init(config)
+    (wiki / '.git').rename(tmp_path / 'removed-git')
+    (tmp_path / '.gitignore').write_text('removed-git/\n', encoding='utf-8')
+    subprocess.run(['git', 'init', '-q'], cwd=tmp_path, check=True)
+    subprocess.run(['git', 'add', '-A'], cwd=tmp_path, check=True)
+    subprocess.run(['git', '-c', 'user.email=t@t', '-c', 'user.name=t',
+                    'commit', '-qm', 'baseline'], cwd=tmp_path, check=True)
+    (tmp_path / 'tracked.md').write_text('base\n', encoding='utf-8')
+    subprocess.run(['git', 'add', 'tracked.md'], cwd=tmp_path, check=True)
+    subprocess.run(['git', '-c', 'user.email=t@t', '-c', 'user.name=t',
+                    'commit', '-qm', 'baseline2'], cwd=tmp_path, check=True)
+    (tmp_path / 'plan.md').write_text('planning\n', encoding='utf-8')
+    subprocess.run(['git', 'add', 'plan.md'], cwd=tmp_path, check=True)
+    (tmp_path / 'tracked.md').write_text('modified\n', encoding='utf-8')
+    subprocess.run(['git', 'add', 'tracked.md'], cwd=tmp_path, check=True)
+    (tmp_path / 'scratch.txt').write_text('untracked\n', encoding='utf-8')
+    (wiki / 'projects').mkdir(exist_ok=True)
+    (wiki / 'projects' / 'p.md').write_text('# p\n', encoding='utf-8')
+    save(config, 'scoped save')
+    out = subprocess.check_output(['git', 'status', '--porcelain'], cwd=tmp_path, text=True)
+    assert 'A  plan.md' in out and 'M  tracked.md' in out
+    assert '?? scratch.txt' in out
+    shown = subprocess.check_output(['git', 'show', '--name-only', '--format=', 'HEAD'], cwd=tmp_path, text=True)
+    paths = [line for line in shown.splitlines() if line.strip()]
+    assert paths and all(p.startswith('wiki/') for p in paths)
+    assert 'wiki/projects/p.md' in paths
+
+
+def test_save_noop_when_only_siblings_dirty(tmp_path):
+    import subprocess
+    from conftest import write_config
+    from rwiki.config import load_config
+
+    wiki = tmp_path / 'wiki'
+    cfg_path = write_config(tmp_path / 'c.json', wiki)
+    config = load_config(cfg_path)
+    init(config)
+    (wiki / '.git').rename(tmp_path / 'removed-git')
+    (tmp_path / '.gitignore').write_text('removed-git/\n', encoding='utf-8')
+    subprocess.run(['git', 'init', '-q'], cwd=tmp_path, check=True)
+    subprocess.run(['git', 'add', '-A'], cwd=tmp_path, check=True)
+    subprocess.run(['git', '-c', 'user.email=t@t', '-c', 'user.name=t',
+                    'commit', '-qm', 'baseline'], cwd=tmp_path, check=True)
+    (tmp_path / 'outside.md').write_text('sibling work\n', encoding='utf-8')
+    save(config, 'nothing wiki-side')
+    assert commit_count(wiki) == 1
+    out = subprocess.check_output(['git', 'status', '--porcelain'], cwd=tmp_path, text=True)
+    assert '?? outside.md' in out

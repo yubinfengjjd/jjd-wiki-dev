@@ -9,8 +9,162 @@ import { api, pageCache } from '../src/api';
 import { CodeBranchList } from '../src/CodeViewer';
 import { conditionFacts, filterAnalysisMethods, normalizeMethodSelection, packageFacts, parseMethodQuery, purposeOptionsFor } from '../src/methods';
 import { parseRoute } from '../src/route';
-import { REAL_PAGES } from './real-pages';
-import { REAL_DETAILS, REAL_PAGES as REAL_API_PAGES, REAL_TAXONOMY } from './real-taxonomy';
+
+const REAL_TAXONOMY = {
+  total: 15,
+  domains: [
+    { value: '单细胞分析', count: 13, purposes: [{ value: '轨迹与动态分析', count: 3 }] },
+    { value: '转录组', count: 4, purposes: [{ value: '差异表达', count: 2 }] },
+  ],
+  purposes: [{ value: '轨迹与动态分析', count: 3 }, { value: '模型解释', count: 1 }],
+  unclassified: [],
+};
+
+const REAL_PAGES: any[] = [
+  {
+    path: 'methods/cell-quality-control.md',
+    meta: {
+      type: 'method', id: 'cell-quality-control', title: '单细胞质量控制', method_kind: 'analysis',
+      status: 'ready', tags: ['单细胞分析'], purposes: [], favorite: false, inputs: [], outputs: [],
+      summary: '在进入归一化、整合、降维之前筛选低质量细胞',
+      data_contract: { input: 'Seurat RNA assay 的原始 counts', output: '过滤后的 Seurat 对象' },
+      implementations: [{ id: 'scp-qc', title: 'SCP RunCellQC 封装', language: 'R', entrypoint: 'code/qc.R:run', dependencies: ['SCP'] }],
+      source: { kind: 'written' }, license: 'none', cite: [],
+    },
+    implementation_status: [{ id: 'scp-qc', title: 'SCP RunCellQC 封装', state: 'verified', scope: 'SCP 固定单测' }],
+    body: '# 单细胞质量控制\n\n## 用途\n\n在进入归一化、整合、降维之前过滤低质量细胞与双细胞。\n\n<!-- user:start -->\n<!-- user:end -->\n',
+    backlinks: [
+      { path: 'methods/scp-cellqc-doublet.md', title: 'SCP CellQC Doublet', type: 'method' },
+      { path: 'methods/scp-standard-workflow.md', title: 'SCP 标准流程', type: 'method' },
+    ],
+    gallery: null, relations: [],
+  },
+  {
+    path: 'methods/scp-cellqc-doublet.md',
+    meta: {
+      type: 'method', id: 'scp-cellqc-doublet', title: 'SCP CellQC Doublet', method_kind: 'technical',
+      status: 'ready', tags: ['单细胞分析'], favorite: false, inputs: [], outputs: [],
+      summary: '用 SCP 的 RunCellQC 执行双细胞与线粒体过滤',
+      source: { kind: 'written' }, license: 'none', cite: [],
+    },
+    implementation_status: [],
+    body: '# SCP CellQC Doublet\n\n<!-- facts:start -->\n- 资料类型：技术/来源资料\n<!-- facts:end -->\n\n## 用途\n\n用 SCP 的双细胞过滤函数。\n\n<!-- user:start -->\n<!-- user:end -->\n',
+    backlinks: [], gallery: null, relations: [],
+  },
+  {
+    path: 'methods/scp-standard-workflow.md',
+    meta: {
+      type: 'method', id: 'scp-standard-workflow', title: 'SCP 标准流程', method_kind: 'workflow',
+      status: 'ready', tags: ['单细胞分析'], favorite: false, inputs: [], outputs: [],
+      summary: 'SCP 标准分析流程',
+      source: { kind: 'written' }, license: 'none', cite: [],
+    },
+    implementation_status: [],
+    body: '# SCP 标准流程\n\n## 用途\n\n串联质控与聚类。\n\n<!-- user:start -->\n<!-- user:end -->\n',
+    backlinks: [], gallery: null, relations: [],
+  },
+  {
+    path: 'methods/batch-integration.md',
+    meta: {
+      type: 'method', id: 'batch-integration', title: '批次效应整合', method_kind: 'analysis',
+      status: 'ready', tags: ['单细胞分析'], favorite: false, inputs: [], outputs: [],
+      summary: '整合多样本批次',
+      implementations: [
+        { id: 'seurat-int', title: 'SCP Seurat_integrate 锚点分支', language: 'R', entrypoint: 'code/int.R:seurat', dependencies: ['Seurat'] },
+        { id: 'harmony-int', title: 'SCP Harmony_integrate 分支', language: 'R', entrypoint: 'code/int.R:harmony', dependencies: ['harmony'] },
+      ],
+      source: { kind: 'written' }, license: 'none', cite: [],
+    },
+    implementation_status: [
+      { id: 'seurat-int', title: 'SCP Seurat_integrate 锚点分支', state: 'verified', scope: 'Seurat 锚点验证' },
+      { id: 'harmony-int', title: 'SCP Harmony_integrate 分支', state: 'not_run', scope: '未运行' },
+    ],
+    body: '# 批次效应整合\n\n## 用途\n\n消除样本间技术批次差异。\n\n<!-- user:start -->\n<!-- user:end -->\n',
+    backlinks: [], gallery: null, relations: [],
+  },
+  {
+    path: 'methods/shap-explanation.md',
+    meta: {
+      type: 'method', id: 'shap-explanation', title: 'SHAP 模型解释', method_kind: 'analysis',
+      status: 'ready', tags: ['转录组'], purposes: ['模型解释'], favorite: false,
+      inputs: ['shap-summary'], outputs: [],
+      summary: '解释特征对模型预测的边际贡献',
+      data_contract: { input: '已拟合模型、背景 DataFrame、解释样本 DataFrame', output: 'shap-summary 贡献表' },
+      source: { kind: 'written' }, license: 'none', cite: [],
+    },
+    implementation_status: [],
+    body: '# SHAP 模型解释\n\n## 用途\n\n计算并汇总 SHAP 贡献。\n\n<!-- user:start -->\n<!-- user:end -->\n',
+    backlinks: [], gallery: null, relations: [],
+  },
+  {
+    path: 'interfaces/shap-summary.md',
+    meta: {
+      type: 'interface', slug: 'shap-summary', title: 'SHAP 汇总表',
+      columns: {
+        feature: { type: 'str', description: '特征名', required: true },
+        percent: { type: 'float', description: '贡献百分比', required: false },
+      },
+    },
+  },
+  ...['trajectory-inference', 'rna-velocity', 'dynamic-feature-analysis'].map((id) => ({
+    path: `methods/${id}.md`,
+    meta: {
+      type: 'method', id, title: id, method_kind: 'analysis', status: 'ready',
+      tags: ['单细胞分析'], purposes: ['轨迹与动态分析'], favorite: false,
+      inputs: [], outputs: [], summary: id, source: { kind: 'written' }, license: 'none', cite: [],
+    },
+    implementation_status: [],
+  })),
+  {
+    path: 'methods/gene-set-scoring.md',
+    meta: {
+      type: 'method', id: 'gene-set-scoring', title: '基因集打分', method_kind: 'analysis',
+      status: 'ready', tags: ['单细胞分析', '转录组'], purposes: [], favorite: false,
+      inputs: [], outputs: [], summary: '多算法基因集打分', source: { kind: 'written' }, license: 'none', cite: [],
+    },
+    implementation_status: [],
+  },
+  {
+    path: 'templates/2026-10-22-glaucoma-scrna__fig03-topjournal-bubble--dotplot.md',
+    meta: {
+      type: 'template', id: '2026-10-22-glaucoma-scrna__fig03-topjournal-bubble--dotplot',
+      title: '顶刊气泡图', status: 'ready', tags: [], favorite: false, language: 'r', layouts: [], panels: ['A'], chart_types: ['dotplot'],
+    },
+    body: '# 顶刊气泡图\n\n<!-- user:start -->\n<!-- user:end -->\n',
+    backlinks: [], gallery: null, relations: [], implementation_status: [],
+    input_contract: {
+      bindings: true,
+      tables: [{
+        key: 'dotplot', interface: 'render-dotplot-long', description: '点图长表', required: true,
+        columns: [
+          { name: 'group', type: 'str', description: '分组', required: true },
+          { name: 'target_group', type: 'str', description: '目标组', required: false },
+        ],
+      }],
+    },
+  },
+  {
+    path: 'templates/2026-10-22-scp-example__fig09-bar--bar.md',
+    meta: {
+      type: 'template', id: '2026-10-22-scp-example__fig09-bar--bar',
+      title: '柱状图模板', status: 'ready', tags: [], favorite: false, language: 'r', layouts: [], panels: ['A'], chart_types: ['bar'],
+    },
+    body: '# 柱状图模板\n\n<!-- user:start -->\n<!-- user:end -->\n',
+    backlinks: [], gallery: null, relations: [], implementation_status: [],
+    input_contract: {
+      bindings: true,
+      tables: [{
+        key: 'bar', interface: 'render-bar', description: '柱状表', required: true,
+        columns: [
+          { name: 'group', type: 'str', description: '分组', required: true },
+          { name: 'cell', type: 'str', description: '细胞ID', required: false },
+        ],
+      }],
+    },
+  },
+];
+const REAL_API_PAGES = REAL_PAGES;
+const REAL_DETAILS = REAL_PAGES;
 
 async function main() {
 const graph = { nodes: [], links: [] };

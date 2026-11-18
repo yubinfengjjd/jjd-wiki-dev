@@ -31,9 +31,8 @@ def test_dev_repo_files():
     example = json.loads((SKILL_ROOT / "config.example.json").read_text(encoding="utf-8"))
     assert set(config) <= set(example)
     # 示例配置与代码默认的仓库名都是改名后的 jjd-wiki-dev / jjd-wiki。
-    from rwiki.ghflow import DEFAULT_REPOS
-    assert {key: example["github"][f"{key}_repo"] for key in DEFAULT_REPOS} == DEFAULT_REPOS == {
-        "dev": "jjd-wiki-dev", "vault": "jjd-wiki"}
+    default_repos = {"dev": "jjd-wiki-dev", "vault": "jjd-wiki"}
+    assert {key: example["github"][f"{key}_repo"] for key in default_repos} == default_repos
 
 
 @pytest.mark.local

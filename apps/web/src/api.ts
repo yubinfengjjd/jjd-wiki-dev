@@ -248,6 +248,7 @@ export interface MethodMeta extends ItemBase {
   /** Interface slugs the analysis reads and the tables it is finally shaped into. */
   inputs: string[];
   outputs: string[];
+  next_steps?: NextStepBranch[];
   source:
     | { kind: 'post'; gallery_entry: string }
     | { kind: 'project'; path: string }
@@ -255,6 +256,166 @@ export interface MethodMeta extends ItemBase {
     | { kind: 'written' };
   license: string;
   cite: string[];
+}
+
+export interface NextStepBranch {
+  direction: string;
+  when: string;
+  analysis_templates: string[];
+  intermediate_interface: string;
+  viz_templates: string[];
+}
+
+export interface NextStepsResponse {
+  node_id: string;
+  title?: string;
+  path?: string;
+  next_steps: NextStepBranch[];
+  structural_matches?: {
+    path: string;
+    id: string;
+    title: string;
+    type: string;
+    outputs?: string[];
+    inputs?: string[];
+  }[];
+}
+
+export interface PlaybookStep {
+  id: string;
+  title: string;
+  method_id?: string;
+  description?: string;
+  templates?: string[];
+  interface?: string;
+  next?: string[];
+}
+
+export interface PlaybookItem {
+  id: string;
+  title: string;
+  path: string;
+  summary?: string;
+  tags?: string[];
+  steps: PlaybookStep[];
+  picks?: (ScenarioPick | string)[];
+}
+
+export interface PlaybookGraphNode {
+  id: string;
+  label: string;
+  kind: string;
+  path?: string;
+}
+
+export interface PlaybookGraphEdge {
+  source: string;
+  target: string;
+  label?: string;
+}
+
+export interface PlaybooksResponse {
+  playbooks: PlaybookItem[];
+  scenarios?: PlaybookItem[];
+  graph?: { nodes: PlaybookGraphNode[]; edges: PlaybookGraphEdge[] };
+}
+
+export interface StudioSniffColumn {
+  name: string;
+  type: string;
+  samples: string[];
+}
+
+export interface StudioSniffResponse {
+  path?: string;
+  columns: StudioSniffColumn[];
+  row_count_estimate: number;
+  preview_rows: Record<string, string>[];
+  note?: string;
+}
+
+export interface StudioParamSchema {
+  name: string;
+  label?: string;
+  type: 'select' | 'palette' | 'number' | 'range' | 'boolean' | 'string' | 'text' | string;
+  default?: string | number | boolean;
+  choices?: string[];
+  min?: number;
+  max?: number;
+  step?: number;
+  description?: string;
+}
+
+export interface StudioRenderRequest {
+  id: string;
+  project_dir: string;
+  data_file: string;
+  bindings: Record<string, string>;
+  parameters: Record<string, string | number | boolean>;
+}
+
+export interface StudioSpecTable {
+  interface?: string;
+  description?: string;
+  required?: boolean;
+  columns?: InputContractColumn[];
+}
+
+export interface StudioRenderResponse {
+  id?: string;
+  code: string;
+  language: string;
+  bindings_json: Record<string, unknown>;
+  spec: {
+    id?: string;
+    title?: string;
+    language?: string;
+    entry?: string;
+    tables?: Record<string, StudioSpecTable>;
+    parameters?: StudioParamSchema[] | Record<string, Omit<StudioParamSchema, 'name'>>;
+    [key: string]: unknown;
+  };
+  parameter_header?: string;
+}
+
+export interface StudioDispatchResponse {
+  ok: boolean;
+  output_dir: string;
+  files: string[];
+  message?: string;
+}
+
+export interface StudioRunResponse {
+  ok: boolean;
+  exit_code: number;
+  stdout: string;
+  stderr: string;
+  output_files: string[];
+  preview_url?: string | null;
+}
+
+export interface ProjectStepItem {
+  title: string;
+  templates?: string;
+  observation?: string;
+  next_branch?: string;
+  raw?: string;
+}
+
+export interface ProjectRecord {
+  id: string;
+  title: string;
+  path: string;
+  meta?: Record<string, unknown>;
+  steps?: ProjectStepItem[];
+  body: string;
+}
+
+export interface ProjectStepRequest {
+  title: string;
+  templates: string;
+  observation: string;
+  next_branch: string;
 }
 
 export interface InterfaceColumn {
@@ -522,6 +683,30 @@ export const api = {
     pageCache.clear();
     return result;
   },
+  playbooks: () => request<PlaybooksResponse>('/api/playbooks'),
+  nextSteps: (nodeId: string, q = '') =>
+    request<NextStepsResponse>(`/api/next/${encodeURIComponent(nodeId)}${q ? `?q=${encodeURIComponent(q)}` : ''}`),
+  studioSniff: (path: string) =>
+    request<StudioSniffResponse>('/api/studio/sniff', {
+      method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ path }),
+    }),
+  studioRenderCode: (payload: StudioRenderRequest, signal?: AbortSignal) =>
+    request<StudioRenderResponse>('/api/studio/render-code', {
+      method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(payload), signal,
+    }),
+  studioDispatch: (payload: StudioRenderRequest & { code?: string }) =>
+    request<StudioDispatchResponse>('/api/studio/dispatch', {
+      method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(payload),
+    }),
+  studioRun: (payload: StudioRenderRequest & { code?: string }) =>
+    request<StudioRunResponse>('/api/studio/run', {
+      method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(payload),
+    }),
+  projects: () => request<ProjectRecord[] | { projects: ProjectRecord[] }>('/api/projects'),
+  addProjectStep: (projectId: string, step: ProjectStepRequest) =>
+    request<ProjectRecord>(`/api/projects/${encodeURIComponent(projectId)}/step`, {
+      method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(step),
+    }),
 };
 
 const encodePath = (path: string) => path.split('/').map(encodeURIComponent).join('/');
@@ -532,6 +717,7 @@ export const codeDownload = (kind: Kind, id: string, file: Pick<CodeFile, 'varia
 export const wikiFile = (path: string) => `/files/wiki/${encodePath(path)}`;
 export const galleryFile = (entry: string, file: string) => `/files/gallery/${encodePath(`${entry}/${file}`)}`;
 export const pageHref = (path: string) => `#/page/${encodePath(path)}`;
+export const studioHref = (id: string) => `#/studio?id=${encodeURIComponent(id)}`;
 
 /** The picture that stands for an item: the gallery thumbnail for a layout, the replay preview for a panel template. */
 export function imageOf(meta: PageMeta): string | null {

@@ -5,7 +5,6 @@ import pytest
 from conftest import commit_file, git_run, install_test_hook, write_config
 from rwiki.config import load_config
 from rwiki.errors import WikiError
-from rwiki.ghflow import write_meta
 from rwiki.pages import write_page
 from rwiki.push_guard import load_rules, parse_allow, pre_push, scan, sync_ignore
 
@@ -70,7 +69,6 @@ def test_local_gate_no_longer_blocks_main_or_long_branches(git_pair, tmp_path):
     work = git_pair.work
     config_path = write_config(tmp_path / "c.json", tmp_path / "no-wiki")
     rules = load_rules(load_config(config_path), work)
-    write_meta(work, {"protection": "local"})
     base = git_run(work, "rev-parse", "origin/main").strip()
     newer = commit_file(work, "notes.md", "x\n")
     assert pre_push(work, "origin", f"refs/heads/main {newer} refs/heads/main {base}\n", rules) == 0

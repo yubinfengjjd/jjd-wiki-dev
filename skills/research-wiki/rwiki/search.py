@@ -8,6 +8,7 @@ import hashlib
 import json
 import math
 import re
+import sqlite3
 import tempfile
 import os
 import subprocess
@@ -171,6 +172,63 @@ def _cache_path(config: Config, scope: str) -> Path:
     if base.is_relative_to(config.wiki_root.resolve()):
         raise WikiError("搜索缓存 work_root 必须位于知识库之外")
     return base / "search" / f"{scope}.json"
+
+
+def _fts5_path(config: Config, scope: str) -> Path:
+    return _cache_path(config, scope).with_suffix(".sqlite3")
+
+
+def _sync_fts5(db_path: Path, documents: list[dict]) -> None:
+    """Persist a disposable SQLite FTS5 index (BM25) over tokenized sections."""
+    db_path.parent.mkdir(parents=True, exist_ok=True)
+    with sqlite3.connect(db_path) as conn:
+        conn.execute("DROP TABLE IF EXISTS sections_fts")
+        conn.execute(
+            "CREATE VIRTUAL TABLE sections_fts USING fts5("
+            "doc_id UNINDEXED, section_title UNINDEXED, token_stream, tokenize='unicode61')"
+        )
+        rows = []
+        for doc in documents:
+            doc_id = str(doc["record"]["id"])
+            for sec in doc.get("sections", []):
+                # Expand weighted token counts into FTS5 stream (capped for compact size).
+                words = []
+                for tok, freq in sec.get("tf", {}).items():
+                    safe_tok = tok.replace("@", "alias_")
+                    words.extend([safe_tok] * min(int(freq), 8))
+                rows.append((doc_id, sec.get("title", ""), " ".join(words)))
+        conn.executemany(
+            "INSERT INTO sections_fts (doc_id, section_title, token_stream) VALUES (?, ?, ?)",
+            rows,
+        )
+        conn.commit()
+
+
+def fts5_bm25_candidates(config: Config, query: str, scope: str = "knowledge", limit: int = 200) -> dict[str, float]:
+    """Query the SQLite FTS5 virtual table using built-in bm25() ranking."""
+    db_path = _fts5_path(config, scope)
+    if not db_path.is_file():
+        return {}
+    tokens = [tok.replace("@", "alias_") for tok in dict.fromkeys(tokenize(query, QUERY_ALIASES, STOPWORDS))]
+    safe_terms = [f'"{t}"' for t in tokens if re.fullmatch(r"[a-z0-9_\u3400-\u9fff]+", t)]
+    if not safe_terms:
+        return {}
+    match_expr = " OR ".join(safe_terms[:24])
+    scores: dict[str, float] = {}
+    with sqlite3.connect(db_path) as conn:
+        rows = conn.execute(
+            "SELECT doc_id, -bm25(sections_fts) AS score "
+            "FROM sections_fts WHERE sections_fts MATCH ? "
+            "ORDER BY bm25(sections_fts) LIMIT ?",
+            (match_expr, max(1000, int(limit) * 5)),
+        ).fetchall()
+        for doc_id, score in rows:
+            val = float(score)
+            if doc_id not in scores or val > scores[doc_id]:
+                scores[doc_id] = val
+                if len(scores) >= max(1, int(limit)):
+                    break
+    return scores
 
 
 def _load_cache(path: Path, config: Config) -> dict:
@@ -389,6 +447,9 @@ def _index(config: Config, scope: str) -> dict:
         if entries != cache:
             _write_cache(path,config,entries)
     documents=[v["document"] for _,v in sorted(entries.items())]
+    fts_path = _fts5_path(config, scope)
+    if entries != cache or not fts_path.is_file():
+        _sync_fts5(fts_path, documents)
     frequencies=Counter()
     lengths=[]
     for doc in documents:
@@ -400,7 +461,7 @@ def _index(config: Config, scope: str) -> dict:
             "ranking":RANKING,"documents":documents,
             "statistics":{"document_count":len(lengths),"average_length":sum(lengths)/max(1,len(lengths)),"df":dict(frequencies)},
             "coverage":{**coverage,"scope":scope,"source_search":"downloaded-code-only" if scope=="source" else "explicit-source-scope-required"},
-            "index":{"version":INDEX_VERSION,"scope":scope,"reused":reused,"updated":updated,"documents":len(documents),"cache":"derivative"}}
+            "index":{"version":INDEX_VERSION,"scope":scope,"engine":"sqlite3-fts5","reused":reused,"updated":updated,"documents":len(documents),"cache":"derivative"}}
 
 
 def _snippet(text: str, tokens: set[str]) -> str:
@@ -598,7 +659,13 @@ def search(config: Config, query: str, kind=None, level=None, runnable=False, li
     # read_session is request-local: no verification/status survives a new query.
     with read_session():
         index=_index(config,scope)
-        ranked=rank_export(index,query,kind=kind,limit=1000,scope=scope)
+        fts_hits = fts5_bm25_candidates(config, query, scope=scope)
+        if fts_hits:
+            filtered_docs = [doc for doc in index["documents"] if str(doc["record"]["id"]) in fts_hits]
+            candidate_index = {**index, "documents": filtered_docs}
+        else:
+            candidate_index = index
+        ranked=rank_export(candidate_index,query,kind=kind,limit=1000,scope=scope)
         results=[]
         if int(limit) <= 0:
             return {"results": [], "coverage": index["coverage"], "index": index["index"]}

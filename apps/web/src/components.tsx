@@ -1,5 +1,5 @@
 import { PointerEvent, ReactNode, useRef, useState } from 'react';
-import { imageOf, previewOf, workflowOf, displayStatus, effectiveStatus, ImplementationStatus, ItemMeta, LayoutMeta, MethodMeta, PageMeta, PageType, RecipeMeta, STATUS_LABEL, Status, TemplateMeta } from './api';
+import { imageOf, previewOf, workflowOf, displayStatus, effectiveStatus, ImplementationStatus, ItemMeta, LayoutMeta, MethodMeta, PageMeta, PageType, RecipeMeta, STATUS_LABEL, Status, studioHref, TemplateMeta } from './api';
 import { pageLink } from './nav';
 import { figureLabel, MethodFigure, methodFigureStatusLabel, methodPlateFigures, SourceLink } from './figureModels';
 import { CodeButton } from './CodeViewer';
@@ -113,6 +113,7 @@ function Card({ path, meta, number, label, plate, back, note, sourceLinks, execu
         </div>
       </div>
       {sourceLinks && sourceLinks.length > 1 && <nav className="card-sources small" aria-label="此图样的来源">{sourceLinks.map((s, i) => <a key={s.path} {...pageLink(s.path)} title={s.title}>来源 {i + 1}</a>)}</nav>}
+      {meta.type !== 'layout' && <a className="button primary small card-studio" href={studioHref(meta.id)} onClick={(e) => e.stopPropagation()}>进入操控台</a>}
       <CodeButton meta={meta} className="card-code" />
       <button className="turn" onClick={() => setFlipped(!flipped)} aria-pressed={flipped} aria-label={flipped ? '翻回正面' : '翻到背面'}>
         <svg viewBox="0 0 20 20" aria-hidden="true">

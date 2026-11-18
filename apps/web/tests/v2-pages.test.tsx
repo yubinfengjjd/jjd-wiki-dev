@@ -9,9 +9,11 @@ import { escapeTableWikilinks, renderBody } from '../src/markdown';
 import { isNonCommercial, licenseLabel, recipeOrigin, resolvePick } from '../src/recipes';
 import { Gallery, PlottingCodeShelf } from '../src/views/Gallery';
 import { PageView } from '../src/views/PageView';
-import { QueueView } from '../src/views/QueueView';
+import { PlaybooksView } from '../src/views/PlaybooksView';
+import { ProjectsView } from '../src/views/ProjectsView';
 import { RecipesView } from '../src/views/RecipesView';
 import { ScenariosView } from '../src/views/ScenariosView';
+import { StudioView } from '../src/views/StudioView';
 
 const graph = { nodes: [], links: [] };
 const TAXONOMY = { total: 0, domains: [], purposes: [], unclassified: [] };
@@ -229,17 +231,56 @@ async function main() {
     assert.ok(view.includes('来源：已收录配方'));
   });
 
-  await check('queue lists recipes by workflow and keeps archived recipes restorable only', () => {
-    const html = renderToStaticMarkup(<QueueView data={dataOf(pages)} />);
-    // Section headings carry their count; card badges with the same words do not.
-    const confirmAt = html.indexOf('待你确认<span class="count">');
-    const agentAt = html.indexOf('等 agent 处理<span class="count">');
-    const archivedAt = html.indexOf('已归档<span class="count">');
-    assert.ok(confirmAt >= 0 && agentAt > confirmAt && archivedAt > agentAt);
-    assert.ok(html.slice(confirmAt, agentAt).includes('href="#/page/recipes/r-confirm.md"'));
-    assert.ok(html.slice(agentAt, archivedAt).includes('href="#/page/recipes/r-work.md"'));
-    assert.ok(html.slice(archivedAt).includes('href="#/page/recipes/r-old.md"'));
-    assert.ok(!html.slice(archivedAt).includes('>删除<'));
+  await check('playbooks, studio, projects and studio-entry buttons render cleanly', () => {
+    const methodWithNext = {
+      path: 'methods/cell-type-annotation.md',
+      meta: {
+        type: 'method', id: 'cell-type-annotation', title: '细胞类型注释', method_kind: 'analysis',
+        status: 'ready', tags: ['单细胞分析'], favorite: false, inputs: [], outputs: ['scrna-annotated-cells'],
+        source: { kind: 'written' }, license: 'none', cite: [],
+        next_steps: [{
+          direction: '细胞组成比例与组织偏好',
+          when: '完成主群注释后检查组间比例变化',
+          analysis_templates: ['cell-proportion-stats'],
+          intermediate_interface: 'cell-proportion-stats',
+          viz_templates: ['t-v2'],
+        }],
+      },
+      implementation_status: [],
+    };
+    const pbHtml = renderToStaticMarkup(<PlaybooksView data={dataOf([...pages, methodWithNext])} />);
+    assert.ok(pbHtml.includes('单细胞转录组步进决策树'));
+    assert.ok(pbHtml.includes('Bulk + 101种机器学习标志物决策树'));
+    assert.ok(pbHtml.includes('特定修饰/基因集主题挖掘决策树'));
+    assert.ok(pbHtml.includes('单细胞 × Bulk 多组学联合决策树'));
+    assert.ok(pbHtml.includes('class="dag-canvas"'));
+
+    const studioHtml = renderToStaticMarkup(<StudioView data={dataOf([...pages, methodWithNext])} query="id=t-v2" />);
+    assert.ok(studioHtml.includes('代码模版操控台'));
+    assert.ok(studioHtml.includes('嗅探表头'));
+    assert.ok(studioHtml.includes('可视化下拉列映射器'));
+    assert.ok(studioHtml.includes('NPG') && studioHtml.includes('Lancet') && studioHtml.includes('NEJM'));
+    assert.ok(studioHtml.includes('实时脚本编辑器'));
+    assert.ok(studioHtml.includes('一键派发到课题目录'));
+    assert.ok(studioHtml.includes('本机试跑并预览'));
+
+    const projPage = {
+      path: 'projects/2026-asthma-lactylation-scrna.md',
+      meta: { type: 'project', title: '2026 哮喘乳酸化单细胞课题' },
+    };
+    const projHtml = renderToStaticMarkup(<ProjectsView data={dataOf([...pages, projPage])} />);
+    assert.ok(projHtml.includes('课题步进看板'));
+    assert.ok(projHtml.includes('2026 哮喘乳酸化单细胞课题'));
+    assert.ok(projHtml.includes('追加新步进记录'));
+
+    const recipeListHtml = renderToStaticMarkup(<RecipesView data={dataOf(pages)} />);
+    assert.ok(recipeListHtml.includes('#/studio?id=r-confirm'), 'recipe card links to Studio');
+    assert.ok(recipeListHtml.includes('进入操控台'));
+
+    const page = detail(v2template, '# 派生火山图模板\n\n<!-- user:start -->\n<!-- user:end -->\n');
+    pageCache.set(page.path, page);
+    const detailHtml = renderToStaticMarkup(<PageView path={page.path} data={dataOf(pages)} />);
+    assert.ok(detailHtml.includes('#/studio?id=t-v2'), 'template detail page links to Studio');
   });
 
   if (failed) process.exitCode = 1;

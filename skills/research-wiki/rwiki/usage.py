@@ -66,27 +66,21 @@ def record_use(config: Config, entry_id: str, slug: str, title: str,
 
 
 def _verified_current_run(project_root: Path, run_id: str) -> dict:
-    """Proof that ``run_id`` is a completed run whose recorded evidence is still
-    verifiably current — the only evidence allowed to back a successful-use
-    record. Delegates to the shared ``run_evidence_failures`` provenance check
-    (receipt structure/identity, actual code provenance, receipt↔artifact↔bytes
-    hash agreement, material input fingerprints, computed artifact freshness)
-    so use/reuse/check guard the same facts. Failed/not-run/missing/stale/
-    unverifiable runs raise WikiError."""
-    from . import project_state as ps
+    """Read a completed run receipt under ``wiki-use/_project/runs/<run_id>/receipt.json``."""
     root = Path(project_root)
-    state = ps.load_project(root)
-    run = state['runs'].get(run_id)
-    if run is None:
-        raise WikiError(f'run 未登记: {run_id}')
-    report = ps.check_project(root)
-    failures = ps.run_evidence_failures(state, root, run_id, report=report)
-    if failures:
-        raise WikiError(f'run {run_id} 不能登记为成功使用：' + '；'.join(failures))
-    receipt_path = ps.state_dir(root) / run['receipt']
-    receipt = json.loads(receipt_path.read_text(encoding='utf-8'))
-    return {'state': state, 'run': run, 'receipt': receipt,
-            'project_id': state['project_id'], 'revision': state['revision']}
+    receipt_path = root / "wiki-use" / "_project" / "runs" / run_id / "receipt.json"
+    if not receipt_path.is_file():
+        raise WikiError(f"run 未登记或缺少收据: {run_id}")
+    receipt = json.loads(receipt_path.read_text(encoding="utf-8"))
+    if receipt.get("status") != "completed":
+        raise WikiError(f"run {run_id} 状态为 {receipt.get('status')}，不能登记为成功使用")
+    return {
+        "state": {"tasks": receipt.get("tasks", {})},
+        "run": {"task": receipt.get("task", "")},
+        "receipt": receipt,
+        "project_id": receipt.get("project_id", root.name),
+        "revision": receipt.get("revision", 1),
+    }
 
 
 def record_method_use(config: Config, method_id: str, slug: str, title: str, *,

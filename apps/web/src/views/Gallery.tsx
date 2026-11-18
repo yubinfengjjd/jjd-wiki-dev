@@ -1,9 +1,7 @@
-import { useEffect, useMemo, useRef, useState } from 'react';
-import { GraphNode, LayoutMeta, stageStatus, TemplateMeta, TYPE_LABEL, workflowOf } from '../api';
+import { useMemo, useState } from 'react';
+import { LayoutMeta, stageStatus, TemplateMeta, workflowOf } from '../api';
 import type { AppData } from '../App';
 import { PlateCard } from '../components';
-import { Lattice } from '../hero/Lattice';
-import { openPage } from '../nav';
 import { FigureShelf, galleryEntries, galleryInventory, templateSourceNote, matchesFigureQuery } from '../figureModels';
 import { matchesMethodQuery, plottingCodePages } from '../methods';
 import { MethodCodeCard } from './MethodCodeCard';
@@ -47,30 +45,19 @@ function matches(meta: FigureMeta, f: Filters, pages: AppData['pages']): boolean
 
 const uniq = (values: string[]) => [...new Set(values)].sort();
 
-function LatticeFigure({ data }: { data: AppData }) {
-  const host = useRef<HTMLDivElement>(null);
-  const [hover, setHover] = useState<GraphNode | null>(null);
-
-  useEffect(() => {
-    const lattice = new Lattice(host.current!, data.graph, (id) => openPage(id), setHover);
-    return () => lattice.dispose();
-  }, [data.graph]);
-
+function StudioLaunchBanner({ inventory }: { inventory: ReturnType<typeof galleryInventory> }) {
   return (
-    <figure className="lattice">
-      <div className="lattice-stage" ref={host} />
-      <figcaption>
-        {hover ? (
-          <>
-            <b>{TYPE_LABEL[hover.type]}</b> {hover.title}
-          </>
-        ) : (
-          <>
-            <b>知识晶格</b> 每个点是一页 wiki，弧线是页面之间的链接。拖动旋转，点一个点打开它。
-          </>
-        )}
-      </figcaption>
-    </figure>
+    <aside className="studio-banner sheet" aria-label="Bio-Template Studio 入口">
+      <span className="studio-eyebrow">BIO-TEMPLATE STUDIO</span>
+      <h2>从图库直达代码模版操控台</h2>
+      <p className="small muted">
+        已收录 {inventory.styles} 种单 panel 图样与 {inventory.templates} 个可调用模版。点击任意卡片右下角「进入操控台」，即可嗅探本地数据表头、绑定列名、调整顶刊配色与阈值并实时生成脚本。
+      </p>
+      <div className="studio-banner-actions">
+        <a className="button primary small" href="#/playbooks">步进决策导航</a>
+        <a className="button small" href="#/studio">打开操控台</a>
+      </div>
+    </aside>
   );
 }
 
@@ -111,7 +98,7 @@ export function Gallery({ data }: { data: AppData }) {
             ))}
           </dl>
         </div>
-        <LatticeFigure data={data} />
+        <StudioLaunchBanner inventory={inventory} />
       </header>
 
       <div className="tabs shelf" role="tablist" aria-label="图库分栏">

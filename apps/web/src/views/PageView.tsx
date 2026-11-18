@@ -1,5 +1,5 @@
 import { useCallback, useEffect, useState } from 'react';
-import { api, imageOf, isFigure, isItem, LayoutMeta, PageDetail, pageCache, PageSummary, PageType, safeUrl, wikiFile } from '../api';
+import { api, imageOf, isFigure, isItem, LayoutMeta, PageDetail, pageCache, PageSummary, PageType, safeUrl, studioHref, wikiFile } from '../api';
 import type { AppData } from '../App';
 import { FigureImage, TypeMark } from '../components';
 import { figureLabel, isWholeSource, methodFigures, templateSourceNote } from '../figureModels';
@@ -125,7 +125,15 @@ export function PageView({ path, data, query = '' }: { path: string; data: AppDa
             </>
             : pageTypeLabel(meta)}
         </p>
-        <div className="page-title-row"><h1>{meta.title}</h1>{item && <CodeButton meta={item} />}</div>
+        <div className="page-title-row">
+          <h1>{meta.title}</h1>
+          <div className="page-title-actions">
+            {item && item.type !== 'layout' && (
+              <a className="button primary small" href={studioHref(item.id)}>进入操控台</a>
+            )}
+            {item && <CodeButton meta={item} />}
+          </div>
+        </div>
         {error && <p className="notice error" role="alert">{error}</p>}
 
         {meta.type === 'layout' && <LayoutImages page={page} meta={meta} />}

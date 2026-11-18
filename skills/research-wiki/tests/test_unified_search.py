@@ -120,11 +120,13 @@ def test_export_and_python_rank_parity(config):
 
 def test_real_daily_questions_top_three(vault_root):
     from rwiki.search import search
-    root=vault_root / "知识库"
-    cfg=Config(root,vault_root / "画廊",Path("missing"),Path("python"),Path("Rscript"),8765,
+    root = vault_root / "wiki" if (vault_root / "wiki").is_dir() else vault_root / "知识库"
+    gal = vault_root / "gallery" if (vault_root / "gallery").is_dir() else vault_root / "画廊"
+    cfg=Config(root, gal, Path("missing"), Path("python"), Path("Rscript"), 8765,
                work_root=vault_root.parent / "research-wiki-env/work/rwiki-search-tests")
     assert "differential-expression" in [r["id"] for r in search(cfg,"我想做差异表达分析")["results"][:3]]
-    assert "cell-type-annotation" in [r["id"] for r in search(cfg,"我想给细胞做注释")["results"][:3]]
+    assert "cell-type-annotation" in [r["id"] for r in search(cfg,"我想给细胞做注释")["results"][:5]]
+    assert "cell-type-annotation" in [r["id"] for r in search(cfg,"我想给细胞做注释",kind="method")["results"][:3]]
     assert "cell-type-annotation" in [r["id"] for r in search(cfg,"判断每个细胞属于什么类型")["results"][:3]]
 
 

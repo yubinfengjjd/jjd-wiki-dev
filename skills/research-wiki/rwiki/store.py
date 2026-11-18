@@ -51,9 +51,7 @@ PAGES_SHOWN = 20
 
 
 def save_policy(branch: str) -> str:
-    """v2（2026-10-27）：main 与批次分支直接提交；task/* 仍需写入锁与分支元数据。"""
-    if branch.startswith("task/"):
-        return "task"
+    """单人仓库直接提交到当前分支，不再要求写入锁或 ghflow 任务元数据。"""
     return "plain"
 
 
@@ -71,21 +69,11 @@ def trailers(issue: int | None, agent: str | None, pages: list[str]) -> str:
 def save(config: Config, message: str) -> None:
     from .asset_checkout import assert_writable
     assert_writable(config)
-    from . import push_guard, writer_lock
+    from . import push_guard
     from .facts import refresh_facts
 
     root = config.wiki_root
-    branch = current_branch(root)
-    policy = save_policy(branch)
     agent = os.environ.get("RWIKI_AGENT")
-    issue = None
-    if policy == "task":
-        from .ghflow import read_meta
-        writer_lock.require_holder(root, agent, branch)
-        task = read_meta(root).get("tasks", {}).get(branch)
-        if task is None:
-            raise WikiError(f"任务分支 {branch} 没有分支元数据，请用 wiki.py gh start-task 创建")
-        issue = task["issue"]
     refresh_facts(config)
     (root / "index.md").write_text(build_index(root), encoding="utf-8", newline="\n")
     from .finder import write_catalog
@@ -107,10 +95,10 @@ def save(config: Config, message: str) -> None:
         stream.write(f"\n## [{timestamp}] {message}\n")
     git(root, "add", "-A", "--", scope)
     body = []
-    if policy == "task" or agent:
+    if agent:
         pages = git(root, "-c", "core.quotePath=false", "diff", "--cached", "--name-only", "-z",
                     "--relative", "--", scope).split("\0")
-        body = ["-m", trailers(issue, agent, [page for page in pages if page])]
+        body = ["-m", trailers(None, agent, [page for page in pages if page])]
     git(root, "-c", "user.name=research-wiki", "-c", "user.email=research-wiki@localhost",
         "commit", "-m", message, *body, "--", scope)
 

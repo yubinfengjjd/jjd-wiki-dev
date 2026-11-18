@@ -142,6 +142,25 @@ def method_facts(config: Config, meta: dict) -> str:
     ]
     if meta.get("method_kind") == "analysis":
         lines.insert(4, f"- 分析用途：{'、'.join(meta.get('purposes') or []) or '未分类'}")
+    next_steps = meta.get("next_steps") or []
+    if isinstance(next_steps, list) and next_steps:
+        lines.append("- 下一步分析导航（Step N → Step N+1）：")
+        for step in next_steps:
+            if not isinstance(step, dict):
+                continue
+            direction = step.get("direction") or "未命名方向"
+            when = step.get("when") or ""
+            iface = step.get("intermediate_interface") or ""
+            analyses = "、".join(str(x) for x in (step.get("analysis_templates") or [])) or "无"
+            viz = "、".join(str(x) for x in (step.get("viz_templates") or [])) or "无"
+            parts = []
+            if when:
+                parts.append(f"触发条件：{when}")
+            if iface:
+                parts.append(f"中间表：{iface}")
+            parts.append(f"分析模版：{analyses}")
+            parts.append(f"可视化模版：{viz}")
+            lines.append(f"  - **{direction}**（{'；'.join(parts)}）")
     return "\n".join(lines) + "\n" + relationship_facts(config, f"methods/{meta['id']}.md")
 
 

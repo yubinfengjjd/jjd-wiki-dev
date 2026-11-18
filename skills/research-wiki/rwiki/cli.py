@@ -13,7 +13,7 @@ from .lint import lint
 from .layouts import render_layout, verify_layout
 from .read_cache import read_session
 from .store import init, save
-from .suggest import suggest, suggest_methods, suggest_pipeline
+from .suggest import format_next_steps, suggest, suggest_methods, suggest_next_steps, suggest_pipeline
 from .templates import attach_template, mark_ready, pending, render, scaffold_template, verify_template
 from .usage import record_method_use, record_use
 
@@ -58,7 +58,7 @@ def parser() -> argparse.ArgumentParser:
     assets_sub.add_parser('fetch').add_argument('entry_id')
     commands.add_parser("lint").add_argument(
         "--ci", action="store_true", help="被 git 忽略而缺失的引用报告为 LOCAL-ONLY，不计为错误")
-    github = commands.add_parser("gh", help="GitHub 结构化工作流（git 与 gh CLI 的薄封装）")
+    github = commands.add_parser("gh", help="本地推送前防泄漏与受保护字节核查")
     gh_sub = github.add_subparsers(dest="gh_command", required=True)
     guard = gh_sub.add_parser("guard", help="推送前防泄漏检查（纯本地，不需要 gh）")
     guard.add_argument("--range", dest="rev_range", help="检查的提交范围，如 origin/main..HEAD")
@@ -67,43 +67,6 @@ def parser() -> argparse.ArgumentParser:
     guard.add_argument("--sync-ignore", action="store_true", help="重写知识库 .gitignore 的 GPL 托管块")
     gh_sub.add_parser("protect-baseline", help="生成或核验作者块字节基准（纯本地，不需要 gh）").add_argument(
         "--check", action="store_true", help="只核验，不写基准")
-    tier = gh_sub.add_parser("tier", help="按改动路径与 .github/risk-tiers.json 计算风险档（纯本地，不需要 gh）")
-    tier.add_argument("--range", dest="rev_range", required=True, help="比较范围，如 origin/main..HEAD")
-    tier.add_argument("--rules-ref", help="从哪个提交读规则（缺省为范围左端/merge-base，即 base 上的规则）")
-    gh_sub.add_parser("preflight", help="只读检查 gh、账号、远端仓库、分支保护与待推送范围；有阻断项时退出 1")
-    batch = gh_sub.add_parser("start-batch", help="建批次 Milestone（<kind>/<名称>）；不建长期分支，任务 PR 直接合入 main")
-    batch.add_argument("kind", help="project 或 ingest")
-    batch.add_argument("name", help="批次名（小写 slug）")
-    batch.add_argument("--title", required=True, help="中文标题，写入 Milestone 描述")
-    batch.add_argument("--repo", required=True, choices=("dev", "vault"))
-    task = gh_sub.add_parser("start-task", help="在批次的 Milestone 下建 Issue 并创建任务分支（需要 RWIKI_AGENT）")
-    task.add_argument("batch")
-    task.add_argument("stage", help="P0–P5 或 T<数字>")
-    task.add_argument("topic", help="主题（小写 slug）")
-    task.add_argument("--title", required=True, help="Issue 标题")
-    task.add_argument("--worktree", action="store_true", help="在 worktree_root 下建独立 worktree（并行或 Obsidian 使用中时）")
-    task.add_argument("--repo", choices=("dev", "vault"), help="批次所在仓库；两个仓库都有同名批次时必须给")
-    gh_sub.add_parser("finish-task", help="推送当前任务分支并开 PR 到 main（旧批次为所属长期分支）").add_argument(
-        "--local-report", type=Path, help="仅本地运行的检查摘要，填入 PR 的本地专属验证一栏")
-    reviewing = gh_sub.add_parser("review", help="以 PR review（COMMENT）回帖 Codex 评审结论")
-    reviewing.add_argument("pr", type=int)
-    reviewing.add_argument("--verdict", required=True, choices=("pass", "changes"))
-    reviewing.add_argument("--findings", type=Path, required=True, help="问题列表文件，每行一条")
-    merging = gh_sub.add_parser("merge", help="合并门禁通过后合并 PR 并收尾（关闭 Issue、释放锁、清理分支）")
-    merging.add_argument("pr", type=int)
-    merging.add_argument("--plan", help="门禁不通过时回帖的修复计划")
-    closing = gh_sub.add_parser("close-batch", help="Milestone 内 Issue 全部关闭后关闭 Milestone（旧批次开长期分支到 main 的 PR）")
-    closing.add_argument("batch")
-    closing.add_argument("--repo", choices=("dev", "vault"), help="批次所在仓库；两个仓库都有同名批次时必须给")
-    migrating = gh_sub.add_parser("migrate-legacy", help="按 legacy-map.json 把旧任务书与遗留缺口迁到 Issue")
-    migrating.add_argument("--map", dest="mapping", type=Path, required=True)
-    migrating.add_argument("--dry-run", action="store_true", help="只输出计划，不写 GitHub 与文件")
-    gh_sub.add_parser("bootstrap", help="首推：无 --confirm 时只读输出授权摘要；--confirm 时构造 main、建私有仓库并推送"
-                      ).add_argument("--confirm", action="store_true",
-                                     help="用户已明确授权：改名 master、构造并切到 main、建远端仓库、推送与配置")
-    gh_sub.add_parser("install-hook", help="为仓库写 pre-push hook（调用 gh guard --pre-push；不需要 gh，可重复运行）"
-                      ).add_argument("--repo", choices=("dev", "vault"),
-                                     help="按 config.json 的 github.dev_root / vault_root 选仓库；缺省为当前目录所在仓库")
     # ---- v2（2026-10-27）：检索与调用、来源、配方
     finding = commands.add_parser("find", help="全文检索知识页面与 L0 目录；源码搜索需 --scope source")
     finding.add_argument("query", nargs="+")
@@ -214,6 +177,10 @@ def parser() -> argparse.ArgumentParser:
     pipeline = commands.add_parser("suggest-pipeline")
     pipeline.add_argument("--figure")
     pipeline.add_argument("--q", default="")
+    next_cmd = commands.add_parser("next", help="查看当前方法/模板/接口的下一步生信分析导航")
+    next_cmd.add_argument("node_id")
+    next_cmd.add_argument("--q", default="")
+    next_cmd.add_argument("--json", action="store_true")
     sheet = commands.add_parser("contact-sheet")
     sheet.add_argument("entry_ids", nargs="+")
     sheet.add_argument("--out", type=Path, required=True)
@@ -236,348 +203,70 @@ def parser() -> argparse.ArgumentParser:
     m_usage.add_argument("--note")
     project = commands.add_parser(
         "project",
-        help="课题本地状态：init/status/check/impact/record-run/add-*/evaluate；只写课题目录，不写 Wiki")
+        help="课题步进卡管理：list / show / add-step（读写 wiki/projects/<id>.md）",
+    )
     project_sub = project.add_subparsers(dest="project_command", required=True)
+    p_list = project_sub.add_parser("list", help="列出所有课题步进卡")
+    p_list.add_argument("--json", action="store_true")
 
-    def with_root(sub):
-        sub.add_argument("--root", type=Path, required=True, help="课题目录")
-        return sub
+    p_show = project_sub.add_parser("show", help="查看单个课题步进卡")
+    p_show.add_argument("project_id")
+    p_show.add_argument("--json", action="store_true")
 
-    def kv(sub, name, help_text):
-        sub.add_argument(name, action="append", default=[], metavar="KEY=VALUE",
-                         help=help_text)
-
-    p_init = with_root(project_sub.add_parser("init", help="初始化课题状态（写）"))
-    p_init.add_argument("--id", help="稳定课题标识；默认取目录名安全化")
-    p_init.add_argument("--title", help="课题标题")
-    p_init.add_argument("--data-root", action="append", default=[],
-                        help="登记的只读外部数据根，可重复")
-
-    with_root(project_sub.add_parser("status", help="课题状态摘要（只读）"))
-    with_root(project_sub.add_parser("check", help="结构/路径/证据核查（只读；未知前提保持 unknown）"))
-
-    p_impact = with_root(project_sub.add_parser("impact", help="依赖影响分析（默认只读）"))
-    p_impact.add_argument("--changed", action="append", required=True,
-                          help="变化的引用：kind:id、file:path 或 external:path，可重复")
-    p_impact.add_argument("--apply", action="store_true",
-                          help="把影响结果写回产物新鲜度（写）")
-    p_impact.add_argument("--reason", default="", help="--apply 时记录的原因")
-
-    p_run = with_root(project_sub.add_parser("record-run", help="登记已实际执行的运行（写；不执行命令）"))
-    p_run.add_argument("--run", required=True, help="run id")
-    p_run.add_argument("--task", required=True, help="task id（须先 add-task）")
-    p_run.add_argument("--status", required=True,
-                       choices=("running", "completed", "failed", "blocked", "skipped"))
-    p_run.add_argument("--command", dest="run_command", default="",
-                       help="实际执行过的命令文本（completed 必填）")
-    p_run.add_argument("--in", dest="inputs", action="append", default=None,
-                       help="输入引用，可重复；缺省沿用任务已声明输入，且不得漏掉声明依赖")
-    p_run.add_argument("--code", dest="code", action="append", default=[],
-                       help="实际使用的代码/资源引用（file:/external:/object: 等），可重复；"
-                            "记入指纹与去重身份，无任何代码来源登记时相同命令不会被静默复用")
-    p_run.add_argument("--out", dest="outputs", action="append", default=[],
-                       help="输出文件（课题相对路径），可重复；completed 至少一个且须存在")
-    p_run.add_argument("--check", dest="checks", action="append", default=[],
-                       help="实际检查项，可重复；completed 至少一个")
-    kv(p_run, "--param", "运行参数 k=v，可重复")
-    kv(p_run, "--env", "环境记录 k=v，可重复")
-    p_run.add_argument("--note", help="备注")
-
-    p_root = with_root(project_sub.add_parser("add-data-root", help="登记只读外部数据根（写）"))
-    p_root.add_argument("--path", required=True)
-    p_root.add_argument("--id", help="数据根 id")
-
-    p_ent = with_root(project_sub.add_parser("add-entity", help="登记实体（写）"))
-    p_ent.add_argument("--id", required=True)
-    p_ent.add_argument("--kind", required=True, help="实体类型，如 sample/subject/gene")
-    p_ent.add_argument("--count", type=int, help="数量（已知时）")
-    p_ent.add_argument("--identity", help="身份/版本说明")
-    kv(p_ent, "--prop", "属性 k=v，可重复")
-    p_ent.add_argument("--basis", default="author_stated",
-                       choices=("verified", "author_stated", "unknown"))
-    p_ent.add_argument("--note")
-
-    p_obj = with_root(project_sub.add_parser("add-object", help="登记原生对象/文件（写）"))
-    p_obj.add_argument("--id", required=True)
-    p_obj.add_argument("--kind", required=True, help="对象类型，自由命名")
-    location = p_obj.add_mutually_exclusive_group(required=True)
-    location.add_argument("--path", help="课题相对路径")
-    location.add_argument("--external", help="已登记数据根内的绝对路径")
-    p_obj.add_argument("--native-type", help="原生类型说明（如 SeuratObject/AnnData/网络对象）")
-    p_obj.add_argument("--inspected", action="store_true",
-                       help="声明对象已被适配器实际解析（需 --adapter）")
-    p_obj.add_argument("--adapter", help="实际解析该对象的适配器名称")
-    p_obj.add_argument("--entity", dest="entities", action="append", default=[],
-                       help="关联实体引用，可重复")
-    kv(p_obj, "--prop", "属性 k=v，可重复")
-    p_obj.add_argument("--basis", default="author_stated",
-                       choices=("verified", "author_stated", "unknown"),
-                       help="verified 需要真实文件以记录指纹")
-    p_obj.add_argument("--note")
-
-    p_obs = with_root(project_sub.add_parser("add-observation", help="登记观察/前提声明（写）"))
-    p_obs.add_argument("--id", required=True)
-    p_obs.add_argument("--claim", required=True)
-    p_obs.add_argument("--about", help="相关记录引用")
-    p_obs.add_argument("--value", default="unknown", choices=("true", "false", "unknown"))
-    p_obs.add_argument("--basis", default="unknown",
-                       choices=("verified", "author_stated", "unknown"))
-    p_obs.add_argument("--evidence", help="证据文件（课题相对路径）")
-    p_obs.add_argument("--scope", help="证据实际支持的范围")
-    p_obs.add_argument("--stage", help="声明归属的工作阶段（与 profile 阶段词对齐；非完成状态）")
-    p_obs.add_argument("--note")
-
-    p_route = with_root(project_sub.add_parser("add-route", help="登记研究主线（写）"))
-    p_route.add_argument("--id", required=True)
-    p_route.add_argument("--question", required=True)
-    p_route.add_argument("--hypothesis")
-    p_route.add_argument("--evidence", action="append", default=[], help="证据引用，可重复")
-    p_route.add_argument("--gap", action="append", default=[], help="已知缺口，可重复")
-    p_route.add_argument("--decision", default="pending",
-                       choices=("pending", "chosen", "rejected"))
-    p_route.add_argument("--basis", default="unknown",
-                       choices=("verified", "author_stated", "unknown"))
-    p_route.add_argument("--note")
-
-    p_task = with_root(project_sub.add_parser("add-task", help="登记候选/执行任务（写）"))
-    p_task.add_argument("--id", required=True)
-    p_task.add_argument("--family", dest="family_id", help="规范方法页 id")
-    p_task.add_argument("--implementation", dest="implementation_id", help="实现分支 id")
-    p_task.add_argument("--purpose")
-    p_task.add_argument("--role", default="exploratory", choices=("main", "exploratory", "support"))
-    p_task.add_argument("--status", default="planned",
-                        choices=("planned", "running", "completed", "failed", "blocked", "skipped"))
-    p_task.add_argument("--in", dest="inputs", action="append", default=[],
-                        help="输入引用，可重复")
-    kv(p_task, "--param", "任务参数 k=v，可重复")
-    p_task.add_argument("--authorization", help="authorization 引用")
-    p_task.add_argument("--stage", help="声明归属的工作阶段（与 profile 阶段词对齐；非完成状态）")
-    p_task.add_argument("--note")
-
-    p_dec = with_root(project_sub.add_parser("add-decision", help="登记作者决定（写）"))
-    p_dec.add_argument("--id", required=True)
-    p_dec.add_argument("--kind", required=True,
-                       choices=("route", "scope", "authorization", "budget", "other"))
-    p_dec.add_argument("--text", required=True)
-    p_dec.add_argument("--route", help="相关 route 引用")
-    p_dec.add_argument("--supersedes", help="被取代的 decision 引用")
-    p_dec.add_argument("--scope")
-    p_dec.add_argument("--note")
-
-    p_auth = with_root(project_sub.add_parser("add-authorization", help="登记执行约定/预算（写）"))
-    p_auth.add_argument("--id", required=True)
-    p_auth.add_argument("--scope", required=True)
-    kv(p_auth, "--budget", "预算项 k=v，可重复")
-    p_auth.add_argument("--decided-by", default="author")
-    p_auth.add_argument("--note")
-
-    p_prof = with_root(project_sub.add_parser("register-profile", help="登记所用领域配置版本（写）"))
-    p_prof.add_argument("--id", required=True)
-    p_prof.add_argument("--version", type=int, required=True)
-
-    p_eval = with_root(project_sub.add_parser(
-        "evaluate", help="领域前提评估（只读；未注册 profile 也可点名评估）"))
-    p_eval.add_argument("--profile", help="领域 profile id；缺省时评估已登记的全部")
-    p_eval.add_argument("--subject",
-                        help="评估主体引用（object:/entity:/task:id）；限定前提在一致上下文中成立")
-
-    with_root(project_sub.add_parser(
-        "relocate", help="把复制/移动后的课题状态显式重定位到当前目录（写）"))
-
-    p_rec = with_root(project_sub.add_parser(
-        "recover", help="中断恢复检查（默认只读报告；修复动作需显式开关，"
-                        "证据隔离至 _quarantine/ 不删除）"))
-    p_rec.add_argument("--release-lock", action="store_true",
-                       help="仅释放经只读探测证实无主且复核同一的 project.lock；"
-                            "活动/未知/被替换锁一律拒绝")
-    p_rec.add_argument("--clean-staging", action="store_true",
-                       help="把未提交的 .tmp 暂存文件移入 _quarantine/staging/（不删除）")
-    p_rec.add_argument("--clean-orphans", action="store_true",
-                       help="把未被当前已提交状态引用的孤儿收据目录移入 "
-                            "_quarantine/orphans/（核查范围=当前状态，不删除）")
-
-    p_les = with_root(project_sub.add_parser(
-        "add-lesson", help="登记有据可查的经验草稿（课题内提案，不进正式推荐）"))
-    p_les.add_argument("--id", required=True)
-    p_les.add_argument("--claim", required=True, help="经验命题文本")
-    p_les.add_argument("--evidence", action="append", required=True,
-                       help="证据引用 kind:id（run/observation/decision/artifact 等），可重复，至少一条")
-    p_les.add_argument("--applies-to", required=True,
-                       help="适用范围/失效边界（去重键的一部分；无界命题不收）")
-    p_les.add_argument("--link", action="append", default=[],
-                       help="关联已有知识：状态引用 kind:id 或方法页 id，可重复")
-    p_les.add_argument("--basis", default="author_stated",
-                       choices=("verified", "author_stated", "unknown"))
-    p_les.add_argument("--note")
-
-    p_rev = with_root(project_sub.add_parser(
-        "lesson-review", help="对经验草稿作课题内评审处置（非正式 Wiki 回写）"))
-    p_rev.add_argument("--id", required=True)
-    p_rev.add_argument("--state", required=True,
-                       choices=("pending", "deferred", "rejected", "accepted"))
-    p_rev.add_argument("--by", required=True,
-                       help="评审署名；测试评审须标明隔离夹具身份")
-    p_rev.add_argument("--decision",
-                       help="decision:<id>；--state accepted 必填——只有已登记的作者决策能把草稿推向 accepted")
-    p_rev.add_argument("--note")
+    p_step = project_sub.add_parser("add-step", help="追加一条 3 行课题步进记录")
+    p_step.add_argument("project_id")
+    p_step.add_argument("--title", required=True, help="步骤标题")
+    p_step.add_argument("--templates", default="", help="所用分析/可视化模版")
+    p_step.add_argument("--observation", default="", help="观察结果与排坑")
+    p_step.add_argument("--next", dest="next_branch", default="", help="触发下一步分支")
+    p_step.add_argument("--project-title", help="新建课题卡时的标题")
+    p_step.add_argument("--json", action="store_true")
     return result
 
 
-def _profile_spec_hash(profile_id: str) -> str | None:
-    """Content hash of the spec about to be used, when the profile exists."""
-    from .domain_profiles import load_profiles, profile_fingerprint
-    spec = load_profiles().get(profile_id)
-    return profile_fingerprint(spec) if spec else None
-
-
-def _kv_pairs(values, what: str) -> dict:
-    pairs = {}
-    for item in values or []:
-        key, sep, value = str(item).partition('=')
-        if not sep or not key.strip():
-            raise WikiError(f'{what} 须为 KEY=VALUE: {item}')
-        pairs[key.strip()] = value
-    return pairs
-
-
 def _project_dispatch(args, config) -> None:
-    from . import project_state as ps
+    from .project_tracker import add_project_step, get_project, list_projects
 
-    root = args.root
     verb = args.project_command
-    if verb == 'init':
-        state = ps.init_project(root, project_id=args.id, title=args.title,
-                                data_roots=args.data_root or None)
-        print(json.dumps({'project_id': state['project_id'], 'revision': state['revision'],
-                          'state_dir': str(ps.state_dir(Path(root).resolve()))},
-                         ensure_ascii=False, indent=2))
-        return
-    if verb == 'status':
-        print(json.dumps(ps.project_status(root), ensure_ascii=False, indent=2))
-        return
-    if verb == 'check':
-        print(json.dumps(ps.check_project(root, config), ensure_ascii=False, indent=2))
-        return
-    if verb == 'impact':
-        report = ps.impact_analysis(root, args.changed)
-        if args.apply:
-            state = ps.mark_stale(root, report, reason=args.reason)
-            report['applied'] = {'revision': state['revision'],
-                                 'note': '受影响产物标 stale/unknown；未重算未删除'}
-        print(json.dumps(report, ensure_ascii=False, indent=2))
-        return
-    if verb == 'record-run':
-        print(json.dumps(ps.record_run(
-            root, args.run, args.task, status=args.status, command=args.run_command,
-            inputs=args.inputs, outputs=args.outputs, checks=args.checks,
-            code=args.code,
-            params=_kv_pairs(args.param, '--param') or None,
-            environment=_kv_pairs(args.env, '--env'),
-            note=args.note), ensure_ascii=False, indent=2))
-        return
-    if verb == 'evaluate':
-        from .domain_profiles import evaluate_profile, profile_ids
-        state = ps.load_project(root)
-        if args.profile:
-            targets = [args.profile]
+    if verb == "list":
+        items = list_projects(config)
+        if args.json:
+            _print({"projects": items})
         else:
-            targets = [item['id'] for item in state['profile_refs']] or profile_ids()
-        print(json.dumps({pid: evaluate_profile(state, pid, subject=args.subject)
-                          for pid in targets},
-                         ensure_ascii=False, indent=2))
+            for item in items:
+                print(f"{item['id']}  {item['title']}  ({len(item['steps'])} steps)")
         return
-    if verb == 'relocate':
-        state = ps.relocate_project(root)
-        print(json.dumps({'project_id': state['project_id'],
-                          'project_root': state['project_root'],
-                          'revision': state['revision']}, ensure_ascii=False, indent=2))
+    if verb == "show":
+        item = get_project(config, args.project_id)
+        if args.json:
+            _print(item)
+        else:
+            print(item["body"])
         return
-    if verb == 'recover':
-        print(json.dumps(ps.recover_project(
-            root, release_lock=args.release_lock,
-            clean_staging=args.clean_staging,
-            clean_orphans=args.clean_orphans), ensure_ascii=False, indent=2))
-        return
-    if verb == 'add-lesson':
-        print(json.dumps(ps.add_lesson(
-            root, args.id, args.claim, evidence=args.evidence,
-            applies_to=args.applies_to, links=args.link,
-            basis=args.basis, note=args.note), ensure_ascii=False, indent=2))
-        return
-    if verb == 'lesson-review':
-        state = ps.review_lesson(root, args.id, args.state, reviewed_by=args.by,
-                                 note=args.note, decision=args.decision)
-        print(json.dumps({'revision': state['revision'],
-                          'event': state['events'][-1]},
-                         ensure_ascii=False, indent=2))
-        return
-    mutate = {
-        'add-data-root': lambda: ps.add_data_root(root, args.path, root_id=args.id),
-        'add-entity': lambda: ps.add_entity(
-            root, args.id, args.kind, count=args.count, identity=args.identity,
-            properties=_kv_pairs(args.prop, '--prop'), basis=args.basis, note=args.note),
-        'add-object': lambda: ps.add_object(
-            root, args.id, args.kind, path=args.path, external=args.external,
-            native_type=args.native_type, entities=args.entities, inspected=args.inspected,
-            adapter=args.adapter,
-            properties=_kv_pairs(args.prop, '--prop'), basis=args.basis, note=args.note),
-        'add-observation': lambda: ps.add_observation(
-            root, args.id, args.claim, about=args.about, value=args.value,
-            basis=args.basis, evidence=args.evidence, scope=args.scope,
-            stage=args.stage, note=args.note),
-        'add-route': lambda: ps.add_route(
-            root, args.id, args.question, hypothesis=args.hypothesis,
-            evidence_refs=args.evidence, gaps=args.gap, decision=args.decision,
-            basis=args.basis, note=args.note),
-        'add-task': lambda: ps.add_task(
-            root, args.id, family_id=args.family_id, implementation_id=args.implementation_id,
-            purpose=args.purpose, role=args.role, status=args.status, inputs=args.inputs,
-            params=_kv_pairs(args.param, '--param'), authorization=args.authorization,
-            stage=args.stage, note=args.note),
-        'add-decision': lambda: ps.add_decision(
-            root, args.id, args.kind, args.text, scope=args.scope, route=args.route,
-            supersedes=args.supersedes, note=args.note),
-        'add-authorization': lambda: ps.add_authorization(
-            root, args.id, args.scope, budget=_kv_pairs(args.budget, '--budget'),
-            decided_by=args.decided_by, note=args.note),
-        'register-profile': lambda: ps.register_profile(
-            root, args.id, args.version, spec_sha256=_profile_spec_hash(args.id)),
-    }
-    state = mutate[verb]()
-    print(json.dumps({'revision': state['revision'], 'event': state['events'][-1]},
-                     ensure_ascii=False, indent=2))
+    if verb == "add-step":
+        updated = add_project_step(
+            config,
+            args.project_id,
+            title=args.title,
+            templates=args.templates,
+            observation=args.observation,
+            next_branch=args.next_branch,
+            project_title=args.project_title,
+            commit=True,
+        )
+        if args.json:
+            _print(updated)
+        else:
+            last = updated["steps"][-1] if updated["steps"] else {}
+            print(f"{updated['id']}: Step {last.get('step', '?')} {last.get('title', '')}")
 
 
 def _gh_dispatch(args, config) -> int:
-    from . import ghflow, push_guard
+    from . import push_guard
     from .store import git
 
     verb = args.gh_command
-    if verb == "tier":
-        from . import risk
-        print(json.dumps(risk.tier_report(Path(git(Path.cwd(), "rev-parse", "--show-toplevel").strip()),
-                                          args.rev_range, args.rules_ref), ensure_ascii=False, indent=2))
-        return 0
-    if verb not in ("guard", "protect-baseline"):
-        # finish-task、review、merge 作用于当前目录所在的检出（主检出或 worktree）。
-        checkout = (lambda: Path(git(Path.cwd(), "rev-parse", "--show-toplevel").strip()))
-        result = {
-            "preflight": lambda: ghflow.preflight(config),
-            "start-batch": lambda: ghflow.start_batch(config, args.kind, args.name, args.title, args.repo),
-            "start-task": lambda: ghflow.start_task(config, args.batch, args.stage, args.topic, args.title,
-                                                    args.worktree, args.repo),
-            "finish-task": lambda: ghflow.finish_task(config, checkout(), args.local_report),
-            "review": lambda: ghflow.review(config, checkout(), args.pr, args.verdict, args.findings),
-            "merge": lambda: ghflow.merge(config, checkout(), args.pr, args.plan),
-            "close-batch": lambda: ghflow.close_batch(config, args.batch, args.repo),
-            "migrate-legacy": lambda: ghflow.migrate_legacy(config, args.mapping, args.dry_run),
-            "bootstrap": lambda: ghflow.bootstrap(config, args.confirm, args.config),
-            "install-hook": lambda: ghflow.install_hook_report(
-                ghflow.repo_root(config, args.repo) if args.repo else checkout(), args.config),
-        }[verb]()
-        print(json.dumps(result, ensure_ascii=False, indent=2))
-        return 1 if verb in ("preflight", "bootstrap") and result.get("blockers") else 0
-    if args.gh_command == "protect-baseline":
+    if verb == "protect-baseline":
         if not args.check:
             data = push_guard.write_baseline(config.wiki_root)
             print(f"已写入 {push_guard.BASELINE_FILE}：{len(data['files'])} 个文件")
@@ -675,9 +364,7 @@ def main(argv: list[str] | None = None) -> int:
     utf8_streams()
     args = parser().parse_args(argv)
     try:
-        # 课题状态命令只依赖课题目录；check 有配置时才核查 Wiki 引用。
-        config = (load_config(args.config, args.wiki_root)
-                  if args.command != 'project' or args.config.is_file() else None)
+        config = load_config(args.config, args.wiki_root)
         if config is not None:
             prepare_env(config)
         if args.command == 'checkout':
@@ -691,7 +378,7 @@ def main(argv: list[str] | None = None) -> int:
         if config is not None and args.command not in {
                 'project', 'find', 'show', 'use', 'serve', 'lint', 'pending',
                 'suggest', 'suggest-methods', 'suggest-pipeline', 'discover-methods',
-                'contact-sheet', 'render', 'render-layout', 'check-entry'}:
+                'next', 'contact-sheet', 'render', 'render-layout', 'check-entry'}:
             from .asset_checkout import assert_writable
             # run --dir writes only the already copied project directory.
             if not (args.command == 'run' and getattr(args, 'dir', None)):
@@ -798,6 +485,12 @@ def main(argv: list[str] | None = None) -> int:
         elif args.command == "suggest-pipeline":
             print(json.dumps(suggest_pipeline(config, args.figure, args.q),
                              ensure_ascii=False, indent=2))
+        elif args.command == "next":
+            payload = suggest_next_steps(config, args.node_id, query=args.q)
+            if args.json:
+                _print(payload)
+            else:
+                print(format_next_steps(payload))
         elif args.command == "suggest-methods":
             print(json.dumps(suggest_methods(config, args.q, args.columns, args.limit),
                              ensure_ascii=False, indent=2))

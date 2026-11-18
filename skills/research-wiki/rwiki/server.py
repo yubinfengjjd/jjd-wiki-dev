@@ -59,6 +59,29 @@ class AssetFetchBody(BaseModel):
     id: StrictStr = Field(min_length=1, max_length=240)
 
 
+class SniffBody(BaseModel):
+    path: str = Field(min_length=1)
+
+
+class StudioRenderBody(BaseModel):
+    id: StrictStr = Field(min_length=1, max_length=240)
+    project_dir: str = ""
+    data_file: str = ""
+    bindings: dict[str, str] = Field(default_factory=dict)
+    parameters: dict[str, object] = Field(default_factory=dict)
+
+
+class StudioExecuteBody(StudioRenderBody):
+    code: str | None = None
+
+
+class ProjectStepBody(BaseModel):
+    title: StrictStr = Field(min_length=1)
+    templates: str = ""
+    observation: str = ""
+    next_branch: str = ""
+
+
 # Loopback names only; "testserver" is Starlette TestClient's default Host.
 LOCAL_HOSTS = {"127.0.0.1", "localhost", "[::1]", "testserver"}
 
@@ -99,7 +122,9 @@ def create_app(config: Config) -> FastAPI:
             if foreign or request.headers.get("sec-fetch-site") == "cross-site":
                 return JSONResponse(status_code=403, content={"detail": "拒绝跨站写请求"})
             from .asset_checkout import profile
-            if request.url.path != '/api/assets/fetch' and profile(config) == 'light':
+            if (request.url.path != '/api/assets/fetch'
+                    and not request.url.path.startswith('/api/studio/')
+                    and profile(config) == 'light'):
                 return JSONResponse(status_code=409, content={
                     'detail': '轻量检出不修改正式知识；请先运行 rwiki checkout --profile full。'})
         with read_session() if request.method == "GET" else nullcontext():
@@ -622,6 +647,103 @@ def create_app(config: Config) -> FastAPI:
     @app.post("/api/templates/{entry_id}/reject")
     def no_template_signoff(entry_id: str):
         raise HTTPException(404, "签核和退回只适用于版式")
+
+    @app.get("/api/playbooks")
+    def playbooks():
+        from .studio import get_playbooks
+        return get_playbooks(config)
+
+    @app.get("/api/next/{node_id}")
+    def next_steps_api(node_id: str, q: str = ""):
+        from .suggest import suggest_next_steps
+        try:
+            return suggest_next_steps(config, node_id, query=q)
+        except WikiError as error:
+            raise HTTPException(404, str(error)) from error
+
+    @app.post("/api/studio/sniff")
+    def studio_sniff(request: SniffBody):
+        from .studio import sniff_data
+        try:
+            return sniff_data(config, request.path)
+        except WikiError as error:
+            raise HTTPException(400, str(error)) from error
+
+    @app.post("/api/studio/render-code")
+    def studio_render_code(request: StudioRenderBody):
+        from .studio import render_studio_code
+        try:
+            return render_studio_code(
+                config,
+                entry_id=request.id,
+                project_dir=request.project_dir,
+                data_file=request.data_file,
+                bindings=request.bindings,
+                parameters=request.parameters,
+            )
+        except WikiError as error:
+            raise HTTPException(404, str(error)) from error
+
+    @app.post("/api/studio/dispatch")
+    def studio_dispatch(request: StudioExecuteBody):
+        from .studio import dispatch_studio
+        try:
+            return dispatch_studio(
+                config,
+                entry_id=request.id,
+                project_dir=request.project_dir,
+                data_file=request.data_file,
+                bindings=request.bindings,
+                parameters=request.parameters,
+                code=request.code,
+            )
+        except WikiError as error:
+            raise HTTPException(400, str(error)) from error
+
+    @app.post("/api/studio/run")
+    def studio_run(request: StudioExecuteBody):
+        from .studio import run_studio
+        try:
+            return run_studio(
+                config,
+                entry_id=request.id,
+                project_dir=request.project_dir,
+                data_file=request.data_file,
+                bindings=request.bindings,
+                parameters=request.parameters,
+                code=request.code,
+            )
+        except WikiError as error:
+            raise HTTPException(400, str(error)) from error
+
+    @app.get("/api/studio/output/{run_id}/{filename:path}")
+    def studio_output(run_id: str, filename: str):
+        from .studio import studio_output_file
+        try:
+            return FileResponse(studio_output_file(config, run_id, filename))
+        except WikiError as error:
+            raise HTTPException(404, str(error)) from error
+
+    @app.get("/api/projects")
+    def api_projects():
+        from .project_tracker import list_projects
+        return {"projects": list_projects(config)}
+
+    @app.post("/api/projects/{project_id}/step")
+    def api_add_project_step(project_id: str, request: ProjectStepBody):
+        from .project_tracker import add_project_step
+        try:
+            return add_project_step(
+                config,
+                project_id,
+                title=request.title,
+                templates=request.templates,
+                observation=request.observation,
+                next_branch=request.next_branch,
+                commit=True,
+            )
+        except WikiError as error:
+            raise HTTPException(422, str(error)) from error
 
     @app.get("/files/wiki/{path:path}")
     def wiki_file(path: str):

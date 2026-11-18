@@ -241,3 +241,175 @@ def suggest_pipeline(config: Config, figure: str | None = None, query: str = "")
                        "methods": sorted(candidates, key=lambda item: (-item["score"], item["title"], item["id"]))})
     return sorted(groups, key=lambda group: (-max((m["score"] for m in group["methods"]), default=0),
                                            group["title"], group["id"]))
+
+
+def _locate_node(config: Config, node_id: str):
+    for folder in ("methods", "interfaces", "templates", "recipes", "scenarios"):
+        path = config.wiki_root / folder / f"{node_id}.md"
+        if path.is_file():
+            return path
+    raise WikiError(f"未找到节点页面: {node_id}")
+
+
+def _normalize_next_step(item: dict) -> dict:
+    def _str_list(val) -> list[str]:
+        if isinstance(val, list):
+            return [str(x).strip() for x in val if str(x).strip()]
+        if isinstance(val, str) and val.strip():
+            return [val.strip()]
+        return []
+
+    return {
+        "direction": str(item.get("direction") or item.get("title") or "下一步方向"),
+        "when": str(item.get("when") or item.get("condition") or ""),
+        "analysis_templates": _str_list(item.get("analysis_templates") or item.get("methods")),
+        "intermediate_interface": str(item.get("intermediate_interface") or item.get("interface") or ""),
+        "viz_templates": _str_list(item.get("viz_templates") or item.get("templates")),
+    }
+
+
+def suggest_next_steps(config: Config, node_id: str, query: str = "") -> dict:
+    """Return structured downstream bioinformatics directions and structural interface matches."""
+    from .catalog import readable_pages
+    from .facts import declarations, input_interfaces, table_interfaces
+
+    path = _locate_node(config, node_id)
+    meta, body = read_page(path)
+    kind = meta.get("type", "")
+    title = meta.get("title", node_id)
+
+    raw_steps = meta.get("next_steps")
+    next_steps: list[dict] = []
+    if isinstance(raw_steps, list):
+        for entry in raw_steps:
+            if isinstance(entry, dict):
+                next_steps.append(_normalize_next_step(entry))
+    elif kind == "scenario" and isinstance(meta.get("steps"), list):
+        for entry in meta["steps"]:
+            if isinstance(entry, dict):
+                next_steps.append(_normalize_next_step(entry))
+
+    outputs: set[str] = set()
+    if kind == "method":
+        outputs = {str(s) for s in (meta.get("outputs") or []) if isinstance(s, str) and s.strip()}
+    elif kind == "interface":
+        outputs = {str(meta.get("slug") or node_id)}
+    elif kind == "template":
+        spec_path = path.with_suffix("") / "spec.json"
+        if spec_path.is_file():
+            try:
+                spec = load_spec(path.with_suffix(""))
+                outputs = table_interfaces(spec)
+            except (WikiError, OSError, ValueError, KeyError, TypeError):
+                outputs = set()
+
+    structural_matches: list[dict] = []
+    if outputs:
+        for tid, (tm, spec) in declarations(config.wiki_root, "templates").items():
+            if tm.get("status") == "archived":
+                continue
+            req = table_interfaces(spec)
+            if req and req & outputs:
+                preview_file = config.wiki_root / "templates" / tid / "preview.png"
+                structural_matches.append({
+                    "id": tid,
+                    "kind": "template",
+                    "type": "template",
+                    "title": tm.get("title", tid),
+                    "status": tm.get("status"),
+                    "interfaces": sorted(req),
+                    "inputs": sorted(req),
+                    "path": f"templates/{tid}.md",
+                    "page": f"templates/{tid}.md",
+                    "preview": f"/files/wiki/templates/{tid}/preview.png" if preview_file.is_file() else None,
+                })
+        for mid, (mm, method_meta) in declarations(config.wiki_root, "methods").items():
+            if mm.get("status") == "archived" or mid == node_id:
+                continue
+            ins = input_interfaces(method_meta)
+            if ins and ins & outputs:
+                structural_matches.append({
+                    "id": mid,
+                    "kind": "method",
+                    "type": "method",
+                    "title": mm.get("title", mid),
+                    "status": mm.get("status"),
+                    "interfaces": sorted(ins),
+                    "inputs": sorted(ins),
+                    "outputs": list(method_meta.get("outputs") or []),
+                    "path": f"methods/{mid}.md",
+                    "page": f"methods/{mid}.md",
+                })
+    # Also attach any scenario step links if node_id appears in playbook scenarios
+    if not next_steps:
+        for spath, smeta in readable_pages(config.wiki_root):
+            if smeta.get("type") != "scenario" or not isinstance(smeta.get("steps"), list):
+                continue
+            steps = smeta["steps"]
+            for idx, st in enumerate(steps):
+                if not isinstance(st, dict):
+                    continue
+                if st.get("id") == node_id or st.get("method_id") == node_id:
+                    for nxt in steps[idx + 1:]:
+                        if isinstance(nxt, dict) and (nxt.get("parent") == st.get("id") or idx + 1 == steps.index(nxt)):
+                            next_steps.append(_normalize_next_step(nxt))
+                    break
+
+    words = [w for w in dict.fromkeys(query.casefold().split()) if w]
+    if words:
+        def _matches(text: str) -> bool:
+            low = text.casefold()
+            return any(w in low for w in words)
+
+        filtered_steps = [
+            step for step in next_steps
+            if _matches(" ".join([
+                step["direction"], step["when"], step["intermediate_interface"],
+                *step["analysis_templates"], *step["viz_templates"],
+            ]))
+        ]
+        if filtered_steps:
+            next_steps = filtered_steps
+        filtered_matches = [
+            m for m in structural_matches
+            if _matches(" ".join([m["id"], m["title"], *m.get("interfaces", [])]))
+        ]
+        if filtered_matches:
+            structural_matches = filtered_matches
+
+    return {
+        "node_id": node_id,
+        "kind": kind,
+        "title": title,
+        "page": path.relative_to(config.wiki_root).as_posix(),
+        "outputs": sorted(outputs),
+        "next_steps": next_steps,
+        "structural_matches": structural_matches,
+    }
+
+
+def format_next_steps(payload: dict) -> str:
+    lines = [f"{payload['node_id']}  {payload['title']}  [{payload['kind']}]"]
+    if payload.get("outputs"):
+        lines.append("输出中间表：" + "、".join(payload["outputs"]))
+    steps = payload.get("next_steps") or []
+    if steps:
+        lines.append("下一步分析方向：")
+        for idx, step in enumerate(steps, 1):
+            lines.append(f"  {idx}. {step['direction']}")
+            if step["when"]:
+                lines.append(f"     触发条件：{step['when']}")
+            if step["intermediate_interface"]:
+                lines.append(f"     标准中间表：{step['intermediate_interface']}")
+            if step["analysis_templates"]:
+                lines.append(f"     推荐分析模版：{', '.join(step['analysis_templates'])}")
+            if step["viz_templates"]:
+                lines.append(f"     配套可视化模版：{', '.join(step['viz_templates'])}")
+    else:
+        lines.append("暂无显式 next_steps 声明。")
+    matches = payload.get("structural_matches") or []
+    if matches:
+        lines.append("接口结构匹配下游条目：")
+        for m in matches:
+            lines.append(f"  - [{m['kind']}] {m['id']}  {m['title']} ({', '.join(m.get('interfaces', []))})")
+    return "\n".join(lines)

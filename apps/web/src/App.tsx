@@ -1,25 +1,21 @@
-import { Component, lazy, ReactNode, Suspense, useCallback, useEffect, useMemo, useRef, useState } from 'react';
-import { effectiveStatus, GraphData, isItem, MethodTaxonomy, PageSummary } from './api';
-import { useBackdropZone } from './backdrop/instance';
-import { loadLibrary } from './api';
+import { Component, ReactNode, useCallback, useEffect, useMemo, useRef, useState } from 'react';
+import { effectiveStatus, GraphData, isItem, loadLibrary, MethodTaxonomy, PageSummary } from './api';
 import { Flow } from './flow';
 import { singlePanelKnowledge } from './figureModels';
 import { RenderEnv } from './markdown';
 import { useRoute } from './route';
+import { FigureYaReview } from './views/FigureYaReview';
 import { Gallery } from './views/Gallery';
 import { LogView } from './views/LogView';
 import { MethodsView } from './views/MethodsView';
 import { PageView } from './views/PageView';
-import { QueueView } from './views/QueueView';
+import { PlaybooksView } from './views/PlaybooksView';
+import { ProjectsView } from './views/ProjectsView';
 import { RecipesView } from './views/RecipesView';
 import { ScenariosView } from './views/ScenariosView';
-import { SourcesView } from './views/SourcesView';
-import { FigureYaReview } from './views/FigureYaReview';
 import { SearchView } from './views/SearchView';
-import { pendingCount as countPending } from './workflow';
-
-// The force-graph engine is the heaviest module; load it only when the network is opened.
-const GraphView = lazy(() => import('./views/GraphView').then((m) => ({ default: m.GraphView })));
+import { SourcesView } from './views/SourcesView';
+import { StudioView } from './views/StudioView';
 
 export interface AppData {
   pages: PageSummary[];
@@ -39,40 +35,41 @@ class ViewBoundary extends Component<{ children: ReactNode }, { error: Error | n
   static getDerivedStateFromError(error: Error) { return { error }; }
   render() {
     return this.state.error
-      ? <p className="notice error" role="alert">这个页面显示出错（{this.state.error.message}）。返回 <a href="#/gallery">图库</a> 或刷新后重试。</p>
+      ? <p className="notice error" role="alert">这个页面显示出错（{this.state.error.message}）。返回 <a href="#/playbooks">步进导航</a> 或刷新后重试。</p>
       : this.props.children;
   }
 }
 
-/** Graph rings and labels follow the same derived workflow as cards and the queue. */
+/** Graph rings and labels follow the same derived workflow as cards. */
 function withEffectiveStatus(graph: GraphData, pages: PageSummary[]): GraphData {
   const byPath = new Map(pages.map((p) => [p.path, p]));
-  return { ...graph, nodes: graph.nodes.map((n) => {
-    const page = byPath.get(n.id);
-    return page && isItem(page.meta) && page.workflow
-      ? { ...n, status: effectiveStatus(page.meta, page.workflow), label: page.workflow.label } : n;
-  }) };
+  return {
+    ...graph,
+    nodes: graph.nodes.map((n) => {
+      const page = byPath.get(n.id);
+      return page && isItem(page.meta) && page.workflow
+        ? { ...n, status: effectiveStatus(page.meta, page.workflow), label: page.workflow.label }
+        : n;
+    }),
+  };
 }
 
 const NAV = [
-  ['search', '全库搜索'],
+  ['playbooks', '1. 步进导航'],
+  ['studio', '2. 代码操控台'],
+  ['projects', '3. 课题看板'],
   ['gallery', '图库'],
-  ['recipes', '配方'],
-  ['sources', '来源目录'],
-  ['figureya', 'FigureYa 筛选'],
-  ['scenarios', '场景'],
   ['methods', '方法库'],
-  ['graph', '知识网络'],
-  ['queue', '待办'],
-  ['log', '日志'],
+  ['recipes', '配方'],
+  ['scenarios', '场景'],
+  ['search', '全库搜索'],
 ] as const;
 
 export function App() {
   const route = useRoute();
-  useBackdropZone(route.view);
   const [pages, setPages] = useState<PageSummary[] | null>(null);
   const [graph, setGraph] = useState<GraphData>({ nodes: [], links: [] });
-  const [taxonomy, setTaxonomy] = useState<MethodTaxonomy>({total: 0, domains: [], purposes: [], unclassified: []});
+  const [taxonomy, setTaxonomy] = useState<MethodTaxonomy>({ total: 0, domains: [], purposes: [], unclassified: [] });
   const [error, setError] = useState('');
   const [checking, setChecking] = useState(true);
   const [backgroundErrors, setBackgroundErrors] = useState<string[]>([]);
@@ -88,8 +85,12 @@ export function App() {
     setError('');
     setBackgroundErrors([]);
     try {
-      await loadLibrary({pages: setPages, graph: setGraph, taxonomy: setTaxonomy,
-        error: message => setBackgroundErrors(previous => [...previous, message])}, current, hydrateLibrary);
+      await loadLibrary({
+        pages: setPages,
+        graph: setGraph,
+        taxonomy: setTaxonomy,
+        error: (message) => setBackgroundErrors((previous) => [...previous, message]),
+      }, current, hydrateLibrary);
     } catch (failure) {
       if (current()) setError((failure as Error).message);
     } finally {
@@ -104,57 +105,70 @@ export function App() {
 
   const visible = useMemo(() => singlePanelKnowledge(pages ?? [], graph), [pages, graph]);
   const displayedGraph = useMemo(() => withEffectiveStatus(visible.graph, visible.pages), [visible]);
-  const env = useMemo<RenderEnv>(() => ({ titles: new Map(visible.pages.map((p) => [p.path, p.meta.title])), hiddenSources: visible.hiddenSources }), [visible]);
+  const env = useMemo<RenderEnv>(() => ({
+    titles: new Map(visible.pages.map((p) => [p.path, p.meta.title])),
+    hiddenSources: visible.hiddenSources,
+  }), [visible]);
   const flow = useMemo(() => new Flow(displayedGraph), [displayedGraph]);
-
-  const pendingCount = countPending(visible.pages);
 
   let content;
   if (error) content = <p className="notice error">连不上本地服务（{error}）。在终端运行 wiki.py serve 后刷新页面。</p>;
   else if (!pages) content = <p className="notice" role="status">正在读取目录…</p>;
   else {
-    const data: AppData = { pages: visible.pages,
-      hiddenPages: pages.filter(page => visible.hiddenSources.has(page.path)),
-      graph: displayedGraph, flow, env, taxonomy, reload };
+    const data: AppData = {
+      pages: visible.pages,
+      hiddenPages: pages.filter((page) => visible.hiddenSources.has(page.path)),
+      graph: displayedGraph,
+      flow,
+      env,
+      taxonomy,
+      reload,
+    };
     if (route.view === 'page') content = <PageView key={route.arg} path={route.arg} query={route.query} data={data} />;
+    else if (route.view === 'studio') content = <StudioView data={data} query={route.query} />;
+    else if (route.view === 'projects') content = <ProjectsView data={data} />;
     else if (route.view === 'search') content = <SearchView query={route.query} />;
     else if (route.view === 'methods') content = <MethodsView data={data} query={route.query} />;
     else if (route.view === 'recipes') content = <RecipesView data={data} />;
     else if (route.view === 'sources') content = <SourcesView data={data} query={route.query} />;
     else if (route.view === 'figureya') content = <FigureYaReview data={data} />;
     else if (route.view === 'scenarios') content = <ScenariosView data={data} />;
-    else if (route.view === 'graph') content = <Suspense fallback={null}><GraphView data={data} /></Suspense>;
-    else if (route.view === 'queue') content = <QueueView data={data} />;
+    else if (route.view === 'gallery') content = <Gallery data={data} />;
     else if (route.view === 'log') content = <LogView />;
-    else content = <Gallery data={data} />;
+    else content = <PlaybooksView data={data} query={route.query} />;
     content = <ViewBoundary key={`${route.view}/${route.arg}`}>{content}</ViewBoundary>;
   }
 
   return (
     <div className="shell">
       <header className="masthead">
-        <a className="brand" href="#/gallery">
+        <a className="brand" href="#/playbooks">
           <svg className="brand-mark" viewBox="0 0 24 24" aria-hidden="true">
             <circle cx="12" cy="12" r="9" />
             <ellipse cx="12" cy="12" rx="9" ry="3.4" />
             <ellipse cx="12" cy="12" rx="3.4" ry="9" />
             <circle className="hub" cx="17.4" cy="7.6" r="2.2" />
           </svg>
-          科研知识库
+          <span>Bio-Template Studio</span>
         </a>
         <nav aria-label="主导航">
           {NAV.map(([view, label]) => (
             <a key={view} href={`#/${view}`} className={route.view === view ? 'active' : ''}>
               {label}
-              {view === 'queue' && pendingCount > 0 && <span className="count">{pendingCount}</span>}
             </a>
           ))}
         </nav>
-        <button type="button" className="library-refresh" disabled={checking} onClick={() => void reload()}>{checking ? '正在同步…' : '同步知识库'}</button>
+        <button type="button" className="library-refresh" disabled={checking} onClick={() => void reload()}>
+          {checking ? '正在同步…' : '同步知识库'}
+        </button>
       </header>
-      <main className={route.view === 'graph' ? 'main full' : 'main'}>
-        {pages && checking && <p className="notice small" role="status">目录已加载，正在核对运行证据与关联；完成前不作为可执行推荐。</p>}
-        {backgroundErrors.length > 0 && <p className="notice error" role="alert">部分证据或关联未加载完成：{backgroundErrors.join('；')} <button onClick={() => void reload()}>重试</button></p>}
+      <main className={route.view === 'studio' ? 'main full studio-main' : 'main'}>
+        {pages && checking && <p className="notice small" role="status">目录已加载，正在核对运行证据与关联。</p>}
+        {backgroundErrors.length > 0 && (
+          <p className="notice error" role="alert">
+            部分证据或关联未加载完成：{backgroundErrors.join('；')} <button onClick={() => void reload()}>重试</button>
+          </p>
+        )}
         {content}
       </main>
     </div>

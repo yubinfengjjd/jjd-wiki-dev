@@ -48,6 +48,13 @@ def _relative(value) -> PurePosixPath:
     return path
 
 
+SCRIPT_SUFFIXES = {'.r', '.rmd', '.py', '.qmd', '.sh'}
+
+
+def _is_script(name: str) -> bool:
+    return PurePosixPath(name).suffix.lower() in SCRIPT_SUFFIXES
+
+
 def _tree(directory: Path) -> dict:
     if not directory.is_dir():
         raise WikiError('缺少 repair/ 修补文件树。')
@@ -62,9 +69,10 @@ def _tree(directory: Path) -> dict:
 
 
 def validate_repair(config, path, *, require_approval=False) -> dict:
-    """Validate current repair evidence, optionally including owner confirmation.
+    """Validate current repair evidence based on script/receipt existence.
 
-    This does not approve a page or change its original-source eligibility.
+    Large duplicated data/PDF trees under repair/ may be stripped; script files
+    and any remaining files in repair/ must still match repair.json and receipt.
     """
     report = {'valid': False, 'errors': []}
     try:
@@ -92,8 +100,15 @@ def validate_repair(config, path, *, require_approval=False) -> dict:
         directory = asset / 'repair'
         _inside(directory, asset)
         current_files = _tree(directory)
-        if current_files != files:
+        manifest_scripts = {k: v for k, v in files.items() if _is_script(k)}
+        current_scripts = {k: v for k, v in current_files.items() if _is_script(k)}
+        if manifest_scripts:
+            if current_scripts != manifest_scripts:
+                raise WikiError('repair/ 脚本文件与修补清单不一致。')
+        elif current_files != files:
             raise WikiError('repair/ 当前完整文件树与修补清单不一致。')
+        if any(k not in files or files[k] != v for k, v in current_files.items()):
+            raise WikiError('repair/ 包含与修补清单不一致或未登记的文件。')
         receipt_name = _relative(manifest.get('latest_run'))
         if (len(receipt_name.parts) < 2 or receipt_name.parts[0] != 'repair-runs'
                 or receipt_name.suffix != '.json'):
@@ -107,9 +122,10 @@ def validate_repair(config, path, *, require_approval=False) -> dict:
             raise WikiError('修补运行收据的 ID、类型、范围或通过状态不匹配。')
         if type(receipt.get('exit_code')) is not int or receipt['exit_code'] != 0:
             raise WikiError('修补运行收据没有成功退出。')
-        if receipt.get('code') != current_files or receipt.get('missing_outputs') != []:
+        if receipt.get('code') != files or receipt.get('missing_outputs') != []:
             raise WikiError('修补运行收据的文件哈希过期或输出不完整。')
-        report.update(id=meta['id'], scope='repair', execution_tree='repair/', files=current_files,
+        report.update(id=meta['id'], scope='repair', execution_tree='repair/', files=files,
+                      scripts=current_scripts,
                       manifest_sha256=_digest(manifest_path), receipt=receipt_name.as_posix(),
                       receipt_sha256=_digest(receipt_path))
         if require_approval:
@@ -120,7 +136,7 @@ def validate_repair(config, path, *, require_approval=False) -> dict:
                          owner_instruction='全部改为通过')
             if (approval.get('owner_confirmed') is not True
                     or any(approval.get(key) != value for key, value in bound.items())):
-                raise WikiError('作者修补确认与当前清单、收据或完整文件树不一致。')
+                raise WikiError('作者修补确认与当前清单、收据或脚本不一致。')
         report['valid'] = True
     except (WikiError, OSError, ValueError, TypeError, KeyError, RuntimeError) as error:
         report['errors'].append(str(error))
@@ -136,7 +152,7 @@ def record_repair_acceptance(config, path) -> dict:
         report = validate_repair(config, path)
     if not report['valid']:
         raise WikiError('修补确认未通过：' + '；'.join(report['errors']))
-    record = {key: value for key, value in report.items() if key not in ('valid', 'errors')}
+    record = {key: value for key, value in report.items() if key not in ('valid', 'errors', 'scripts')}
     record.update(schema_version=1, kind='recipe-repair-acceptance',
                   checked_at=datetime.now(timezone.utc).isoformat(),
                   owner_confirmed=True, owner_instruction='全部改为通过')

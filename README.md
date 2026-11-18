@@ -6,11 +6,9 @@
 |---|---|
 | `skills/research-wiki/` | 可安装、可测试的完整技能 |
 | `apps/web/` | 网页应用源码、构建与前端测试 |
-| `docs/` | 当前 API、场景分类与布局说明 |
+| `docs/` | 当前 API 与场景分类说明 |
 | `tests/e2e/` | 浏览器端检查脚本与步骤夹具 |
-| `plugins/obsidian-neural-view/` | Obsidian 插件 |
-| `examples/replications/` | 有出处的公开复现示例、输入与收据 |
-| `archive/` | 历史 review、operations 与设计计划，保持原始记录 |
+| `skills/research-wiki/mcp_server.py` | 标准 stdio MCP Server（暴露 `rwiki_next`/`rwiki_search`/`rwiki_render_code`/`rwiki_dispatch` 等） |
 
 将完整技能目录复制到宿主技能根，按 `config.example.json` 配置本机被忽略的 `config.json`。依赖清单为 `requirements.lock.txt`；安装依赖前需作者确认。本机配置、虚拟环境、缓存与私有课题数据不分发。
 
