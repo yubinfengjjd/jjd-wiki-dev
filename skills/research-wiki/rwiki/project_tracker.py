@@ -9,7 +9,10 @@ from .errors import WikiError
 from .pages import read_page, write_page
 
 SLUG_RE = re.compile(r"^[a-z0-9][a-z0-9_-]*$")
-STEP_HEADING_RE = re.compile(r"^###\s+Step\s+(\d+)\s*[:：]\s*(.+?)\s*$", re.M)
+STEP_HEADING_RE = re.compile(
+    r"^###\s+(?:Step|Stage)\s+(\d+)(?:\s*[（(][^）)]*[）)])?\s*[:：]\s*(.+?)\s*$",
+    re.M,
+)
 
 
 def _projects_dir(config: Config) -> Path:
@@ -36,16 +39,19 @@ def parse_steps(body: str) -> list[dict]:
         if stop:
             chunk = chunk[:stop.start()]
 
-        def _extract(label: str) -> str:
-            m = re.search(rf"^\s*-\s*\*\*【{re.escape(label)}】\*\*\s*[:：]\s*(.+?)\s*$", chunk, re.M)
-            return m.group(1).strip() if m else ""
+        def _extract(*labels: str) -> str:
+            for label in labels:
+                m = re.search(rf"^[ \t]*-[ \t]*\*\*【{re.escape(label)}】\*\*[ \t]*[:：][ \t]*(.+?)[ \t]*$", chunk, re.M)
+                if m:
+                    return m.group(1).strip()
+            return ""
 
         steps.append({
             "step": int(match.group(1)),
             "title": match.group(2).strip(),
-            "templates": _extract("所用模版"),
-            "observation": _extract("观察结果与排坑"),
-            "next_branch": _extract("触发下一步"),
+            "templates": _extract("所用模版", "所用模板", "所用分析方法与可切换模板"),
+            "observation": _extract("观察结果与排坑", "原文结论与本地小规模边界", "原文结论与本地代理边界", "原文结论与本地回放边界", "发表补表实测与湿实验排除边界", "发表补表实测与本地回放边界"),
+            "next_branch": _extract("触发下一步", "触发下一步分叉"),
         })
     return steps
 

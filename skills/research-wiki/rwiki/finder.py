@@ -200,15 +200,30 @@ def find(config: Config, query: str, kind: str | None = None, level: str | None 
 def format_find(results: list[dict]) -> str:
     if not results:
         return "没有匹配条目。换个说法（图型名、分析名、英文名）或用 --json 查看 catalog 字段。"
+    kind_labels = {
+        "template": "绘图模板",
+        "recipe": "历史归档模板",
+        "method": "分析方法",
+        "scenario": "思路分支树",
+        "project": "课题实录",
+        "item": "目录项",
+    }
+    tier_labels = {"default": "主推默认", "variant": "可切换画风"}
     lines = []
     for record in results:
-        state = record["level"]
+        state = kind_labels.get(record["kind"], record.get("level", record["kind"]))
         if record["kind"] == "recipe":
             state += f" · {record['status']} · 运行 {record['run']}"
-        elif record["kind"] in ("template", "method"):
+        elif record["kind"] == "template":
+            state += f" · {record['status']}" + (" · 可用" if record.get("usable") else "")
+            if record.get("style_tier") in tier_labels:
+                state += f" · {tier_labels[record['style_tier']]}"
+            if record.get("journal_style"):
+                state += f" ({record['journal_style']})"
+        elif record["kind"] == "method":
             state += f" · {record['status']}" + (" · 可用" if record.get("usable") else "")
         elif record["kind"] == "item":
-            state += " · 目录项（未在 Wiki 运行）"
+            state += "（未在 Wiki 运行）"
         lines.append(f"[{state}] {record['id']}  {record['title']}  （{'；'.join(record['why'])}）")
         summary = record.get("summary") or record.get("scenario") or ""
         if summary:
@@ -294,13 +309,30 @@ def show(config: Config, entry_id: str) -> dict:
         spec = load_spec(path.with_suffix(""))
         tables = {}
         for key, table in spec["tables"].items():
-            columns = load_interface(config.wiki_root, table["interface"])["columns"] if table.get("interface") else {}
-            tables[key] = {"interface": table.get("interface"), "required": table.get("required", True),
-                           "columns": {name: {"type": column["type"], "required": column.get("required", True),
-                                              "description": column["description"]}
-                                       for name, column in columns.items()}}
+            if table.get("interface"):
+                columns = load_interface(config.wiki_root, table["interface"])["columns"]
+            else:
+                columns = table.get("columns") or {}
+            tables[key] = {
+                "interface": table.get("interface") or "",
+                "filename": table.get("filename") or "",
+                "description": table.get("description") or "",
+                "required": table.get("required", True),
+                "columns": {
+                    name: {
+                        "type": column.get("type", "str"),
+                        "required": column.get("required", True),
+                        "description": column.get("description", ""),
+                    }
+                    for name, column in columns.items()
+                },
+            }
         result["tables"] = tables
         result["usable"] = False if sparse else _usable(config, path, meta)
+        if meta.get("style_tier"):
+            result["style_tier"] = meta["style_tier"]
+        if meta.get("journal_style"):
+            result["journal_style"] = meta["journal_style"]
         result["next"] = [f"wiki.py use {entry_id} --project <课题目录>",
                           f"wiki.py render {entry_id} --data <数据目录> --out <输出目录> --bindings <bindings.json>"]
     elif kind == "method":
@@ -327,6 +359,20 @@ def format_show(detail: dict) -> str:
     meta = detail["meta"]
     head = f"{meta.get('id', meta.get('slug'))}  {meta['title']}  [{detail['kind']} · {meta.get('status', '-')}]"
     lines = [head]
+    if detail["kind"] == "template":
+        tier_map = {"default": "主推默认 (default)", "variant": "可切换画风 (variant)"}
+        style_parts = []
+        if detail.get("style_tier") or meta.get("style_tier"):
+            st = detail.get("style_tier") or meta.get("style_tier")
+            style_parts.append(tier_map.get(st, str(st)))
+        if detail.get("journal_style") or meta.get("journal_style"):
+            style_parts.append(f"风格来源：{detail.get('journal_style') or meta.get('journal_style')}")
+        if detail.get("evidence_state") == "not_checked":
+            style_parts.append("回放状态未核对（not_checked）")
+        elif "usable" in detail:
+            style_parts.append("回放可用（verify-template 通过）" if detail["usable"] else "待验证/回放未通过")
+        if style_parts:
+            lines.append("画风与状态：" + " · ".join(style_parts))
     if detail.get('evidence_state') == 'not_checked':
         lines.append('资产：' + str(detail.get('asset_availability')) + '；轻量检出尚未核对完整证据（not_checked），不表示验证失败。')
     if detail.get("license_notice"):
@@ -344,7 +390,13 @@ def format_show(detail: dict) -> str:
         for key, table in detail["tables"].items():
             columns = "、".join(f"{name}{'' if column['required'] else '（可选）'}"
                                for name, column in table["columns"].items())
-            lines.append(f"表 {key} → 接口 {table['interface']}：{columns}")
+            if table.get("interface"):
+                lines.append(f"表 {key} → 接口 {table['interface']}：{columns or '未声明列'}")
+            elif table.get("filename"):
+                desc = f"（{table['description']}）" if table.get("description") else ""
+                lines.append(f"表 {key}（{table['filename']}）：{columns or '未声明列'}{desc}")
+            else:
+                lines.append(f"表 {key}：{columns or '未声明列'}")
     if detail.get("implementations"):
         lines.append("实现：" + "；".join(f"{item['id']}={item['state']}" for item in detail["implementations"]))
     lines.append(f"页面：{detail['path']}")

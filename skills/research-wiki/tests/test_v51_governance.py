@@ -644,3 +644,67 @@ panels:
     assert any("重复面板条目" in e for e in errs)
     lines = manifest_facts_lines(cfg, "wf-bad-manifest")
     assert len(lines) == 1 and "面板条目" in lines[0]
+
+
+def test_project_tracker_parses_stage_headings_and_finder_formats_style_tier_and_inline_columns(tmp_path: Path):
+    from rwiki.finder import format_find, format_show, show
+    from rwiki.project_tracker import parse_steps
+
+    stage_md = (
+        "## 走线\n"
+        "### Stage 1（Main Fig. 1）：多中心整合\n"
+        "- **【所用分析方法与可切换模板】**：[[templates/stromal-hull-umap]]\n"
+        "- **【原文结论与本地小规模边界】**：小规模子集验证。\n"
+        "- **【触发下一步分叉】**：进入 Stage 2。\n"
+        "### Stage 2（Main Fig. 2）：空间对齐\n"
+        "- **【所用模板】**：[[templates/spatial-feature-grid]]\n"
+    )
+    parsed = parse_steps(stage_md)
+    assert len(parsed) == 2
+    assert parsed[0]["step"] == 1 and "stromal-hull-umap" in parsed[0]["templates"]
+    assert parsed[0]["observation"] == "小规模子集验证。"
+    assert parsed[0]["next_branch"] == "进入 Stage 2。"
+    assert parsed[1]["step"] == 2
+    assert parsed[1]["observation"] == ""
+
+    cfg = _make_git_wiki(tmp_path)
+    _write_python_template(cfg, "tpl-inline-cols", chart_types=["heatmap"], style_tier="default", journal_style="Cai2026-npjPO")
+    spec_path = cfg.wiki_root / "templates/tpl-inline-cols/spec.json"
+    spec_data = json.loads(spec_path.read_text(encoding="utf-8"))
+    tkey = next(iter(spec_data["tables"]))
+    spec_data["tables"][tkey]["interface"] = ""
+    spec_data["tables"][tkey]["filename"] = "roe_cox_input.csv"
+    spec_data["tables"][tkey]["columns"] = {
+        "canonical_subcluster": {"type": "str", "description": "亚群", "required": True},
+        "tcga_HR": {"type": "float", "description": "HR", "required": False},
+    }
+    spec_path.write_text(json.dumps(spec_data, ensure_ascii=False), encoding="utf-8")
+
+    detail = show(cfg, "tpl-inline-cols")
+    shown = format_show(detail)
+    assert "主推默认 (default)" in shown
+    assert "Cai2026-npjPO" in shown
+    assert "roe_cox_input.csv" in shown
+    assert "canonical_subcluster" in shown
+    assert "→ 接口 ：" not in shown
+
+    found_txt = format_find(
+        [
+            {
+                "id": "tpl-inline-cols",
+                "kind": "template",
+                "level": "L2",
+                "status": "ready",
+                "usable": True,
+                "style_tier": "default",
+                "journal_style": "Cai2026-npjPO",
+                "title": "测试模板",
+                "why": ["正文 BM25"],
+                "use": "wiki.py use tpl-inline-cols --project <课题目录>",
+            }
+        ]
+    )
+    assert "绘图模板" in found_txt
+    assert "主推默认" in found_txt
+    assert "Cai2026-npjPO" in found_txt
+    assert "[L2" not in found_txt
