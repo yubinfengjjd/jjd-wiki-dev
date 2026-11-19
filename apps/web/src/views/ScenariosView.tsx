@@ -12,7 +12,7 @@ export function ScenariosView({ data }: { data: AppData }) {
     <section className="narrow scenarios">
       <h1 className="page-title">研究场景</h1>
       <p className="muted">
-        每个场景列出某类研究问题的首选配方、模板与方法。打开场景页查看首选条目表、适用条件与注意事项；目录项只是上游列表，尚未在 Wiki 运行。
+        每个场景列出某类研究问题的首选绘图模板、分析方法与历史归档模板。打开场景页查看首选条目表、适用条件与注意事项；目录项只是上游列表，尚未在 Wiki 运行。
       </p>
       {scenarios.length === 0 ? (
         <p className="notice">还没有研究场景页。</p>

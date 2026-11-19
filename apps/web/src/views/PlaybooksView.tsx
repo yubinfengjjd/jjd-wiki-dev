@@ -20,14 +20,15 @@ import { pageLink } from '../nav';
 const CORE_PLAYBOOK_META: Record<string, { title: string; subtitle: string; steps: PlaybookStep[] }> = {
   'scrna-stepwise-playbook': {
     title: '单细胞转录组步进决策树',
-    subtitle: 'QC / 批次整合 → 细胞类型注释 → 六大下游探索分支',
+    subtitle: 'QC / 批次整合 → 细胞类型注释 → 七大下游探索分支',
     steps: [
       { id: 'cell-quality-control', title: 'Step 1 · 单细胞质量控制 (QC)', method_id: 'cell-quality-control', description: '线粒体/核糖体/双细胞过滤', next: ['batch-integration'] },
       { id: 'batch-integration', title: 'Step 2 · 批次效应整合与降维聚类', method_id: 'batch-integration', description: 'Harmony / Seurat Anchor / UMAP', next: ['cell-type-annotation'] },
-      { id: 'cell-type-annotation', title: 'Step 3 · 细胞类型注释', method_id: 'cell-type-annotation', description: 'Marker 气泡图与参考映射；完成后展开 6 大下游方向', next: ['differential-expression', 'gene-set-scoring', 'trajectory-inference'] },
+      { id: 'cell-type-annotation', title: 'Step 3 · 细胞类型注释', method_id: 'cell-type-annotation', description: 'Marker 气泡图与参考映射；完成后展开 7 大下游方向', next: ['differential-expression', 'gene-set-scoring', 'trajectory-inference', 'spatial-transcriptomics-microenvironment'] },
       { id: 'differential-expression', title: 'Step 4A · 亚群差异表达 & 富集', method_id: 'differential-expression', description: 'FindMarkers / pseudobulk DEG', next: ['gene-set-enrichment'] },
       { id: 'gene-set-scoring', title: 'Step 4B · 基因集多算法打分', method_id: 'gene-set-scoring', description: 'AUCell / UCell / ssGSEA', next: ['trajectory-inference'] },
       { id: 'trajectory-inference', title: 'Step 4C · 拟时序与动态基因', method_id: 'trajectory-inference', description: 'Monocle2/3 / Slingshot 轨迹分化', next: ['dynamic-feature-analysis', 'rna-velocity'] },
+      { id: 'spatial-transcriptomics-microenvironment', title: 'Branch 7 · 单细胞 × 空转微环境子树', method_id: 'spatial-transcriptomics-microenvironment', description: '汇合空转切片，开展 RCTD/签名空间映射、免疫排斥与空间通讯', requires: ['scrna-annotated-cells', 'visium-spatial-object'], subtree: 'scenarios/stromal-tme-scrna-st-playbook', next: [] },
       { id: 'dynamic-feature-analysis', title: 'Step 5A · 动态分支热图', method_id: 'dynamic-feature-analysis', description: 'BEAM 分支基因动力学' },
       { id: 'rna-velocity', title: 'Step 5B · RNA 速率方向验证', method_id: 'rna-velocity', description: 'scVelo 矢量场验证' },
       { id: 'gene-set-enrichment', title: 'Step 5C · 通路富集气泡/GSEA', method_id: 'gene-set-enrichment', description: 'GO / KEGG / GSEA' },
@@ -64,6 +65,19 @@ const CORE_PLAYBOOK_META: Record<string, { title: string; subtitle: string; step
       { id: 'shap-explanation', title: 'Step 4 · 预后/诊断模型与 SHAP 解释', method_id: 'shap-explanation', description: '构建多基因模型并输出风险与 SHAP 图' },
     ],
   },
+  'stromal-tme-scrna-st-playbook': {
+    title: '单细胞与空转肿瘤基质微环境思路分支树',
+    subtitle: '单细胞基质注释 + Visium 空转双上游汇合 → Ro/e 预后、分化轨迹、空间免疫排斥与 TLS/TAM 通讯',
+    steps: [
+      { id: 'cell-type-annotation', title: 'Stage 1 · 基质精细亚群注释与跨队列整合', method_id: 'cell-type-annotation', description: 'Fib / EC / Mural 多中心整合与包络边界 UMAP', next: ['cell-proportion-composition', 'spatial-transcriptomics-microenvironment'] },
+      { id: 'spatial-transcriptomics-microenvironment', title: 'Stage 2 · 空间去卷积与 H&E 组织分区对齐', method_id: 'spatial-transcriptomics-microenvironment', description: 'RCTD / Spot 空间签名映射与高/低生态位分区', requires: ['scrna-annotated-cells', 'visium-spatial-object'], next: ['cell-proportion-composition', 'immune-infiltration-tme', 'cell-cell-communication'] },
+      { id: 'cell-proportion-composition', title: 'Stage 3 · Ro/e 组织偏好与多队列 Cox 预后分层', method_id: 'cell-proportion-composition', description: 'Normal/Tumor/LN 组成比例检验与 TCGA/院内队列预后关联', next: ['gene-set-scoring', 'trajectory-inference'] },
+      { id: 'gene-set-scoring', title: 'Stage 4A · 功能基因程序、PROGENy 与 KEGG 代谢刻画', method_id: 'gene-set-scoring', description: '趋化因子/MHC Z-score、通路活性与代谢富集对比', next: ['trajectory-inference', 'immune-infiltration-tme'] },
+      { id: 'trajectory-inference', title: 'Stage 4B · DiffusionMap / Slingshot 分化轨迹', method_id: 'trajectory-inference', description: '推断分化起点、双功能模块激活切换与动态基因曲线', next: ['cell-cell-communication'] },
+      { id: 'immune-infiltration-tme', title: 'Stage 5 · 基质–免疫排斥相关矩阵与检查点验证', method_id: 'immune-infiltration-tme', description: 'Bulk 免疫共浸润聚类与高/低评分区域检查点表达差异', requires: ['scrna-annotated-cells', 'visium-spatial-object'], next: ['cell-cell-communication'] },
+      { id: 'cell-cell-communication', title: 'Stage 6 · TLS / TAM 空间配受体通讯枢纽', method_id: 'cell-cell-communication', description: 'CellChat / CellPhoneDB 互作矩阵、环形信号网与空间共定位验证', requires: ['scrna-annotated-cells', 'visium-spatial-object'], next: [] },
+    ],
+  },
 };
 
 const CORE_PLAYBOOK_ORDER = [
@@ -71,6 +85,7 @@ const CORE_PLAYBOOK_ORDER = [
   'bulk-ml-biomarker-playbook',
   'geneset-theme-playbook',
   'sc-bulk-integration-playbook',
+  'stromal-tme-scrna-st-playbook',
 ];
 
 interface PositionedNode {
@@ -567,6 +582,11 @@ export function PlaybooksView({ data, query = '' }: { data: AppData; query?: str
                       <span className="dag-node-id">{methodId}</span>
                       <strong className="dag-node-title">{step.title}</strong>
                       {step.description && <span className="dag-node-desc">{step.description}</span>}
+                      {!!step.requires?.length && (
+                        <span className="requires-pill" title={`多上游汇合：${step.requires.join(' + ')}`}>
+                          多上游汇合: {step.requires.join(' + ')}
+                        </span>
+                      )}
                     </button>
                   );
                 })}
@@ -589,6 +609,28 @@ export function PlaybooksView({ data, query = '' }: { data: AppData; query?: str
             <p className="small muted">
               Agent 结构化接口：<code>rwiki next {activeNodeId} --json</code>
             </p>
+            {!!activeStep?.requires?.length && !customMethodId && (
+              <p className="small">
+                <span className="requires-pill">多上游汇合: {activeStep.requires.join(' + ')}</span>
+              </p>
+            )}
+            {!!activeStep?.subtree && !customMethodId && (() => {
+              const targetSubtreeId = activeStep.subtree.split('/').pop()?.replace(/\.md$/, '') ?? '';
+              return targetSubtreeId ? (
+                <p className="small">
+                  <button
+                    type="button"
+                    className="button primary small"
+                    onClick={() => {
+                      setCustomMethodId('');
+                      setSelectedPlaybookId(targetSubtreeId);
+                    }}
+                  >
+                    进入专题子分支树（{targetSubtreeId}） →
+                  </button>
+                </p>
+              ) : null;
+            })()}
           </div>
           <div className="next-steps-actions">
             <input
@@ -690,7 +732,7 @@ export function PlaybooksView({ data, query = '' }: { data: AppData; query?: str
 
                     {branch.reference_recipes.length > 0 && (
                       <div className="branch-templates">
-                        <span className="branch-label">参考源码配方</span>
+                        <span className="branch-label">历史参考模板</span>
                         <ul className="branch-chip-list">
                           {branch.reference_recipes.map((rec) => (
                             <li key={rec.id} className="branch-template-item">

@@ -117,7 +117,7 @@ export function templateSourceNote(meta: TemplateMeta, pages: PageSummary[], hid
   }
   if (sources.some((path) => hiddenSources.has(path))) return '历史单 panel 模板 · 整图来源已归档';
   const recipes = (meta.sources ?? []).filter((s) => s.startsWith('recipes/')).map((s) => (s.endsWith('.md') ? s : `${s}.md`));
-  if (recipes.some((path) => pages.some((p) => p.path === path && p.meta.type === 'recipe'))) return '来源：已收录配方';
+  if (recipes.some((path) => pages.some((p) => p.path === path && p.meta.type === 'recipe'))) return '来源：历史归档模板';
   return '来源记录待核查';
 }
 

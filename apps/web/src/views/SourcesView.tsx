@@ -59,7 +59,7 @@ export function SourcesView({ data, query = '' }: { data: AppData; query?: strin
     && matchesFigureQuery(p.meta, q, data.pages));
   return <section className="sources-view">
     <header className="hero slim"><div className="hero-text"><h1>来源目录</h1>
-      <p className="lede">按来源查找可视化模块。L0 仅登记用途、输入与依赖；配方和函数模板保留各自的运行、回放与确认状态。</p></div></header>
+      <p className="lede">按来源查找可视化模块。L0 仅登记用途、输入与依赖；绘图模板与历史归档模板保留各自的运行、回放与确认状态。</p></div></header>
     <div className="filters" role="search">
       <a className="button" href="#/figureya">看图筛选 FigureYa</a>
       <input type="search" aria-label="搜索来源模块" placeholder="搜索 FigureYa、图型、模块 ID、输入或依赖" value={q} onChange={e => {setQuery(e.target.value);setLimit(24);}} />
@@ -69,16 +69,16 @@ export function SourcesView({ data, query = '' }: { data: AppData; query?: strin
     </div>
     <p className="small">{sources.filter(p => !source || p.meta.id === source).map(p => <span key={p.path}><a {...pageLink(p.path)}>{p.meta.title}</a>{'　'}</span>)}</p>
     <div className="source-assets">
-      <details open><summary>L2 · 函数模板（{templates.length}）</summary>
+      <details open><summary>绘图模板（{templates.length}）</summary>
         {templates.map(p => <p key={p.path}><a {...pageLink(p.path)}>{p.meta.title}</a> <span className="muted small">{displayStatus(p.meta)}</span></p>)}
-        {!templates.length && <p className="muted">此来源尚无已提炼的函数模板。</p>}
+        {!templates.length && <p className="muted">此来源尚无已提炼的绘图模板。</p>}
       </details>
-      <details><summary>L1 · 整模块配方（{recipes.length}）</summary>
+      <details><summary>历史归档模板（{recipes.length}）</summary>
         {recipes.map(p => <p key={p.path}><a {...pageLink(p.path)}>{p.meta.title}</a> <span className="muted small">{displayStatus(p.meta)}</span></p>)}
       </details>
     </div>
     <h2>L0 · 来源目录项{items && `（匹配 ${shown.length} 项）`}</h2>
-    <p className="muted small">已升级为配方的同版本条目由 L1 入口代替。上游参考图与现成输出不代表本机运行通过；多语言辅助工具见各来源说明。</p>
+    <p className="muted small">已归档为历史模板的同版本条目可由归档入口查看。上游参考图与现成输出不代表本机运行通过；多语言辅助工具见各来源说明。</p>
     {error ? <p className="notice error" role="alert">来源目录加载失败：{error}</p> : items === null ? <p role="status">正在读取来源目录…</p>
       : <><CatalogCards items={shown.slice(0, limit)} />{!shown.length && <p className="notice">没有符合条件的目录项，试试清空筛选。</p>}
         {shown.length > limit && <button onClick={() => setLimit(n => n + 24)}>继续显示（剩余 {shown.length - limit} 项）</button>}</>}

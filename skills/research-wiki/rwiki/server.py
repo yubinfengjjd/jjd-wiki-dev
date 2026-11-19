@@ -420,17 +420,22 @@ def create_app(config: Config) -> FastAPI:
                     saved = path.with_suffix("") / name
                     image = {"url": "/files/wiki/" + quote(saved.relative_to(root).as_posix()) if saved.is_file() else None,
                              "kind": "pending", "label": "已保存预览 · 当前证据核对中"}
-                records.append({"path": page, "meta": meta, "implementation_status": [], "runtime": None,
-                                "figure_refs": [], "preview": image,
-                                "workflow": pending if meta["type"] in ("layout", "template", "method", "recipe") else None,
-                                "relations": []})
-                continue
-            records.append({"path": page, "meta": meta,
-                            "implementation_status": implementation_status(path, meta) if meta['type'] == 'method' else [],
-                            "runtime": runtime_facts(path.with_suffix(''), meta['id'], 'template') if meta['type'] == 'template' else None,
-                            "figure_refs": figure_refs(meta, body), "preview": preview(meta),
-                            "workflow": workflow.get(page),
-                            "relations": [r for r in relations if page in (r["method"], r["figure"])]})
+            entry = {
+                "path": page,
+                "meta": meta,
+                "implementation_status": [] if light else (implementation_status(path, meta) if meta['type'] == 'method' else []),
+                "runtime": None if light else (runtime_facts(path.with_suffix(''), meta['id'], 'template') if meta['type'] == 'template' else None),
+                "figure_refs": [] if light else figure_refs(meta, body),
+                "preview": image if light else preview(meta),
+                "workflow": (pending if meta["type"] in ("layout", "template", "method", "recipe") else None) if light else workflow.get(page),
+                "relations": [] if light else [r for r in relations if page in (r["method"], r["figure"])],
+            }
+            if meta.get("type") == "template":
+                if meta.get("style_tier"):
+                    entry["style_tier"] = meta["style_tier"]
+                if meta.get("journal_style"):
+                    entry["journal_style"] = meta["journal_style"]
+            records.append(entry)
         return records
 
     @app.get("/api/source-items")

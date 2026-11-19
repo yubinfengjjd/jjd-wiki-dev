@@ -133,13 +133,13 @@ export function FigureYaReview({ data }: { data: AppData }) {
         <button className="review-image" aria-label={`放大 ${item.id} 的参考图`} onClick={() => setOpened(item.id)}>
           <Picture item={item} index={0} /><span className="review-image-hint">{item.images.length ? `放大查看 · ${item.images.length} 张图` : '缺少参考图'}</span></button>
         <div className="review-card-body"><h2>{item.title}</h2><p className="review-id">{item.id.split(':')[1]}</p>
-          <p className="review-caption">{item.images[0]?.label ?? '暂无参考图'} · {item.recipes.length ? '已收录配方' : '来源目录项'}</p>
+          <p className="review-caption">{item.images[0]?.label ?? '暂无参考图'} · {item.recipes.length ? '历史归档模板' : '来源目录项'}</p>
           <div className="review-actions">{choices.map(([key, label]) => <button key={key} className={key === 'removed' ? 'ghost danger' : 'ghost'} disabled={busy}
             aria-pressed={item.decision === key} onClick={() => void decide([item.id], key)}>{label}</button>)}
             {item.decision !== 'pending' && <button className="ghost review-restore" disabled={busy} onClick={() => void decide([item.id], 'pending')}>恢复</button>}</div>
           {savingIds.has(item.id) && <p className="small" role="status">正在保存选择，请稍候…</p>}
           <details><summary>用途与来源</summary><p>{item.summary || item.scenario || '详见来源页。'}</p>
-            <a {...pageLink(item.page)}>来源说明</a>{item.recipes.map(r => <p key={r.id}><a {...pageLink(r.page)}>{r.title} · 配方</a></p>)}
+            <a {...pageLink(item.page)}>来源说明</a>{item.recipes.map(r => <p key={r.id}><a {...pageLink(r.page)}>{r.title} · 历史归档模板</a></p>)}
             <p className="small muted">保留只记录样式偏好，不改变 ready 或运行验证状态。</p></details>
         </div>
       </article>)}</div>}

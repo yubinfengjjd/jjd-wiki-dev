@@ -1,4 +1,4 @@
-"""Unit tests for scripts/migrate_v4_slugs.py."""
+"""Unit tests for archived docs/archive/migrate_v4_slugs.py."""
 from __future__ import annotations
 
 import hashlib
@@ -8,7 +8,7 @@ from pathlib import Path
 
 import pytest
 
-SCRIPTS_DIR = Path(__file__).resolve().parents[3] / "scripts"
+SCRIPTS_DIR = Path(__file__).resolve().parents[3] / "docs" / "archive"
 if str(SCRIPTS_DIR) not in sys.path:
     sys.path.insert(0, str(SCRIPTS_DIR))
 

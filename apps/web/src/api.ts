@@ -164,11 +164,13 @@ export interface TemplateMeta extends ItemBase {
   panels: string[];
   chart_types: string[];
   primary_method?: string;
+  style_tier?: 'default' | 'variant';
+  journal_style?: string;
   aliases?: string[];
   data_domains?: string[];
 }
 
-/** v2 L1 recipe: a whole upstream module kept byte-for-byte and run as-is in the Wiki environment. */
+/** Legacy read-only recipe archive: whole upstream module kept byte-for-byte. */
 export interface RecipeMeta extends ItemBase {
   type: 'recipe';
   source: { id: string; item: string; commit: string; url?: string };
@@ -256,6 +258,8 @@ export interface AttachedVizCurated {
   status: Status;
   language: string;
   license?: string;
+  style_tier?: 'default' | 'variant';
+  journal_style?: string;
   chart_types: string[];
   tables: AttachedVizTable[];
   preview_url: string | null;
@@ -273,6 +277,8 @@ export interface AttachedVizCompatible {
   path: string;
   status: Status;
   language: string;
+  style_tier?: 'default' | 'variant';
+  journal_style?: string;
   chart_types: string[];
   tables: AttachedVizTable[];
   preview_url: string | null;
@@ -287,6 +293,8 @@ export interface AttachedVizBridged {
   path: string;
   status: Status;
   language: string;
+  style_tier?: 'default' | 'variant';
+  journal_style?: string;
   chart_types: string[];
   tables: AttachedVizTable[];
   preview_url: string | null;
@@ -482,6 +490,10 @@ export interface PlaybookStep {
   description?: string;
   templates?: string[];
   interface?: string;
+  inputs?: string[];
+  outputs?: string[];
+  requires?: string[];
+  subtree?: string;
   next?: string[];
 }
 
@@ -737,6 +749,8 @@ export type PageMeta = ItemMeta | InterfaceMeta | HubMeta | SourceMeta | Scenari
 export interface PageSummary<M extends PageMeta = PageMeta> {
   path: string;
   meta: M;
+  style_tier?: 'default' | 'variant';
+  journal_style?: string;
   /** Explicit outgoing figure links in a method body; general backlinks are not illustrations. */
   figure_refs?: string[];
   relations?: Relation[];
@@ -850,12 +864,12 @@ export const STATUS_LABEL: Record<Status, string> = {
 
 export const TYPE_LABEL: Record<PageType, string> = {
   layout: '来源图样',
-  template: '可调用模板',
+  template: '绘图模板',
   method: '方法页',
   interface: '数据接口',
   'chart-type': '图型',
   project: '课题',
-  recipe: '配方',
+  recipe: '历史归档模板',
   source: '来源库',
   scenario: '研究场景',
 };

@@ -10,6 +10,7 @@ import {
   NextStepsResponse,
   PageSummary,
   studioHref,
+  TemplateMeta,
   wikiFile,
 } from '../api';
 import { FigureImage, LicenseBadge, StatusBadge } from '../components';
@@ -50,7 +51,7 @@ function TemplateActionBar({
   onOpenStudio?: (id: string, title?: string) => void;
 }) {
   const [copied, setCopied] = useState(false);
-  const cliCommand = `rwiki render ${templateId} --data <数据目录> --bindings <bindings.json>`;
+  const cliCommand = `rwiki render ${templateId} --data <数据目录> --bindings <bindings.json> --out <输出目录>`;
 
   const handleCopy = async () => {
     try {
@@ -87,6 +88,31 @@ function TemplateActionBar({
   );
 }
 
+function StyleTierBadges({
+  styleTier,
+  journalStyle,
+  tplPage,
+}: {
+  styleTier?: 'default' | 'variant';
+  journalStyle?: string;
+  tplPage?: PageSummary;
+}) {
+  const tplMeta = tplPage?.meta.type === 'template' ? (tplPage.meta as TemplateMeta) : undefined;
+  const tier = styleTier ?? tplMeta?.style_tier;
+  const journal = journalStyle ?? tplMeta?.journal_style;
+  if (!tier && !journal) return null;
+  return (
+    <>
+      {tier && (
+        <span className={`style-tier-badge tier-${tier}`}>
+          {tier === 'default' ? '主推默认' : '可切换画风'}
+        </span>
+      )}
+      {journal && <span className="journal-style-pill">{journal}</span>}
+    </>
+  );
+}
+
 function CuratedVizCard({
   item,
   pages,
@@ -120,6 +146,7 @@ function CuratedVizCard({
         <div className="viz-card-badges">
           {item.primary && <span className="badge primary-mark">首选主关联</span>}
           <StatusBadge status={item.status} label={item.status === 'ready' ? '图模板可用' : undefined} />
+          <StyleTierBadges styleTier={item.style_tier} journalStyle={item.journal_style} tplPage={tplPage} />
           <span className={`compatibility compatibility-${item.compatibility}`}>{compatLabel}</span>
           {resolvedLicense && <LicenseBadge license={resolvedLicense} />}
           {item.language && <span className={`lang-pill lang-${item.language.toLowerCase()}`}>{item.language.toUpperCase()}</span>}
@@ -137,11 +164,14 @@ function CuratedVizCard({
 
 function CompatibleVizCard({
   item,
+  pages,
   onOpenStudio,
 }: {
   item: AttachedVizCompatible;
+  pages: PageSummary[];
   onOpenStudio?: (id: string, title?: string) => void;
 }) {
+  const tplPage = pages.find((p) => p.path === item.path);
   return (
     <article className="sheet viz-layer-card">
       <a className="viz-card-preview" {...pageLink(item.path)}>
@@ -154,6 +184,7 @@ function CompatibleVizCard({
       <div className="viz-card-body">
         <div className="viz-card-badges">
           <StatusBadge status={item.status} label={item.status === 'ready' ? '图模板可用' : undefined} />
+          <StyleTierBadges styleTier={item.style_tier} journalStyle={item.journal_style} tplPage={tplPage} />
           <span className={`match-pill match-${item.match_type}`}>
             {item.match_type === 'full' ? '完整对象直连 (full)' : '部分对象兼容 (partial)'}
           </span>
@@ -175,11 +206,14 @@ function CompatibleVizCard({
 
 function BridgedVizCard({
   item,
+  pages,
   onOpenStudio,
 }: {
   item: AttachedVizBridged;
+  pages: PageSummary[];
   onOpenStudio?: (id: string, title?: string) => void;
 }) {
+  const tplPage = pages.find((p) => p.path === item.path);
   return (
     <article className="sheet viz-layer-card bridged">
       <a className="viz-card-preview" {...pageLink(item.path)}>
@@ -192,6 +226,7 @@ function BridgedVizCard({
       <div className="viz-card-body">
         <div className="viz-card-badges">
           <StatusBadge status={item.status} label={item.status === 'ready' ? '图模板可用' : undefined} />
+          <StyleTierBadges styleTier={item.style_tier} journalStyle={item.journal_style} tplPage={tplPage} />
           <span className="bridge-badge">经抽取表转换 (render_bridge)</span>
           <span className={`match-pill match-${item.match_type}`}>{item.match_type}</span>
         </div>
@@ -455,7 +490,7 @@ export function MethodOverview({
                 <h3 className="viz-tier-heading">2. 对象直连兼容 (full / partial · {compatibleViz.length})</h3>
                 <div className="viz-layer-grid">
                   {compatibleViz.map((item) => (
-                    <CompatibleVizCard key={item.id} item={item} onOpenStudio={onOpenStudio} />
+                    <CompatibleVizCard key={item.id} item={item} pages={pages} onOpenStudio={onOpenStudio} />
                   ))}
                 </div>
               </div>
@@ -466,7 +501,7 @@ export function MethodOverview({
                 <h3 className="viz-tier-heading">3. 经抽取表转换 (render_bridge · {bridgedViz.length})</h3>
                 <div className="viz-layer-grid">
                   {bridgedViz.map((item) => (
-                    <BridgedVizCard key={item.id} item={item} onOpenStudio={onOpenStudio} />
+                    <BridgedVizCard key={item.id} item={item} pages={pages} onOpenStudio={onOpenStudio} />
                   ))}
                 </div>
               </div>
@@ -482,6 +517,9 @@ export function MethodOverview({
                 </a>
                 <div className="method-visual-badges">
                   <StatusBadge status={f.meta.status} label={methodFigureStatusLabel(f)} />
+                  {f.meta.type === 'template' && (
+                    <StyleTierBadges styleTier={f.meta.style_tier} journalStyle={f.meta.journal_style} />
+                  )}
                   <span className={`compatibility compatibility-${f.semantic?.compatibility ?? 'candidate'}`}>
                     {f.semantic ? COMPATIBILITY_LABEL[f.semantic.compatibility] : f.relation === 'reference' ? '参考图样' : '仅结构匹配'}
                   </span>

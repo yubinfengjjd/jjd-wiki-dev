@@ -138,6 +138,16 @@ def metadata_errors(meta: dict, vocabulary: frozenset[str] | None = None) -> lis
     if page_type == "scenario":
         if not isinstance(meta.get("picks"), list):
             errors.append("picks 必须为列表")
+        steps = meta.get("steps")
+        if steps is not None:
+            if not isinstance(steps, list):
+                errors.append("steps 必须为列表")
+            else:
+                for idx, step in enumerate(steps):
+                    if isinstance(step, dict) and "requires" in step:
+                        req = step.get("requires")
+                        if not isinstance(req, list) or any(not isinstance(item, str) or not item.strip() for item in req):
+                            errors.append(f"steps[{idx}].requires 必须为非空字符串列表")
         return finish(errors)
     if page_type not in ("layout", "template", "method", "recipe"):
         return finish(errors)
@@ -163,6 +173,10 @@ def metadata_errors(meta: dict, vocabulary: frozenset[str] | None = None) -> lis
         if not valid or not (layouts or sources):
             # v2: provenance is a gallery layout or another Wiki page (e.g. recipes/<id>).
             errors.append("模板必须记录来源：layouts（历史版式）或 sources（如 recipes/<id>）；不能新建无来源模板")
+        if "style_tier" in meta and meta.get("style_tier") not in ("default", "variant"):
+            errors.append("style_tier 必须为 default 或 variant")
+        if "journal_style" in meta and (not isinstance(meta.get("journal_style"), str) or not meta["journal_style"].strip()):
+            errors.append("journal_style 必须为非空字符串")
     if page_type == "method":
         from .method_implementations import implementation_metadata_errors
         from .method_taxonomy import purpose_errors
@@ -531,6 +545,24 @@ def lint(config: Config, ci: bool = False) -> list[str]:
         report("WARN", index, "index.md 与页面不一致，请运行 save")
     if vocab_error:
         diagnostics.append(f"ERROR taxonomy: {vocab_error}")
+    # Enforce uniqueness of style_tier: default per primary_method among active templates
+    defaults_by_method: dict[str, list[tuple[Path, str]]] = {}
+    for path, meta in readable_pages(root):
+        if (
+            meta.get("type") == "template"
+            and meta.get("status") != "archived"
+            and meta.get("style_tier") == "default"
+            and isinstance(meta.get("primary_method"), str)
+            and meta["primary_method"].strip()
+        ):
+            defaults_by_method.setdefault(meta["primary_method"].strip(), []).append(
+                (path, str(meta.get("id") or path.stem))
+            )
+    for pm, entries in sorted(defaults_by_method.items()):
+        if len(entries) > 1:
+            ids = ", ".join(tid for _, tid in entries)
+            for path, _ in entries:
+                report("ERROR", path, f"primary_method '{pm}' 下存在多个 style_tier: default 模板（每方法至多 1 个主推默认）: {ids}")
     from .curation_workflow import method_map_errors
     for message in method_map_errors(config):
         diagnostics.append(f"ERROR recipes/method-map.json: {message}")

@@ -51,6 +51,31 @@ def studio_output_file(config: Config, run_id: str, filename: str) -> Path:
 
 # ------------------------------------------------------------------ playbooks & DAG
 
+def _resolve_typed_ref(raw: str, default_kind: str = "template") -> tuple[str, str, str]:
+    """Resolve a typed or bare wiki ref like 'templates/foo', 'methods/bar', 'recipes/baz' without double-prefixing."""
+    text = str(raw or "").strip().removesuffix(".md")
+    prefix_map = {
+        "templates/": ("template", "templates"),
+        "methods/": ("method", "methods"),
+        "recipes/": ("recipe", "recipes"),
+        "scenarios/": ("scenario", "scenarios"),
+        "interfaces/": ("interface", "interfaces"),
+    }
+    for prefix, (kind, folder) in prefix_map.items():
+        if text.startswith(prefix):
+            slug = text[len(prefix):]
+            return slug, kind, f"{folder}/{slug}.md"
+    folder_map = {
+        "template": "templates",
+        "method": "methods",
+        "recipe": "recipes",
+        "scenario": "scenarios",
+        "interface": "interfaces",
+    }
+    folder = folder_map.get(default_kind, "templates")
+    return text, default_kind, f"{folder}/{text}.md"
+
+
 def _synthesize_steps(meta: dict) -> list[dict[str, Any]]:
     raw_steps = meta.get("steps")
     if isinstance(raw_steps, list) and raw_steps:
@@ -59,6 +84,8 @@ def _synthesize_steps(meta: dict) -> list[dict[str, Any]]:
             if not isinstance(item, dict):
                 continue
             step_id = str(item.get("id") or item.get("method_id") or f"step-{idx + 1}")
+            has_explicit_next = ("next" in item) or ("next_steps" in item)
+            raw_next = item.get("next") if "next" in item else item.get("next_steps")
             steps.append({
                 "id": step_id,
                 "title": str(item.get("title") or item.get("direction") or step_id),
@@ -66,7 +93,12 @@ def _synthesize_steps(meta: dict) -> list[dict[str, Any]]:
                 "description": str(item.get("description") or item.get("when") or ""),
                 "templates": list(item.get("templates") or item.get("viz_templates") or []),
                 "interface": str(item.get("interface") or item.get("intermediate_interface") or ""),
-                "next": list(item.get("next") or []),
+                "inputs": list(item.get("inputs") or []),
+                "outputs": list(item.get("outputs") or []),
+                "requires": list(item.get("requires") or []),
+                "subtree": str(item.get("subtree") or ""),
+                "next": list(raw_next or []),
+                "_has_explicit_next": has_explicit_next,
             })
         return steps
 
@@ -82,7 +114,12 @@ def _synthesize_steps(meta: dict) -> list[dict[str, Any]]:
             "description": note,
             "templates": [],
             "interface": "",
+            "inputs": [],
+            "outputs": [],
+            "requires": [],
+            "subtree": "",
             "next": [],
+            "_has_explicit_next": False,
         })
     return steps
 
@@ -130,19 +167,34 @@ def get_playbooks(config: Config) -> dict[str, Any]:
         pb_steps = pb.get("steps") or []
         for idx, st in enumerate(pb_steps):
             sid = st["id"]
+            has_explicit_next = bool(st.pop("_has_explicit_next", False))
             add_node(sid, st["title"], "step", f"methods/{st['method_id']}.md" if st.get("method_id") else "")
             if st.get("interface"):
                 add_node(st["interface"], st["interface"], "interface", f"interfaces/{st['interface']}.md")
                 edges_set.add((sid, st["interface"], "produces"))
-            for tid in st.get("templates") or []:
-                add_node(tid, tid, "template", f"templates/{tid}.md")
-                src = st["interface"] or sid
-                edges_set.add((src, tid, "visualizes"))
+            for raw_ref in st.get("templates") or []:
+                ref_id, ref_kind, ref_path = _resolve_typed_ref(raw_ref, default_kind="template")
+                if not ref_id:
+                    continue
+                add_node(ref_id, ref_id, ref_kind, ref_path)
+                if ref_kind == "method":
+                    edges_set.add((sid, ref_id, "uses_method"))
+                else:
+                    src = st["interface"] or sid
+                    edges_set.add((src, ref_id, "visualizes"))
+            if st.get("subtree"):
+                sub_id, sub_kind, sub_path = _resolve_typed_ref(st["subtree"], default_kind="scenario")
+                if sub_id:
+                    add_node(sub_id, sub_id, sub_kind, sub_path)
+                    edges_set.add((sid, sub_id, "subtree"))
             if st.get("next"):
                 for nxt in st["next"]:
                     edges_set.add((sid, nxt, "next"))
-            elif idx + 1 < len(pb_steps):
+            elif not has_explicit_next and idx + 1 < len(pb_steps):
                 edges_set.add((sid, pb_steps[idx + 1]["id"], "next"))
+    for sc in scenarios:
+        for st in sc.get("steps") or []:
+            st.pop("_has_explicit_next", None)
 
     for mid, (mm, _) in declarations(root, "methods").items():
         if mm.get("status") == "archived":
@@ -157,11 +209,15 @@ def get_playbooks(config: Config) -> dict[str, Any]:
                 add_node(iface, iface, "interface", f"interfaces/{iface}.md")
                 edges_set.add((mid, iface, label))
             for tid in ns.get("viz_templates") or []:
-                add_node(str(tid), str(tid), "template", f"templates/{tid}.md")
-                edges_set.add((iface or mid, str(tid), label))
+                ref_id, ref_kind, ref_path = _resolve_typed_ref(str(tid), default_kind="template")
+                if ref_id:
+                    add_node(ref_id, ref_id, ref_kind, ref_path)
+                    edges_set.add((iface or mid, ref_id, label))
             for amid in ns.get("analysis_templates") or []:
-                add_node(str(amid), str(amid), "method", f"methods/{amid}.md")
-                edges_set.add((mid, str(amid), label))
+                ref_id, ref_kind, ref_path = _resolve_typed_ref(str(amid), default_kind="method")
+                if ref_id:
+                    add_node(ref_id, ref_id, ref_kind, ref_path)
+                    edges_set.add((mid, ref_id, label))
 
     for tid, (tm, spec) in declarations(root, "templates").items():
         if tm.get("status") == "archived":

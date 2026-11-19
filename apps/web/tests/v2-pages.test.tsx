@@ -94,7 +94,7 @@ async function main() {
       assert.ok(TYPE_COLOR[type], type);
       assert.equal(typeof TYPE_SHAPE[type], 'number', type);
     }
-    assert.equal(TYPE_LABEL.recipe, '配方');
+    assert.equal(TYPE_LABEL.recipe, '历史归档模板');
     assert.equal(TYPE_LABEL.source, '来源库');
     assert.equal(TYPE_LABEL.scenario, '研究场景');
     assert.ok(HAS_STATUS('recipe'));
@@ -218,18 +218,18 @@ async function main() {
   });
 
   await check('v2 template without layouts and with no panels is shown with its recipe provenance', () => {
-    assert.equal(templateSourceNote(v2template.meta as any, pages as any), '来源：已收录配方');
+    assert.equal(templateSourceNote(v2template.meta as any, pages as any), '来源：历史归档模板');
     assert.equal(templateSourceNote({ ...v2template.meta, sources: undefined } as any, pages as any), '来源记录待核查');
     const entries = galleryEntries(pages as any);
     assert.equal(entries.template.length, 1);
     const html = renderToStaticMarkup(<Gallery data={dataOf(pages)} />);
     assert.ok(html.includes('派生火山图模板'));
-    assert.ok(html.includes('来源：已收录配方'));
+    assert.ok(html.includes('来源：历史归档模板'));
     assert.ok(!html.includes('原图面板'), 'no empty source panel list');
     const page = detail(v2template, '# 派生火山图模板\n\n## 适用\n\n说明\n\n<!-- user:start -->\n<!-- user:end -->\n');
     pageCache.set(page.path, page);
     const view = renderToStaticMarkup(<PageView path={page.path} data={dataOf(pages)} />);
-    assert.ok(view.includes('来源：已收录配方'));
+    assert.ok(view.includes('来源：历史归档模板'));
   });
 
   await check('playbooks, studio, projects and studio-entry buttons render cleanly', () => {

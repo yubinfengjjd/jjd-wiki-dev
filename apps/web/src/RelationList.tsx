@@ -23,10 +23,19 @@ export function RelationList({ relations, self, pages }: {
             .map((id) => pages?.find((page) => page.path === `templates/${id}.md`))
             .find((page) => page?.meta.type === 'template' && page.meta.status === 'ready')
           : undefined;
+        const styleTarget = target?.meta.type === 'template' ? target.meta : template?.meta.type === 'template' ? template.meta : undefined;
         return <article key={`${r.method}:${r.figure}`} className={`relation-record${r.active ? '' : ' inactive'}`}>
           <div className="panel-row">
             <a {...pageLink(methodSide ? r.figure : r.method)}>{methodSide ? r.figure_title : r.method_title}</a>
             <span className={`compatibility compatibility-${r.compatibility}`}>{relationLabel(r)}</span>
+            {styleTarget?.style_tier && (
+              <span className={`style-tier-badge tier-${styleTarget.style_tier}`}>
+                {styleTarget.style_tier === 'default' ? '主推默认' : '可切换画风'}
+              </span>
+            )}
+            {styleTarget?.journal_style && (
+              <span className="journal-style-pill">{styleTarget.journal_style}</span>
+            )}
           </div>
           <p className="small relation-target">{relationTargetLabel(r)}</p>
           <p>{r.reason}</p>

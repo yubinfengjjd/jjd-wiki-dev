@@ -154,7 +154,7 @@ def _load_template_catalog(config: Config, hidden: set[str]) -> list[dict]:
             for s in (meta.get("sources") or [])
             if isinstance(s, str) and str(s).strip().startswith("recipes/")
         ]
-        catalog.append({
+        item = {
             "id": str(meta.get("id") or path.stem),
             "title": str(meta.get("title") or path.stem),
             "path": rel_path,
@@ -167,7 +167,12 @@ def _load_template_catalog(config: Config, hidden: set[str]) -> list[dict]:
             "sources": sources,
             "primary_method_id": primary_method_id,
             "preview_url": template_preview_url(root, meta),
-        })
+        }
+        if meta.get("style_tier"):
+            item["style_tier"] = meta["style_tier"]
+        if meta.get("journal_style"):
+            item["journal_style"] = meta["journal_style"]
+        catalog.append(item)
     return catalog
 
 

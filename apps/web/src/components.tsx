@@ -36,8 +36,8 @@ const HINT: Record<ItemMeta['type'], Partial<Record<Status, string>>> = {
     archived: '已归档，不会被推荐。',
   },
   recipe: {
-    draft: '已入库，原样运行通过后待你确认。',
-    ready: '已确认，可原样运行；运行通过不等于科学有效。',
+    draft: '已入库历史归档模板，参考运行通过后待你确认。',
+    ready: '历史归档模板已确认，可供参考或迁移为绘图模板；运行通过不等于科学有效。',
     archived: '已归档，不会被推荐。',
   },
 };
@@ -218,7 +218,7 @@ export function RecipeCard({ path, meta, number, origin }: RecipeProps) {
       path={path}
       meta={meta}
       number={number}
-      label="配方"
+      label="历史归档模板"
       note={origin ? `来源：${origin}` : undefined}
       badges={<LicenseBadge license={meta.license} />}
       plate={<FigureImage key={imageOf(meta)} meta={meta} />}

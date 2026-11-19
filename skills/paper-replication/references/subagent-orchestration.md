@@ -19,9 +19,9 @@
 
 - **执行顺序**：
   1. 先从 `extracted/pages/` 确认原图各子面板坐标与 `captions.json` 图注，排除湿实验面板后，按 `sci-figure-replica` 规范裁剪全部可复刻单 panel 并在画廊建档（保留完整原图作只读溯源）；
-  2. 本地调试绘图脚本固定放入 `<paper_id>/src/figures/figXX_panelY.*` 与 `compose_figXX.*`；若 `upstream_repo/` 已含该图脚本，先核对许可与绘图代码结构（标注 `adapted` 或 `reconstructed`），再按 `rwiki` 原生模板规范改造：
+  2. 本地调试绘图脚本固定放入 `<paper_id>/src/figures/figXX_panelY.*` 与 `compose_figXX.*`；若 `upstream_repo/` 已含该图脚本，先核对许可与绘图代码结构（标注 `adapted` 或 `reconstructed`），再统一按 `rwiki` 原生绘图模板规范（`wiki/templates/<slug>/`，不再区分 L1 配方与 L2 模板）改造：
      - 禁硬编码固定样本数/模块数（`n` 必须自适应）
-     - ID 严格使用短 slug（`rwiki scaffold-template <slug> --native --primary-method <方法id>`，禁带 `fy-` / `v2` / `--` 拼接）
+     - 一类图允许多套不同顶刊风格的模板并存（如不同布局/多轨组合风），先查重可复用模板，缺失风格或图型再新建短 slug 原生模板（`rwiki scaffold-template <slug> --native --primary-method <方法id>`，禁带 `fy-` / `v2` / `--` 拼接）
      - 去水印、修补原图局部重叠瑕疵并保留可编辑 PDF
   3. 对单 panel 运行 `qa_check.py` 与 `rwiki verify-template`，同时输出整张 Figure 的 `patchwork` / `matplotlib` 拼图脚本及 `composite_side_by_side.png`（汇总图副本放入 `<paper_id>/review/`）。
 

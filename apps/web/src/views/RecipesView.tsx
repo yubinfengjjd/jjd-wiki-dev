@@ -75,7 +75,7 @@ export function buildRecipeMethodIndex(hubs: MethodHubsResponse | null): RecipeM
   return { methodsById, methodsForRecipe, unmappedIds };
 }
 
-/** L1 recipes: whole upstream modules organized by 7 canonical data domains and analysis methods. */
+/** Legacy read-only recipe archive: whole upstream modules organized by 7 canonical data domains and analysis methods. */
 export function RecipesView({ data, query = '' }: { data: AppData; query?: string }) {
   const initialQuery = parseRecipeFilterQuery(query);
   const [f, setF] = useState<Filters>({
@@ -230,9 +230,9 @@ export function RecipesView({ data, query = '' }: { data: AppData; query?: strin
     <section className="recipes">
       <header className="hero slim">
         <div className="hero-text">
-          <h1>配方（按方法域与分析方法组织）</h1>
+          <h1>历史归档模板（按方法域与分析方法组织）</h1>
           <p className="lede">
-            整个上游 FigureYa 模块原字节入库，已按 7 大数据类型域与细分分析方法建立映射（L1 源码参考）；卡片上的图是最近一次通过的原样运行图，不代表独立科学有效验证，使用前请核对非商业许可与引用文献。
+            历史归档的上游 FigureYa 整模块源码，已按 7 大数据类型域与细分分析方法建立映射（只读历史参考，新增绘图模板统一建入绘图模板库）；卡片上的图是最近一次通过的参考运行图，不代表独立科学有效验证，使用前请核对非商业许可与引用文献。
           </p>
           <dl className="census">
             {RECIPE_STAGES.map(([stage, label]) => (
@@ -249,7 +249,7 @@ export function RecipesView({ data, query = '' }: { data: AppData; query?: strin
       </header>
 
       {hubs && (
-        <nav className="recipes-domain-tabs" aria-label="按方法数据类型域筛选配方">
+        <nav className="recipes-domain-tabs" aria-label="按方法数据类型域筛选历史归档模板">
           <button
             type="button"
             className={!f.domain ? 'domain-tab active' : 'domain-tab'}
@@ -286,7 +286,7 @@ export function RecipesView({ data, query = '' }: { data: AppData; query?: strin
         <input
           type="search"
           placeholder="搜索标题、来源条目、标签、关键词"
-          aria-label="搜索配方"
+          aria-label="搜索历史归档模板"
           value={f.q}
           onChange={(e) => set('q', e.target.value)}
         />
@@ -335,8 +335,8 @@ export function RecipesView({ data, query = '' }: { data: AppData; query?: strin
       {shown.length === 0 ? (
         <p className="notice">
           {recipes.length > 0
-            ? '没有符合筛选条件的配方，换个方法域、关键词或清空筛选再试。'
-            : '还没有配方。在 agent 里把来源库条目升级为配方（wiki.py promote）后会出现在这里。'}
+            ? '没有符合筛选条件的历史归档模板，换个方法域、关键词或清空筛选再试。'
+            : '还没有历史归档模板。新增绘图模板统一建入绘图模板库。'}
         </p>
       ) : groupedByMethod ? (
         <div className="recipe-method-groups">

@@ -49,15 +49,20 @@ def _template_record(config: Config, path: Path, meta: dict, body: str) -> dict:
         interfaces = sorted({table["interface"] for table in spec["tables"].values() if table.get("interface")})
     except (WikiError, OSError, KeyError, TypeError, ValueError):
         interfaces = []
-    return {"id": meta["id"], "kind": "template", "level": "L2", "title": meta["title"],
-            "status": meta.get("status"), "usable": _usable(config, path, meta),
-            "summary": _line(meta.get("summary") or _section(body, "适用")),
-            "not_for": _line(_section(body, "不适用")),
-            "chart_types": meta.get("chart_types") or [], "tags": meta.get("tags") or [],
-            "keywords": meta.get("keywords") or [], "inputs": interfaces, "language": meta.get("language"),
-            "license": meta.get("license", ""), "page": f"templates/{meta['id']}.md",
-            "use": f"wiki.py use {meta['id']} --project <课题目录>  # 或 wiki.py render {meta['id']} "
-                   "--data <数据目录> --out <输出目录> [--bindings bindings.json]"}
+    record = {"id": meta["id"], "kind": "template", "level": "L2", "title": meta["title"],
+              "status": meta.get("status"), "usable": _usable(config, path, meta),
+              "summary": _line(meta.get("summary") or _section(body, "适用")),
+              "not_for": _line(_section(body, "不适用")),
+              "chart_types": meta.get("chart_types") or [], "tags": meta.get("tags") or [],
+              "keywords": meta.get("keywords") or [], "inputs": interfaces, "language": meta.get("language"),
+              "license": meta.get("license", ""), "page": f"templates/{meta['id']}.md",
+              "use": f"wiki.py use {meta['id']} --project <课题目录>  # 或 wiki.py render {meta['id']} "
+                     "--data <数据目录> --out <输出目录> [--bindings bindings.json]"}
+    if meta.get("style_tier"):
+        record["style_tier"] = meta["style_tier"]
+    if meta.get("journal_style"):
+        record["journal_style"] = meta["journal_style"]
+    return record
 
 
 def _recipe_record(config: Config, path: Path, meta: dict, body: str) -> dict:

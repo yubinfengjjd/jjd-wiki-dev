@@ -299,9 +299,9 @@ export function ResourcesView({ data, query = '' }: { data: AppData; query?: str
               <a className="button primary small" href="#/sources">打开来源目录 (#/sources)</a>
             </article>
             <article className="sheet resources-entry-card">
-              <h3>完整配方与源码归档（{recipePages.length}）</h3>
-              <p className="small muted">保留原始 R/Python 模块运行收据与许可标记，并已统一接入各分析方法可视化目录。</p>
-              <a className="button primary small" href="#/recipes">打开配方归档 (#/recipes)</a>
+              <h3>历史归档模板与源码（{recipePages.length}）</h3>
+              <p className="small muted">保留只读历史 R/Python 模块参考运行收据与许可标记，新模板统一归入绘图模板库。</p>
+              <a className="button primary small" href="#/recipes">打开历史归档模板 (#/recipes)</a>
             </article>
             <article className="sheet resources-entry-card">
               <h3>FigureYa 看图筛选与归档</h3>

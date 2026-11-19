@@ -5,7 +5,7 @@ description: Use when the author wants a template, figure or analysis method fro
 
 # 科研知识库（research-wiki）
 
-作者的 LLM Wiki：配方、图模板、方法笔记与数据接口，按等级区分。L0 = 来源目录项（未建页），L1 = 原样运行通过的整模块配方，L2 = 函数化、可换数据的模板/方法。你只用命令操作，不必读 `rwiki/` 源码。
+作者的 LLM Wiki：统一 **「绘图模板（`templates/`）」**、分析方法（`methods/`）、思路分支树（`scenarios/`）与数据接口（`interfaces/`）。不再区分 L1 配方与 L2 模板，新增绘图模板一律建入 `templates/`（一类图允许多套顶刊风格并存，用 `style_tier: default|variant` + `journal_style` 区分）；`L0` 为来源目录项（未建页），`recipes/` 为只读历史归档模板目录（保留磁盘文件不断链，逐步迁移至 `templates/`）。你只用命令操作，不必读 `rwiki/` 源码。
 
 ## 怎么调用
 
@@ -25,12 +25,12 @@ description: Use when the author wants a template, figure or analysis method fro
 1. `rwiki find <场景/图型/分析名…> [--kind method|template|recipe|scenario|interface|chart-type|project|layout|source|item] [--scope knowledge|source] [--runnable]`：默认对完整知识正文按章节做离线 BM25 检索，页面合并后显示命中章节、片段和匹配原因；相关性优先。`source` 只搜索本机已下载的代码和来源说明。
 2. `rwiki show <id>`：用途、适用/不适用、输入、许可、最近运行。读完再给作者 1–3 个候选与差异，等作者选；已有选择就复用。
 3. `rwiki use <id> --project <课题目录>`：代码复制到 `<课题>\wiki-use\<名>\`，不改 Wiki。L0 条目要求来源 trusted。
-4. 按副本里的 `RWIKI-USE.md` 换数据：配方替换同名输入文件、保持列格式；模板把 `bindings.draft.json` 改成 `bindings.json`（内部字段 → 作者列）。含义、单位、粒度不清先问。
-5. 运行：配方副本 `rwiki run --dir <副本>`；模板 `rwiki render <id> --data <目录> --out <目录> --bindings <bindings.json>`；方法在课题环境调用 `code\` 入口。
+4. 按副本里的 `RWIKI-USE.md` 换数据：绘图模板把 `bindings.draft.json` 改成 `bindings.json`（内部字段 → 作者列）；历史归档模板（`recipes/`）替换同名输入文件、保持列格式。含义、单位、粒度不清先问。
+5. 运行：绘图模板 `rwiki render <id> --data <目录> --out <目录> --bindings <bindings.json>`；方法在课题环境调用 `code\` 入口；历史归档模板副本 `rwiki run --dir <副本>`。
 6. 打开图看一眼；没有看图能力就把目视检查写成待办。数据、脚本、成图都留在课题目录。
 7. 任务授权包含正式 Wiki 写入时才回写：`rwiki record-use <模板 id> --project <slug> --title … --output <png>`；只做了分析用 `record-method-use`。只记路径与判断。
 
-medfig-render、medpaper-pipeline 出图前先 `rwiki find`：有可用模板或通过的配方就给作者候选，没有就照常出图。按列名或研究问题初筛也可用 `suggest` / `suggest-methods` / `suggest-pipeline` / `discover-methods`；课题状态与证据用 `project …`（只写 `<课题>\wiki-use\_project\`）。见 references/project-reuse.md、references/project-state.md。
+medfig-render、medpaper-pipeline 出图前先 `rwiki find`：有可用绘图模板（或历史归档模板）就给作者候选（含同图型不同顶刊风格），没有就照常出图。按列名或研究问题初筛也可用 `suggest` / `suggest-methods` / `suggest-pipeline` / `discover-methods`；课题状态与证据用 `project …`（只写 `<课题>\wiki-use\_project\`）。见 references/project-reuse.md、references/project-state.md。
 
 ### 统一检索与轻量检出
 
@@ -43,13 +43,10 @@ medfig-render、medpaper-pipeline 出图前先 `rwiki find`：有可用模板或
 ## 入库：开源库与复刻图（画廊是来源之一）
 
 1. 登记来源（作者同意收这个库）：`rwiki source add <id> --title … --url … --license <SPDX> --adapter figureya [--trusted] [--cite …]` → `rwiki source fetch <id>` → `rwiki source scan <id>`（生成 L0 目录）。
-2. 按主题挑条目：`rwiki promote <来源> <条目…> --curation <json>`（中文标题、图型、受控 tags、用途/适用/不适用）。
-3. `rwiki deps <配方…>` 列缺包，整理成一批清单交作者；作者按批次批准后 `rwiki deps <配方…> --install`（只装进 Wiki 专用 R 库）。
-4. `rwiki run <配方…> [--jobs N]` 原样运行；看收据与 preview.png，补页面判断。缺包写 not_run，不伪造。
-5. 作者确认一批：`rwiki mark-ready <id…>`（任一不通过则全部不改）。
-6. 入库前查重与规范命名：`rwiki check-dup --kind template|method --title … [--primary-method …] [--chart-type …]` 先核对是否可复用既有条目；新建模板优先用规范短 slug（禁含 `fy-`/`figureya`/`v2`/`plus`/`--`）并直接通过 `--primary-method <分析方法id>` 绑定归属。高相似既有条目时须传 `--dedup-note "<差异说明>"` 写入关联检查，不硬性封死正当变体。
-7. 模板与方法映射：`rwiki scaffold-template <模板id> --native --primary-method <方法id> --chart-type <slug> --title <中文名>`（或从配方升级 `scaffold-template <配方id> --from-recipe --id <语义slug> --chart-type <slug> --title …`，自动沿 `method-map.json` 推断主方法）→ 写 `code\`、`example\` 与 spec → `rwiki verify-template <模板id>` → `rwiki mark-ready <模板id>`。批量核对方法域归属与覆盖率用 `rwiki map-method` / `rwiki curate-audit`。复刻图：sci-figure-replica 复刻后 `rwiki ingest-figure <画廊条目>` → `rwiki scaffold-template <版式id> --chart-type … --panels …`（相同画法用 `attach-template`）→ `verify-template` → `mark-ready`。
-8. 方法：按 AGENTS.md 的四步（读目的与输入 → 查库语义去重 → 提炼与验证 → 知识整合与确认），骨架用 `rwiki scaffold-method`。
+2. 新建模板一律归入 `templates/`（不再新建 `recipes/`，也不区分 L1/L2）：按主题挑缺口条目或文献面板，先 `rwiki check-dup --kind template|method --title … [--primary-method …] [--chart-type …]` 查重；一类图允许多套不同顶刊风格模板并存（用 `style_tier: default|variant` + `journal_style` 区分），高相似正当变体须传 `--dedup-note "<风格/结构差异说明>"`，严禁完全冗余克隆；新建模板严格使用规范短 slug（禁含 `fy-`/`figureya`/`v2`/`plus`/`--`）。
+3. 模板构建与方法映射：`rwiki scaffold-template <模板id> --native --primary-method <方法id> --chart-type <slug> --title <中文名>`（或将历史 `recipes/` 归档条目迁移为模板 `scaffold-template <归档id> --from-recipe --id <语义slug> --chart-type <slug> --title …`）→ 写 `code\`、`example\` 与 spec → `rwiki deps <id…>` 列缺包、待作者按批批准后 `--install` → `rwiki verify-template <模板id>` → `rwiki mark-ready <模板id>`。批量核对方法域归属与 `figure_relations`/`next_steps` 用 `rwiki map-method` / `rwiki curate-audit`。复刻图：sci-figure-replica 复刻后 `rwiki ingest-figure <画廊条目>` → `rwiki scaffold-template <版式id> --chart-type … --panels …`（相同画法用 `attach-template`）→ `verify-template` → `mark-ready`。
+4. 现有 `recipes/` 下历史归档模板只读保留以维持既有链接，如须补跑/核对历史收据可使用 `rwiki run <id…>`，逐步按需迁入 `templates/`。
+5. 方法与生信思路分支树：按 AGENTS.md 四步（读目的与输入 → 查库语义去重 → 提炼与验证 → 知识整合与确认），骨架用 `rwiki scaffold-method`；新分析方法须维护 `figure_relations` 与 `next_steps`，并在 `scenarios/` 主干决策树或专题子树（支持多上游 `requires: [...]`）挂载分支，课题完成时沉淀 `projects/<slug>.md` 走线实录卡。
 
 细节见 references/sources-and-recipes.md 与 references/method-families.md。
 
@@ -82,7 +79,7 @@ medfig-render、medpaper-pipeline 出图前先 `rwiki find`：有可用模板或
 
 ## references（按需读）
 
-- references/sources-and-recipes.md：来源、L0/L1、运行器、收据、use 副本、装包审批、restore、许可、catalog 字段、画廊来源、确认与待办
+- references/sources-and-recipes.md：来源、L0 目录与历史归档模板（recipes/）、运行器、收据、use 副本、装包审批、restore、许可、catalog 字段、画廊来源、确认与待办
 - references/input-binding.md：bindings 与长宽整理
 - references/adaptive-sizing.md：模板组数与尺寸适配
 - references/minimal-runtime.md：`runtime.json` 与独立性证据

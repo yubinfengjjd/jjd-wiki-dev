@@ -2,7 +2,7 @@ import { FormEvent, useEffect, useRef, useState } from 'react';
 import { api, SearchResponse, SearchResult } from '../api';
 import { latestSearch, parseSearchQuery, searchHref, searchParams, searchResultHref } from '../search';
 
-const KINDS = [['', '全部类型'], ['method', '方法'], ['template', '模板'], ['recipe', '配方'],
+const KINDS = [['', '全部类型'], ['method', '方法'], ['template', '绘图模板'], ['recipe', '历史归档模板'],
   ['scenario', '场景'], ['source', '来源'], ['interface', '接口'], ['chart-type', '图型'], ['project', '课题'], ['layout', '图样'], ['item', '来源条目']];
 const AVAILABILITY = {available: '资料已在本机', not_downloaded: '未下载', missing: '资料缺失'};
 const EVIDENCE: Record<string, string> = {current: '已核对当前证据', unknown: '尚未核对', unverified: '未验证',

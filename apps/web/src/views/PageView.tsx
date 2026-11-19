@@ -19,8 +19,8 @@ import { sectionTargets } from '../search';
 const SECTION: Partial<Record<PageType, [string, string]>> = {
   method: ['#/methods', '分析方法库'],
   interface: ['#/resources?tab=interfaces', '资料与接口'],
-  recipe: ['#/recipes', '配方'],
-  source: ['#/recipes', '配方'],
+  recipe: ['#/recipes', '历史归档模板'],
+  source: ['#/recipes', '历史归档模板'],
   scenario: ['#/scenarios', '场景'],
 };
 
@@ -145,7 +145,7 @@ export function PageView({ path, data, query = '' }: { path: string; data: AppDa
       <div className="page-main sheet">
         <p className="crumb">
           <a href={sectionHref}>{sectionLabel}</a>{' '}
-          / {meta.type === 'template' ? '单 panel 图样 / 可调用模板'
+          / {meta.type === 'template' ? '绘图模板'
             : meta.type === 'layout' ? figureLabel(meta)
             : meta.type === 'recipe' ? <>
               {data.env.titles.has(recipeSource) ? <a {...pageLink(recipeSource)}>{data.env.titles.get(recipeSource)}</a> : meta.source?.id ?? '来源未记录'}
@@ -157,7 +157,23 @@ export function PageView({ path, data, query = '' }: { path: string; data: AppDa
           <div>
             <h1>{meta.title}</h1>
             {meta.type === 'template' && (
-              <p className="small muted page-canonical-slug">规范标识：<code>{meta.id}</code></p>
+              <p className="small muted page-canonical-slug">
+                规范标识：<code>{meta.id}</code>
+                {meta.style_tier && (
+                  <>
+                    {' '}
+                    <span className={`style-tier-badge tier-${meta.style_tier}`}>
+                      {meta.style_tier === 'default' ? '主推默认' : '可切换画风'}
+                    </span>
+                  </>
+                )}
+                {meta.journal_style && (
+                  <>
+                    {' '}
+                    <span className="journal-style-pill">{meta.journal_style}</span>
+                  </>
+                )}
+              </p>
             )}
           </div>
           <div className="page-title-actions">

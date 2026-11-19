@@ -192,7 +192,7 @@ export function resolveRecipeLicense(
 
 function UnmappedRecipesSection({ recipes, pages }: { recipes: ReferenceRecipeSummary[]; pages: PageSummary[] }) {
   if (!recipes.length) {
-    return <p className="notice">当前所有参考配方均已映射到至少一个分析方法。</p>;
+    return <p className="notice">当前所有历史归档模板均已映射到至少一个分析方法。</p>;
   }
   return (
     <div className="unmapped-recipes-grid">
@@ -216,7 +216,7 @@ function UnmappedRecipesSection({ recipes, pages }: { recipes: ReferenceRecipeSu
               {rec.note && <p className="small">{rec.note}</p>}
               <div className="unmapped-recipe-actions">
                 {license && <LicenseBadge license={license} />}
-                <a className="button small" {...pageLink(rec.path)}>配方详情</a>
+                <a className="button small" {...pageLink(rec.path)}>归档详情</a>
                 <a className="button primary small" href={studioHref(rec.id)}>打开工作台</a>
               </div>
             </div>
@@ -434,7 +434,7 @@ export function MethodsView({ data, query = '' }: { data: AppData; query?: strin
                 href={href({ domain: '', purpose: '', q: '' }, 'all', 'unmapped')}
                 className={viewTab === 'unmapped' ? 'sidebar-pill active' : 'sidebar-pill'}
               >
-                <span>未映射辅助配方</span>
+                <span>未映射历史辅助模板</span>
                 <span className="pill-count">{unmappedCount}</span>
               </a>
               <a
@@ -464,7 +464,7 @@ export function MethodsView({ data, query = '' }: { data: AppData; query?: strin
           {viewTab === 'unmapped' ? (
             <section className="unmapped-fallback-panel">
               <div className="gallery-result-bar">
-                <h2>未映射到单一方法的辅助工具配方（{unmappedCount}）</h2>
+                <h2>未映射到单一方法的历史辅助工具模板（{unmappedCount}）</h2>
                 <a className="button small" href="#/methods">返回分析方法库</a>
               </div>
               <UnmappedRecipesSection recipes={unmappedRecipes} pages={data.pages} />
@@ -487,7 +487,7 @@ export function MethodsView({ data, query = '' }: { data: AppData; query?: strin
                 </span>
                 {unmappedCount > 0 && (
                   <a className="small" href={href({ domain: '', purpose: '', q: '' }, 'all', 'unmapped')}>
-                    另有 {unmappedCount} 个未映射辅助配方 →
+                    另有 {unmappedCount} 个未映射历史辅助模板 →
                   </a>
                 )}
               </div>

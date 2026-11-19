@@ -41,7 +41,7 @@ description: Use when the author gives a WeChat post, link, DOI, PMID, or paper 
 └── review/                               # 主协调者自审：side_by_side.png、参数核查表、QA 报告
 ```
 
-- **Wiki 正式存档**：`wiki/methods/<workflow-id>.md`（`method_kind: workflow`）下固定保存两套可读源码：`methods/<workflow-id>/source/`（作者原版核心脚本快照 + `source-manifest.json`，单文件 `< 4.5 MB`）与 `methods/<workflow-id>/code/`（同步自 `<paper_id>/src/` 的分步复刻源码 + `runtime.json`），`verification/` 存小规模运行收据；可复用单面板图模板入 `templates/<short-slug>/`；整图拼图归 `gallery/`。
+- **Wiki 正式存档**：`wiki/methods/<workflow-id>.md`（`method_kind: workflow`）下固定保存两套可读源码：`methods/<workflow-id>/source/`（作者原版核心脚本快照 + `source-manifest.json`，单文件 `< 4.5 MB`）与 `methods/<workflow-id>/code/`（同步自 `<paper_id>/src/` 的分步复刻源码 + `runtime.json`），`verification/` 存小规模运行收据；所有可复用可视化代码统一入 `wiki/templates/<short-slug>/`（**一类图允许多套不同顶刊风格模板并存，供真实课题按需切换**）；整图拼图归 `gallery/`。
 
 ## 五阶段工作流
 
@@ -65,17 +65,18 @@ description: Use when the author gives a WeChat post, link, DOI, PMID, or paper 
 按 [子代理分工与自审契约](references/subagent-orchestration.md) 拆分任务卡分发：
 
 - **Analysis Subagent**：把分步脚本写入 `<paper_id>/src/01_...` 等编号文件，输出真实运行日志至 `runs/`、导出供绘图消费的标准中间表，严禁篡改参数或漏报缺包；需新装包时只收集清单交作者按批批准。
-- **Figure Subagent**：调用 `sci-figure-replica` 对全量选定 Main + Supplementary 数据图的每个可复刻 Panel 做 1:1 复刻，开发源码放在 `src/figures/`；通过 `rwiki scaffold-template <短slug> --native --primary-method <规范方法id>` 建成单 panel 原生模板（`verify-template` 实跑通过），并用 `patchwork`/`matplotlib` 生成整图拼图与对比图。
+- **Figure Subagent**：调用 `sci-figure-replica` 对全量选定 Main + Supplementary 数据图的每个可复刻 Panel 做 1:1 复刻，开发源码放在 `src/figures/`；优先 `rwiki check-dup` 复用已有 `templates/`，对缺口图型或不同顶刊风格通过 `rwiki scaffold-template <短slug> --native --primary-method <规范方法id>` 建成独立绘图模板（`verify-template` 实跑通过），并用 `patchwork`/`matplotlib` 生成整图拼图与对比图。
 - **Coordinator 自审门禁（发布前必过）**：
   1. 对照正文 + 附加材料核查参数、随机种子、`scale_down_boundary` 声明与 `step_supp_map.json`；
   2. 亲自看图审查每张 `side_by_side.png` 与整图拼图对比图；
   3. 运行 `rwiki check-dup`、`rwiki check-entry <id>`、`rwiki lint`（必须 0 ERROR）及 `rwiki clean` 清理临时残留。
 
-### 阶段 5：知识库全闭环沉淀（Publish + Templates + Method Relations + Research Playbook）
+### 阶段 5：知识库全闭环沉淀（Publish + Templates + Method Relations + Composable Decision Tree）
 
-1. **全图型 100% 模板覆盖（不区分 L1/L2，一律归入 `templates/`）**：逐张盘点所有 Main + Supp Figure 的全部独立面板图型——先 `rwiki check-dup` 复用库内既有 `templates/`，凡尚无对应模板的缺口图型必须全部新建至 `wiki/templates/<short-slug>/`（不再新建 `recipes/`，也不区分 L1/L2）。
-2. **按研究思路绑定方法 ↔ 可视化语义关系**：将全篇所用规范方法与全部复用/新建模板逐一写入规范方法页 `figure_relations`（语义审查）与 `next_steps`，并运行 `rwiki map-method` 同步 `method-map.json`，确保方法页与模板页均不残留“暂无已记录关系”。
-3. **沉淀课题完整研究思路（Playbook + Project Card）**：
-   - 新建或扩展 `wiki/scenarios/<domain>-playbook.md`（结构化 `steps:` DAG 决策树，逐阶段写清 `when`、`method_id`、`templates`、`next_steps`）；
-   - 新建 `wiki/projects/<paper_id>.md`（本课题完整步进思路卡，按研究主线逐阶段记录「科学假设 → 分析方法 + 可视化模板 → 生物学发现与排坑 → 触发下一步分叉」）。
+1. **统一模板体系 + 全图型 100% 覆盖（一类图允许多风格并存）**：不再区分 L1 配方与 L2 模板，所有新增绘图模板一律归入 `wiki/templates/<short-slug>/`（`recipes/` 为历史只读归档，不再新建）。逐张盘点全篇 Main + Supp Figure 的全部独立面板图型——先复用库内既有 `templates/`，对缺口图型或新顶刊风格新建独立模板，确保全篇 100% 面板覆盖、不同期刊风格可按需切换。
+2. **方法 ↔ 多风格可切换模板语义关系入库**：按研究推进顺序，将每个规范方法页的 `figure_relations`（列明一方法对应的多套可选顶刊风格 `templates/`）与 `next_steps` 补全，并运行 `rwiki map-method` 同步，确保方法页与模板页形成清晰互链，不残留“暂无已记录关系”。
+3. **构建可组合生信思路分支树（主干 + 专题子树 + 课题实录卡）**：
+   - 生信思路分支树 = 主干决策树 + 专题子树（`scenarios/`）+ 节点方法配图关系（`methods/` `figure_relations`/`next_steps`）+ 课题走线实录卡（`projects/`）；
+   - 新建或扩展 `wiki/scenarios/<domain>-playbook.md`（结构化 `steps:` DAG 决策树，逐阶段写清 `when`、`method_id`、多套可选 `templates`、`next_steps`，并从主干 Playbook 挂载分支）；
+   - 新建 `wiki/projects/<paper_id>.md`（本课题完整步进思路卡，按研究主线逐阶段记录「科学假设 → 所用方法与可选模板 → 关键生物学发现与排坑 → 触发下一研究分支」）。
 4. **双份源码与流程页发布**：运行 `rwiki paper publish <paper_id> --id <workflow-slug> --title "<简明中文论文流程名>" --derived-methods ... --derived-templates ...`，同步 `source/`、`code/`、`verification/`，并挂链全部画廊对比图、模板、Playbook 与课题思路卡；通过 `rwiki lint`（0 `ERROR`）、`rwiki gh guard`（`OK`）与 `rwiki clean` 后交作者终审 `mark-ready`。

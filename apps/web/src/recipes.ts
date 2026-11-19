@@ -20,9 +20,9 @@ export function licenseLabel(license: string | null | undefined): string {
 
 /** Census and filter keys are the backend workflow stages; cards show the backend label (待装包 / 待补齐 …). */
 export const RECIPE_STAGES: [string, string][] = [
-  ['complete', '可原样运行'],
+  ['complete', '历史参考可运行'],
   ['repair_complete', '修补版运行通过'],
-  ['recipe_confirm', '原样运行通过 · 待确认'],
+  ['recipe_confirm', '历史参考运行通过 · 待确认'],
   ['recipe_work', '等 agent 处理'],
 ];
 
