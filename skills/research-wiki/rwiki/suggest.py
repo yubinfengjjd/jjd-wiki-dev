@@ -273,12 +273,31 @@ def _normalize_next_step(item: dict) -> dict:
             return [val.strip()]
         return []
 
+    analysis_refs = _str_list(item.get("analysis_templates") or item.get("methods"))
+    method_id = str(item.get("method_id") or "").strip()
+    if method_id and method_id not in analysis_refs and f"methods/{method_id}" not in analysis_refs:
+        analysis_refs.append(f"methods/{method_id}")
+
+    raw_viz = _str_list(item.get("viz_templates") or item.get("templates"))
+    viz_refs: list[str] = []
+    for ref in raw_viz:
+        clean = ref.removesuffix(".md")
+        if clean.startswith(("methods/", "recipes/")):
+            if ref not in analysis_refs:
+                analysis_refs.append(ref)
+        elif clean.startswith("scenarios/"):
+            continue
+        else:
+            viz_refs.append(ref)
+
     return {
         "direction": str(item.get("direction") or item.get("title") or "下一步方向"),
         "when": str(item.get("when") or item.get("condition") or ""),
-        "analysis_templates": _str_list(item.get("analysis_templates") or item.get("methods")),
+        "analysis_templates": analysis_refs,
         "intermediate_interface": str(item.get("intermediate_interface") or item.get("interface") or ""),
-        "viz_templates": _str_list(item.get("viz_templates") or item.get("templates")),
+        "viz_templates": viz_refs,
+        "requires": _str_list(item.get("requires")),
+        "subtree": str(item.get("subtree") or "").strip(),
     }
 
 
@@ -401,7 +420,7 @@ def _resolve_branch_targets(
         if tid in seen_viz:
             continue
         seen_viz.add(tid)
-        viz_templates.append({
+        viz_entry = {
             "id": tid,
             "title": str(tmeta.get("title") or tid),
             "path": rel_path,
@@ -411,7 +430,12 @@ def _resolve_branch_targets(
             "preview_url": template_preview_url(root, tmeta),
             "compatibility": rel_compat_by_figure.get(rel_path, "unreviewed"),
             "exists": True,
-        })
+        }
+        if tmeta.get("style_tier"):
+            viz_entry["style_tier"] = str(tmeta["style_tier"])
+        if tmeta.get("journal_style"):
+            viz_entry["journal_style"] = str(tmeta["journal_style"])
+        viz_templates.append(viz_entry)
 
     return next_methods, reference_recipes, viz_templates
 
@@ -514,23 +538,42 @@ def suggest_next_steps(config: Config, node_id: str, query: str = "") -> dict:
         default_required_obj = data_contract_out or (", ".join(sorted(outputs)) if outputs else "")
 
         curated_branches: list[dict] = []
+        compat_rank = {"direct": 0, "adaptable": 1}
         for idx, (raw_entry, norm_step) in enumerate(branch_pairs, 1):
-            next_methods, reference_recipes, viz_templates = _resolve_branch_targets(
+            next_methods, reference_recipes, _ = _resolve_branch_targets(
                 config,
                 norm_step["analysis_templates"],
-                norm_step["viz_templates"],
+                [],
                 hidden,
                 rel_compat_by_figure,
+            )
+            branch_compat = dict(rel_compat_by_figure)
+            branch_method_paths = {m["path"] for m in next_methods if m.get("exists") and m.get("path")}
+            for rel in relations:
+                if rel["method"] in branch_method_paths:
+                    fig = rel["figure"]
+                    new_c = rel["compatibility"]
+                    cur_c = branch_compat.get(fig)
+                    if cur_c is None or compat_rank.get(new_c, 9) < compat_rank.get(cur_c, 9):
+                        branch_compat[fig] = new_c
+            _, _, viz_templates = _resolve_branch_targets(
+                config,
+                [],
+                norm_step["viz_templates"],
+                hidden,
+                branch_compat,
             )
             hypothesis = str(raw_entry.get("hypothesis") or "").strip() or norm_step["when"] or norm_step["direction"]
             required_obj = str(raw_entry.get("required_object") or "").strip() or default_required_obj
             curated_branches.append({
-                "branch_id": str(raw_entry.get("branch_id") or f"branch-{idx}"),
+                "branch_id": str(raw_entry.get("branch_id") or raw_entry.get("id") or f"branch-{idx}"),
                 "direction": norm_step["direction"],
                 "when": norm_step["when"],
                 "hypothesis": hypothesis,
                 "required_object": required_obj,
                 "produced_interface": norm_step["intermediate_interface"],
+                "requires": norm_step["requires"],
+                "subtree": norm_step["subtree"],
                 "next_methods": next_methods,
                 "reference_recipes": reference_recipes,
                 "viz_templates": viz_templates,
@@ -727,6 +770,10 @@ def format_next_steps(payload: dict) -> str:
                 lines.append(f"     触发条件：{branch['when']}")
             if branch.get("hypothesis") and branch["hypothesis"] != branch.get("when"):
                 lines.append(f"     分析假设：{branch['hypothesis']}")
+            if branch.get("requires"):
+                lines.append("     多上游汇合前提：" + " + ".join(branch["requires"]))
+            if branch.get("subtree"):
+                lines.append(f"     专题子分支树：{branch['subtree']}")
             if branch.get("produced_interface"):
                 lines.append(f"     标准中间表：{branch['produced_interface']}")
             if branch.get("next_methods"):
@@ -734,9 +781,13 @@ def format_next_steps(payload: dict) -> str:
             if branch.get("reference_recipes"):
                 lines.append("     参考源码配方：" + ", ".join(r["id"] for r in branch["reference_recipes"]))
             if branch.get("viz_templates"):
-                lines.append("     配套可视化模版：" + ", ".join(
-                    f"{v['id']}({v.get('compatibility', 'unreviewed')})" for v in branch["viz_templates"]
-                ))
+                def _fmt_viz(v: dict) -> str:
+                    parts = []
+                    if v.get("style_tier"):
+                        parts.append(v["style_tier"])
+                    parts.append(v.get("compatibility", "unreviewed"))
+                    return f"{v['id']}({', '.join(parts)})"
+                lines.append("     配套可视化模版：" + ", ".join(_fmt_viz(v) for v in branch["viz_templates"]))
     elif steps:
         lines.append("下一步分析方向：")
         for idx, step in enumerate(steps, 1):

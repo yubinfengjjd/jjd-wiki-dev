@@ -46,13 +46,19 @@ def load_spec(template_dir: Path) -> dict:
         if slug is not None and not isinstance(slug, str):
             raise WikiError(f"tables.{name}.interface 必须为字符串")
         slug = (slug or "").strip()
-        allowed_keys = ({"interface", "description", "required"} if slug
-                        else {"interface", "description", "required", "filename", "columns"})
+        allowed_keys = ({"interface", "description", "required", "required_any_of"} if slug
+                        else {"interface", "description", "required", "filename", "columns", "required_any_of"})
         unknown = table.keys() - allowed_keys
         if unknown:
             raise WikiError(f"tables.{name} 不支持字段: {', '.join(sorted(unknown))}；"
-                            + ("只允许 interface、description 和 required" if slug
-                               else "只允许 interface、description、required、filename 和 columns"))
+                            + ("只允许 interface、description、required 和 required_any_of" if slug
+                               else "只允许 interface、description、required、filename、columns 和 required_any_of"))
+        if "required_any_of" in table:
+            raw_groups = table["required_any_of"]
+            if (not isinstance(raw_groups, list) or not raw_groups
+                    or any(not isinstance(g, list) or not g or any(not isinstance(c, str) or not c.strip() for c in g)
+                           for g in raw_groups)):
+                raise WikiError(f"tables.{name}.required_any_of 必须为非空列名列表的列表")
         if "required" in table and not isinstance(table["required"], bool):
             raise WikiError(f"tables.{name}.required 必须为布尔值")
         if not isinstance(table.get("description"), str):
@@ -115,6 +121,13 @@ def check_table_data(name: str, table: dict, path: Path) -> None:
     missing = [column for column in required if column not in header]
     if missing:
         raise WikiError(f"tables.{name} 缺列: {', '.join(missing)} ({path})")
+    any_of = table.get("required_any_of")
+    if isinstance(any_of, list) and any_of:
+        groups = [[str(col).strip() for col in grp if str(col).strip()] for grp in any_of if isinstance(grp, list)]
+        groups = [grp for grp in groups if grp]
+        if groups and not any(all(col in header for col in grp) for grp in groups):
+            desc = " 或 ".join("+".join(grp) for grp in groups)
+            raise WikiError(f"tables.{name} 缺必选列组（需满足其一）: {desc} ({path})")
 
 
 def requirements_markdown(spec: dict) -> str:
@@ -141,6 +154,13 @@ def requirements_markdown(spec: dict) -> str:
             lines.extend(["| 列 | 类型 | 含义 |", "|---|---|---|"])
             for column, definition in columns.items():
                 lines.append(f"| {column} | {definition['type']} | {definition.get('description', '')} |")
+        any_of = table.get("required_any_of")
+        if isinstance(any_of, list) and any_of:
+            groups = [[str(col).strip() for col in grp if str(col).strip()] for grp in any_of if isinstance(grp, list)]
+            groups = [grp for grp in groups if grp]
+            if groups:
+                lines.append("")
+                lines.append("- 必选列组（需满足其一）：" + " 或 ".join("`" + " + ".join(grp) + "`" for grp in groups))
         lines.append("")
     lines.extend(["### 可覆盖的 style", ""])
     for key, value in spec["style"].items():

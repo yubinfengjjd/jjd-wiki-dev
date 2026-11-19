@@ -708,3 +708,180 @@ def test_project_tracker_parses_stage_headings_and_finder_formats_style_tier_and
     assert "主推默认" in found_txt
     assert "Cai2026-npjPO" in found_txt
     assert "[L2" not in found_txt
+
+
+def test_suggest_next_steps_inherits_downstream_compat_splits_mixed_refs_and_prints_requires_subtree(tmp_path: Path):
+    from rwiki.suggest import format_next_steps, suggest_next_steps
+
+    cfg = _make_git_wiki(tmp_path)
+    _write_python_template(
+        cfg,
+        "tpl-spatial-grid",
+        chart_types=["spatial"],
+        style_tier="default",
+        journal_style="Cai2026-npjPO",
+        status="ready",
+    )
+    write_page(
+        cfg.wiki_root / "methods/spatial-downstream.md",
+        {
+            "type": "method",
+            "id": "spatial-downstream",
+            "title": "空间微环境解析",
+            "status": "ready",
+            "method_kind": "analysis",
+            "purposes": ["空间微环境与生态位"],
+            "tags": ["single-cell"],
+            "inputs": [],
+            "outputs": [],
+            "source": {"kind": "written"},
+            "license": "MIT",
+            "cite": ["Test 2026"],
+            "favorite": False,
+            "summary": "空间微环境解析方法。",
+            "data_contract": {"input": "Visium", "output": "空间权重"},
+            "figure_relations": [
+                {
+                    "figure": "templates/tpl-spatial-grid",
+                    "compatibility": "adaptable",
+                    "reason": "空间网格图适配。",
+                    "prerequisites": ["spot 坐标对齐"],
+                    "adaptation": "导出 spatial_grid.csv",
+                    "evidence": ["templates/tpl-spatial-grid/spec.json"],
+                    "verification": {"state": "not_run", "scope": "test", "evidence": []},
+                }
+            ],
+        },
+        "# 空间微环境解析\n\n<!-- facts:start -->\n<!-- facts:end -->\n\n<!-- user:start -->\n<!-- user:end -->\n",
+    )
+    write_page(
+        cfg.wiki_root / "scenarios/demo-pb.md",
+        {
+            "type": "scenario",
+            "id": "demo-pb",
+            "title": "演示分支树",
+            "picks": [],
+            "steps": [
+                {
+                    "id": "b7",
+                    "title": "Branch 7 空转汇合",
+                    "method_id": "spatial-downstream",
+                    "requires": ["scrna-annotated-cells", "visium-spatial-object"],
+                    "subtree": "scenarios/demo-pb",
+                    "templates": ["methods/spatial-downstream", "templates/tpl-spatial-grid"],
+                    "next_steps": [],
+                }
+            ],
+        },
+        "# 演示分支树\n\n<!-- facts:start -->\n<!-- facts:end -->\n\n<!-- user:start -->\n<!-- user:end -->\n",
+    )
+
+    payload = suggest_next_steps(cfg, "demo-pb")
+    branch = payload["curated_branches"][0]
+    assert [m["id"] for m in branch["next_methods"]] == ["spatial-downstream"]
+    assert [v["id"] for v in branch["viz_templates"]] == ["tpl-spatial-grid"]
+    assert branch["viz_templates"][0]["compatibility"] == "adaptable"
+    assert branch["viz_templates"][0]["style_tier"] == "default"
+    assert branch["requires"] == ["scrna-annotated-cells", "visium-spatial-object"]
+    assert branch["subtree"] == "scenarios/demo-pb"
+    assert branch["branch_id"] == "b7"
+
+    rendered = format_next_steps(payload)
+    assert "多上游汇合前提：scrna-annotated-cells + visium-spatial-object" in rendered
+    assert "专题子分支树：scenarios/demo-pb" in rendered
+    assert "tpl-spatial-grid(default, adaptable)" in rendered
+    assert "spatial-downstream(unreviewed)" not in rendered
+
+
+def test_spec_required_any_of_column_groups_and_suggest_alias_compat(tmp_path: Path):
+    from rwiki.spec import check_table_data
+    from rwiki.suggest import suggest_next_steps
+
+    table = {
+        "required": True,
+        "required_any_of": [["pair_label"], ["source", "target"]],
+        "columns": {
+            "pair_label": {"type": "str", "required": False},
+            "source": {"type": "str", "required": False},
+            "target": {"type": "str", "required": False},
+            "interaction": {"type": "str", "required": True},
+            "prob": {"type": "float", "required": True},
+        },
+    }
+    valid_pair = tmp_path / "valid_pair.csv"
+    valid_pair.write_text("pair_label,interaction,prob\nA->B,L_R,0.5\n", encoding="utf-8")
+    check_table_data("lr", table, valid_pair)
+
+    valid_st = tmp_path / "valid_st.csv"
+    valid_st.write_text("source,target,interaction,prob\nA,B,L_R,0.5\n", encoding="utf-8")
+    check_table_data("lr", table, valid_st)
+
+    invalid_missing = tmp_path / "invalid_missing.csv"
+    invalid_missing.write_text("interaction,prob\nL_R,0.5\n", encoding="utf-8")
+    with pytest.raises(WikiError, match="缺必选列组"):
+        check_table_data("lr", table, invalid_missing)
+
+    invalid_partial = tmp_path / "invalid_partial.csv"
+    invalid_partial.write_text("source,interaction,prob\nA,L_R,0.5\n", encoding="utf-8")
+    with pytest.raises(WikiError, match="缺必选列组"):
+        check_table_data("lr", table, invalid_partial)
+
+    # Alias-resolved downstream method still inherits adaptable relation compatibility
+    cfg = _make_git_wiki(tmp_path / "w")
+    _write_python_template(cfg, "tpl-aliased", chart_types=["spatial"], style_tier="default", status="ready")
+    write_page(
+        cfg.wiki_root / "methods/canonical-spatial.md",
+        {
+            "type": "method",
+            "id": "canonical-spatial",
+            "aliases": ["legacy-spatial-alias"],
+            "title": "规范空间方法",
+            "status": "ready",
+            "method_kind": "analysis",
+            "purposes": ["空间微环境与生态位"],
+            "tags": ["single-cell"],
+            "inputs": [],
+            "outputs": [],
+            "source": {"kind": "written"},
+            "license": "MIT",
+            "cite": ["Test 2026"],
+            "favorite": False,
+            "summary": "规范空间方法。",
+            "data_contract": {"input": "Visium", "output": "权重"},
+            "figure_relations": [
+                {
+                    "figure": "templates/tpl-aliased",
+                    "compatibility": "adaptable",
+                    "reason": "别名方法适配。",
+                    "prerequisites": ["坐标"],
+                    "adaptation": "导出表",
+                    "evidence": ["templates/tpl-aliased/spec.json"],
+                    "verification": {"state": "not_run", "scope": "test", "evidence": []},
+                }
+            ],
+        },
+        "# 规范空间方法\n\n<!-- facts:start -->\n<!-- facts:end -->\n\n<!-- user:start -->\n<!-- user:end -->\n",
+    )
+    write_page(
+        cfg.wiki_root / "scenarios/alias-pb.md",
+        {
+            "type": "scenario",
+            "id": "alias-pb",
+            "title": "别名继承测试",
+            "picks": [],
+            "steps": [
+                {
+                    "id": "step-alias",
+                    "title": "通过旧别名引用方法",
+                    "method_id": "legacy-spatial-alias",
+                    "templates": ["templates/tpl-aliased"],
+                    "next_steps": [],
+                }
+            ],
+        },
+        "# 别名\n\n<!-- facts:start -->\n<!-- facts:end -->\n\n<!-- user:start -->\n<!-- user:end -->\n",
+    )
+    payload = suggest_next_steps(cfg, "alias-pb")
+    br = payload["curated_branches"][0]
+    assert br["branch_id"] == "step-alias"
+    assert br["viz_templates"][0]["compatibility"] == "adaptable"
