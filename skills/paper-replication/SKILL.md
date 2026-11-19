@@ -71,7 +71,11 @@ description: Use when the author gives a WeChat post, link, DOI, PMID, or paper 
   2. 亲自看图审查每张 `side_by_side.png` 与整图拼图对比图；
   3. 运行 `rwiki check-dup`、`rwiki check-entry <id>`、`rwiki lint`（必须 0 ERROR）及 `rwiki clean` 清理临时残留。
 
-### 阶段 5：知识库双份沉淀（Publish）
+### 阶段 5：知识库全闭环沉淀（Publish + Templates + Method Relations + Research Playbook）
 
-1. 运行 `rwiki paper publish <paper_id> --id <workflow-slug> --title "<简明中文论文流程名>" --derived-methods ... --derived-templates ...`，自动把 `upstream_repo/` 核心源码同步进 `wiki/methods/<workflow-id>/source/`（含 `source-manifest.json`），把 `<paper_id>/src/` 同步进 `wiki/methods/<workflow-id>/code/`，并生成串联 `method_kind: workflow` 页面（完整记录文献引用、正文–附加材料–脚本映射、剔除湿实验范围与降维边界）。
-2. 汇总全部对比图、验证收据、本地源码路径与 Wiki 存档清单交作者终审后 `mark-ready`。
+1. **全图型 100% 模板覆盖（不区分 L1/L2，一律归入 `templates/`）**：逐张盘点所有 Main + Supp Figure 的全部独立面板图型——先 `rwiki check-dup` 复用库内既有 `templates/`，凡尚无对应模板的缺口图型必须全部新建至 `wiki/templates/<short-slug>/`（不再新建 `recipes/`，也不区分 L1/L2）。
+2. **按研究思路绑定方法 ↔ 可视化语义关系**：将全篇所用规范方法与全部复用/新建模板逐一写入规范方法页 `figure_relations`（语义审查）与 `next_steps`，并运行 `rwiki map-method` 同步 `method-map.json`，确保方法页与模板页均不残留“暂无已记录关系”。
+3. **沉淀课题完整研究思路（Playbook + Project Card）**：
+   - 新建或扩展 `wiki/scenarios/<domain>-playbook.md`（结构化 `steps:` DAG 决策树，逐阶段写清 `when`、`method_id`、`templates`、`next_steps`）；
+   - 新建 `wiki/projects/<paper_id>.md`（本课题完整步进思路卡，按研究主线逐阶段记录「科学假设 → 分析方法 + 可视化模板 → 生物学发现与排坑 → 触发下一步分叉」）。
+4. **双份源码与流程页发布**：运行 `rwiki paper publish <paper_id> --id <workflow-slug> --title "<简明中文论文流程名>" --derived-methods ... --derived-templates ...`，同步 `source/`、`code/`、`verification/`，并挂链全部画廊对比图、模板、Playbook 与课题思路卡；通过 `rwiki lint`（0 `ERROR`）、`rwiki gh guard`（`OK`）与 `rwiki clean` 后交作者终审 `mark-ready`。
