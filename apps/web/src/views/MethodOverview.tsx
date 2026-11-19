@@ -9,6 +9,7 @@ import {
   MethodMeta,
   NextStepsResponse,
   PageSummary,
+  Status,
   studioHref,
   TemplateMeta,
   wikiFile,
@@ -98,8 +99,8 @@ function StyleTierBadges({
   tplPage?: PageSummary;
 }) {
   const tplMeta = tplPage?.meta.type === 'template' ? (tplPage.meta as TemplateMeta) : undefined;
-  const tier = styleTier ?? tplMeta?.style_tier;
-  const journal = journalStyle ?? tplMeta?.journal_style;
+  const tier = styleTier ?? tplMeta?.style_tier ?? tplPage?.style_tier;
+  const journal = journalStyle ?? tplMeta?.journal_style ?? tplPage?.journal_style;
   if (!tier && !journal) return null;
   return (
     <>
@@ -110,6 +111,77 @@ function StyleTierBadges({
       )}
       {journal && <span className="journal-style-pill">{journal}</span>}
     </>
+  );
+}
+
+export interface PartitionedViz<T> {
+  sorted: T[];
+  visible: T[];
+  hiddenCount: number;
+}
+
+export function resolveVizStyleTier(
+  item: { path?: string; style_tier?: 'default' | 'variant' },
+  pages: PageSummary[],
+): 'default' | 'variant' | undefined {
+  if (item.style_tier) return item.style_tier;
+  if (!item.path) return undefined;
+  const tplPage = pages.find((p) => p.path === item.path);
+  if (!tplPage) return undefined;
+  if (tplPage.style_tier) return tplPage.style_tier;
+  if (tplPage.meta.type === 'template') return (tplPage.meta as TemplateMeta).style_tier;
+  return undefined;
+}
+
+function vizSortRank(
+  item: { status: Status; path?: string; style_tier?: 'default' | 'variant' },
+  pages: PageSummary[],
+): number {
+  const tier = resolveVizStyleTier(item, pages);
+  const ready = item.status === 'ready';
+  if (tier === 'default') return ready ? 0 : 1;
+  if (tier !== 'variant') return ready ? 2 : 3;
+  return ready ? 4 : 5;
+}
+
+export function sortAndPartitionViz<T extends { status: Status; path?: string; style_tier?: 'default' | 'variant' }>(
+  items: T[],
+  pages: PageSummary[],
+  expanded: boolean,
+): PartitionedViz<T> {
+  const sorted = [...items].sort((a, b) => vizSortRank(a, pages) - vizSortRank(b, pages));
+  const defaultCount = sorted.filter((item) => resolveVizStyleTier(item, pages) === 'default').length;
+  const collapsedLimit = sorted.length <= 3 ? sorted.length : Math.min(sorted.length, Math.max(3, defaultCount));
+  const visible = expanded ? sorted : sorted.slice(0, collapsedLimit);
+  const hiddenCount = Math.max(0, sorted.length - collapsedLimit);
+  return { sorted, visible, hiddenCount };
+}
+
+function VizTierHeader({
+  title,
+  hiddenCount,
+  expanded,
+  onToggle,
+}: {
+  title: string;
+  hiddenCount: number;
+  expanded: boolean;
+  onToggle: () => void;
+}) {
+  return (
+    <div className="method-ref-recipes-head viz-tier-head">
+      <h3 className="viz-tier-heading">{title}</h3>
+      {hiddenCount > 0 && (
+        <button
+          type="button"
+          className="button small viz-variant-toggle"
+          onClick={onToggle}
+          aria-expanded={expanded}
+        >
+          {expanded ? '收起其余模板' : `展开其余 ${hiddenCount} 套绘图模板`}
+        </button>
+      )}
+    </div>
   );
 }
 
@@ -259,6 +331,9 @@ export function MethodOverview({
   const [selectedIface, setSelectedIface] = useState<string>('');
   const [copiedNextCli, setCopiedNextCli] = useState(false);
   const [showAllCurated, setShowAllCurated] = useState(false);
+  const [showAllCompatible, setShowAllCompatible] = useState(false);
+  const [showAllBridged, setShowAllBridged] = useState(false);
+  const [showAllFallback, setShowAllFallback] = useState(false);
 
   const inputSlugs = hub?.inputs ?? meta.inputs ?? [];
   const outputSlugs = hub?.outputs ?? meta.outputs ?? [];
@@ -305,11 +380,20 @@ export function MethodOverview({
       prerequisites: [],
     }));
   const curatedViz = [...rawCurated, ...mergedFallback];
-  const visibleCurated = showAllCurated || curatedViz.length <= 12 ? curatedViz : curatedViz.slice(0, 12);
+  const curatedGroup = sortAndPartitionViz(curatedViz, pages, showAllCurated);
   const compatibleViz = hub?.attached_visualizations.object_compatible ?? [];
+  const compatibleGroup = sortAndPartitionViz(compatibleViz, pages, showAllCompatible);
   const bridgedViz = hub?.attached_visualizations.render_bridged ?? [];
+  const bridgedGroup = sortAndPartitionViz(bridgedViz, pages, showAllBridged);
   const hasHubViz = curatedViz.length > 0 || compatibleViz.length > 0 || bridgedViz.length > 0;
   const fallbackFigures = hasHubViz ? [] : methodDisplayFigures(figures);
+  const fallbackWrapped = fallbackFigures.map((f) => ({
+    figure: f,
+    status: f.meta.status,
+    path: f.path,
+    style_tier: f.meta.type === 'template' ? f.meta.style_tier : undefined,
+  }));
+  const fallbackGroup = sortAndPartitionViz(fallbackWrapped, pages, showAllFallback);
 
   const resolvedNext = nextSteps ?? hub?.next ?? null;
   const curatedBranches = resolvedNext?.curated_branches ?? [];
@@ -463,53 +547,71 @@ export function MethodOverview({
 
         {hasHubViz ? (
           <div className="viz-tier-stack">
-            {curatedViz.length > 0 && (
+            {curatedGroup.sorted.length > 0 && (
               <div className="viz-tier-group">
-                <div className="method-ref-recipes-head">
-                  <h3 className="viz-tier-heading">1. 首选 / 语义关联 ({curatedViz.length})</h3>
-                  {curatedViz.length > 12 && (
-                    <button
-                      type="button"
-                      className="ghost small"
-                      onClick={() => setShowAllCurated((v) => !v)}
-                    >
-                      {showAllCurated ? '收起到前 12 个' : `展开全部 ${curatedViz.length} 个`}
-                    </button>
-                  )}
-                </div>
+                <VizTierHeader
+                  title={`1. 首选 / 语义关联 (${curatedGroup.sorted.length})`}
+                  hiddenCount={curatedGroup.hiddenCount}
+                  expanded={showAllCurated}
+                  onToggle={() => setShowAllCurated((v) => !v)}
+                />
                 <div className="viz-layer-grid">
-                  {visibleCurated.map((item) => (
+                  {curatedGroup.visible.map((item) => (
                     <CuratedVizCard key={item.id} item={item} pages={pages} onOpenStudio={onOpenStudio} />
                   ))}
                 </div>
               </div>
             )}
 
-            {compatibleViz.length > 0 && (
+            {compatibleGroup.sorted.length > 0 && (
               <div className="viz-tier-group">
-                <h3 className="viz-tier-heading">2. 对象直连兼容 (full / partial · {compatibleViz.length})</h3>
+                <VizTierHeader
+                  title={`2. 对象直连兼容 (full / partial · ${compatibleGroup.sorted.length})`}
+                  hiddenCount={compatibleGroup.hiddenCount}
+                  expanded={showAllCompatible}
+                  onToggle={() => setShowAllCompatible((v) => !v)}
+                />
                 <div className="viz-layer-grid">
-                  {compatibleViz.map((item) => (
+                  {compatibleGroup.visible.map((item) => (
                     <CompatibleVizCard key={item.id} item={item} pages={pages} onOpenStudio={onOpenStudio} />
                   ))}
                 </div>
               </div>
             )}
 
-            {bridgedViz.length > 0 && (
+            {bridgedGroup.sorted.length > 0 && (
               <div className="viz-tier-group">
-                <h3 className="viz-tier-heading">3. 经抽取表转换 (render_bridge · {bridgedViz.length})</h3>
+                <VizTierHeader
+                  title={`3. 经抽取表转换 (render_bridge · ${bridgedGroup.sorted.length})`}
+                  hiddenCount={bridgedGroup.hiddenCount}
+                  expanded={showAllBridged}
+                  onToggle={() => setShowAllBridged((v) => !v)}
+                />
                 <div className="viz-layer-grid">
-                  {bridgedViz.map((item) => (
+                  {bridgedGroup.visible.map((item) => (
                     <BridgedVizCard key={item.id} item={item} pages={pages} onOpenStudio={onOpenStudio} />
                   ))}
                 </div>
               </div>
             )}
           </div>
-        ) : fallbackFigures.length > 0 ? (
-          <div className="method-figure-grid">
-            {fallbackFigures.map((f) => (
+        ) : fallbackGroup.sorted.length > 0 ? (
+          <div className="viz-tier-group">
+            {fallbackGroup.hiddenCount > 0 && (
+              <div className="method-ref-recipes-head viz-tier-head">
+                <span className="muted small">已优先展示主推默认图样（共 {fallbackGroup.sorted.length} 个）</span>
+                <button
+                  type="button"
+                  className="button small viz-variant-toggle"
+                  onClick={() => setShowAllFallback((v) => !v)}
+                  aria-expanded={showAllFallback}
+                >
+                  {showAllFallback ? '收起变体' : `展开其余 ${fallbackGroup.hiddenCount} 套顶刊画风变体`}
+                </button>
+              </div>
+            )}
+            <div className="method-figure-grid">
+              {fallbackGroup.visible.map(({ figure: f }) => (
               <article key={f.path} className="method-visual">
                 <a className="method-figure-link" {...pageLink(f.path)}>
                   <span className="plate"><FigureImage meta={f.meta} /></span>
@@ -540,7 +642,8 @@ export function MethodOverview({
                   <TemplateActionBar templateId={f.meta.id} templateTitle={f.meta.title} onOpenStudio={onOpenStudio} />
                 )}
               </article>
-            ))}
+              ))}
+            </div>
           </div>
         ) : (
           <p className="muted small">暂无已挂载的可视化模板；可查阅理论说明或通过多路下游分支探索。</p>

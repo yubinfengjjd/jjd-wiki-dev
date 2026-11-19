@@ -21,7 +21,7 @@ from .errors import WikiError
 from .pages import read_page
 
 SCHEMA_VERSION = 1
-INDEX_VERSION = 5
+INDEX_VERSION = 6
 LOCK = RLock()
 PAGE_DIRS = ("methods", "recipes", "templates", "scenarios", "interfaces", "chart-types", "projects", "sources", "layouts")
 SOURCE_EXTENSIONS = {".py", ".r", ".rmd", ".qmd", ".md", ".jl", ".sql", ".sh", ".js", ".ts", ".c", ".cpp", ".h"}
@@ -141,6 +141,11 @@ def _record(path: Path, meta: dict, body: str, config: Config) -> dict:
         result["source_identity"] = f"{source['id']}:{source['item']}"
     if kind == "method":
         result["method_kind"] = meta.get("method_kind")
+    if kind == "template":
+        if meta.get("style_tier"):
+            result["style_tier"] = meta["style_tier"]
+        if meta.get("journal_style"):
+            result["journal_style"] = meta["journal_style"]
     if kind == 'layout':
         result['reference_only'] = True
     if kind == "scenario":
@@ -559,7 +564,14 @@ def rank_export(index: dict, query: str, kind=None, level=None, runnable=False, 
         if best is not None:
             results.append({**record,"score":round(best_score,6),"why":["正文 BM25 · "+best["title"]]+(["精确短语 · "+"；".join(best_phrases)] if best_phrases else []),
                             "match_section":best["title"],"snippet":_snippet(best["text"],tokens)})
-    results.sort(key=lambda r:(-r["score"],r["id"]))
+    results.sort(
+        key=lambda r: (
+            -r["score"],
+            r.get("status") != "ready",
+            r.get("style_tier") != "default",
+            r["id"],
+        )
+    )
     return results[:max(0,min(int(limit),1000))]
 
 

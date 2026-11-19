@@ -163,6 +163,7 @@ def parser() -> argparse.ArgumentParser:
     dedup_cmd.add_argument("--interface", dest="interfaces", nargs="*", default=[])
     dedup_cmd.add_argument("--summary", default="")
     dedup_cmd.add_argument("--keyword", dest="keywords", nargs="*", default=[])
+    dedup_cmd.add_argument("--journal-style", default="", help="目标期刊画风标识（用于区分多风格变体）")
     dedup_cmd.add_argument("--json", action="store_true")
     map_cmd = commands.add_parser("map-method", help="绑定模板 primary_method、更新 method-map.json 或体检方法域覆盖")
     map_cmd.add_argument("--template", dest="template_id")
@@ -687,6 +688,7 @@ def main(argv: list[str] | None = None) -> int:
                 interfaces=args.interfaces,
                 summary=args.summary,
                 keywords=args.keywords,
+                journal_style=args.journal_style,
             )
             if args.json:
                 _print(report)

@@ -1,6 +1,8 @@
 import { FormEvent, useEffect, useMemo, useState } from 'react';
 import {
+  api,
   HubMeta,
+  imageOf,
   InterfaceMeta,
   MethodMeta,
   PageSummary,
@@ -42,10 +44,21 @@ function parseTab(query = ''): ResourceTab {
   return 'technical';
 }
 
-export function ResourcesView({ data, query = '' }: { data: AppData; query?: string }) {
+export function ResourcesView({
+  data,
+  query = '',
+  onRefresh,
+}: {
+  data: AppData;
+  query?: string;
+  onRefresh?: () => void | Promise<void>;
+}) {
   const [tab, setTab] = useState<ResourceTab>(() => parseTab(query));
   const [filterText, setFilterText] = useState('');
   const [globalQuery, setGlobalQuery] = useState('');
+  const [deselectedIds, setDeselectedIds] = useState<Set<string>>(() => new Set());
+  const [submittingGroup, setSubmittingGroup] = useState<string | null>(null);
+  const [batchMessage, setBatchMessage] = useState<{ kind: 'success' | 'error'; text: string } | null>(null);
 
   useEffect(() => {
     setTab(parseTab(query));
@@ -106,6 +119,65 @@ export function ResourcesView({ data, query = '' }: { data: AppData; query?: str
     () => data.pages.filter((p): p is PageSummary<TemplateMeta> => p.meta.type === 'template' && p.meta.status !== 'archived'),
     [data.pages],
   );
+  const draftTemplates = useMemo(
+    () => templates.filter((p) => p.meta.status === 'draft'),
+    [templates],
+  );
+  const draftGroups = useMemo(() => {
+    const groups = new Map<string, PageSummary<TemplateMeta>[]>();
+    for (const tpl of draftTemplates) {
+      const style = tpl.meta.journal_style || tpl.journal_style || '通用模板';
+      groups.set(style, [...(groups.get(style) ?? []), tpl]);
+    }
+    return [...groups.entries()].sort(([a], [b]) => {
+      if (a === '通用模板' && b !== '通用模板') return 1;
+      if (b === '通用模板' && a !== '通用模板') return -1;
+      return a.localeCompare(b);
+    });
+  }, [draftTemplates]);
+
+  const toggleTemplateSelection = (id: string) => {
+    setDeselectedIds((prev) => {
+      const next = new Set(prev);
+      if (next.has(id)) next.delete(id);
+      else next.add(id);
+      return next;
+    });
+  };
+
+  const toggleGroupSelection = (groupItems: PageSummary<TemplateMeta>[]) => {
+    const allSelected = groupItems.every((item) => !deselectedIds.has(item.meta.id));
+    setDeselectedIds((prev) => {
+      const next = new Set(prev);
+      for (const item of groupItems) {
+        if (allSelected) next.add(item.meta.id);
+        else next.delete(item.meta.id);
+      }
+      return next;
+    });
+  };
+
+  const handleBatchConfirm = async (groupName: string, selectedIds: string[]) => {
+    if (!selectedIds.length || submittingGroup !== null) return;
+    setSubmittingGroup(groupName);
+    setBatchMessage(null);
+    try {
+      const res = await api.batchConfirmTemplates(selectedIds);
+      setBatchMessage({
+        kind: 'success',
+        text: `「${groupName}」已批量确认通过 ${res.count ?? selectedIds.length} 个绘图模板 ✓`,
+      });
+      if (onRefresh) await onRefresh();
+      else await data.reload();
+    } catch (err) {
+      setBatchMessage({
+        kind: 'error',
+        text: err instanceof Error ? err.message : '批量确认失败，请重试',
+      });
+    } finally {
+      setSubmittingGroup(null);
+    }
+  };
   const inventory = useMemo(() => galleryInventory(data.pages, data.env.hiddenSources), [data.pages, data.env.hiddenSources]);
 
   const qLower = filterText.trim().toLowerCase();
@@ -156,6 +228,120 @@ export function ResourcesView({ data, query = '' }: { data: AppData; query?: str
           <a className="button small" href="#/search">高级搜索</a>
         </form>
       </header>
+
+      <section className="sheet batch-review-panel" aria-label="待确认绘图模板批次审核">
+        <div className="batch-review-head">
+          <div>
+            <h2>待确认绘图模板批次审核</h2>
+            <p className="muted small">
+              按顶刊画风分组审阅待确认（draft）绘图模板；勾选后可一键批量确认通过（draft → ready）。
+            </p>
+          </div>
+          {draftTemplates.length === 0 ? (
+            <span className="batch-all-confirmed-badge">全部绘图模板均已确认 ✓</span>
+          ) : (
+            <span className="pill-count">待确认 {draftTemplates.length} 个</span>
+          )}
+        </div>
+
+        {batchMessage && (
+          <p
+            className={`notice small${batchMessage.kind === 'error' ? ' error' : ' batch-success-notice'}`}
+            role={batchMessage.kind === 'error' ? 'alert' : 'status'}
+          >
+            {batchMessage.text}
+          </p>
+        )}
+
+        {draftGroups.length > 0 && (
+          <div className="batch-review-groups">
+            {draftGroups.map(([groupName, groupItems]) => {
+              const selectedIds = groupItems
+                .filter((item) => !deselectedIds.has(item.meta.id))
+                .map((item) => item.meta.id);
+              const allSelected = selectedIds.length === groupItems.length;
+              const isSubmitting = submittingGroup === groupName;
+              return (
+                <div key={groupName} className="batch-review-group">
+                  <div className="batch-review-group-head">
+                    <div className="batch-review-group-title">
+                      <label className="batch-group-select-all">
+                        <input
+                          type="checkbox"
+                          checked={allSelected}
+                          onChange={() => toggleGroupSelection(groupItems)}
+                        />
+                        <strong>{groupName}</strong>
+                      </label>
+                      <span className="small muted">
+                        共 {groupItems.length} 个模板 · 已选 {selectedIds.length} 个
+                      </span>
+                    </div>
+                    <button
+                      type="button"
+                      className="button primary small"
+                      disabled={selectedIds.length === 0 || submittingGroup !== null}
+                      onClick={() => void handleBatchConfirm(groupName, selectedIds)}
+                    >
+                      {isSubmitting ? '确认中…' : `批量确认通过 (${selectedIds.length})`}
+                    </button>
+                  </div>
+
+                  <div className="batch-review-grid">
+                    {groupItems.map((tpl) => {
+                      const id = tpl.meta.id;
+                      const checked = !deselectedIds.has(id);
+                      const thumb = imageOf(tpl.meta);
+                      const tier = tpl.meta.style_tier ?? tpl.style_tier;
+                      const primaryMethod = tpl.meta.primary_method;
+                      return (
+                        <article
+                          key={tpl.path}
+                          className={`batch-review-card${checked ? ' selected' : ''}`}
+                        >
+                          <label className="batch-card-check">
+                            <input
+                              type="checkbox"
+                              checked={checked}
+                              onChange={() => toggleTemplateSelection(id)}
+                              aria-label={`选择模板 ${tpl.meta.title}`}
+                            />
+                            <span className="batch-card-thumb">
+                              {thumb ? (
+                                <img src={thumb} alt={tpl.meta.title} loading="lazy" />
+                              ) : (
+                                <span className="preview-empty">暂无预览图</span>
+                              )}
+                            </span>
+                          </label>
+                          <div className="batch-card-info">
+                            <div className="batch-card-badges">
+                              {tier && (
+                                <span className={`style-tier-badge tier-${tier}`}>
+                                  {tier === 'default' ? '主推默认' : '可切换画风'}
+                                </span>
+                              )}
+                              {primaryMethod && (
+                                <code className="batch-primary-method" title="关联分析方法">
+                                  {primaryMethod}
+                                </code>
+                              )}
+                            </div>
+                            <a className="batch-card-title" {...pageLink(tpl.path)}>
+                              {tpl.meta.title}
+                            </a>
+                            <span className="small muted"><code>{id}</code></span>
+                          </div>
+                        </article>
+                      );
+                    })}
+                  </div>
+                </div>
+              );
+            })}
+          </div>
+        )}
+      </section>
 
       <nav className="resources-tabs sheet" role="tablist" aria-label="资料分类标签">
         {tabs.map(([id, label, count]) => (

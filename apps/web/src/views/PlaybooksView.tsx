@@ -88,6 +88,62 @@ const CORE_PLAYBOOK_ORDER = [
   'stromal-tme-scrna-st-playbook',
 ];
 
+export interface DataInventoryOption {
+  key: string;
+  label: string;
+  unlocks: string[];
+}
+
+export const DATA_INVENTORY_OPTIONS: DataInventoryOption[] = [
+  {
+    key: 'scrna',
+    label: '已注释单细胞数据 (scRNA)',
+    unlocks: ['scrna-annotated-cells', 'stromal-subcluster-markers'],
+  },
+  {
+    key: 'st',
+    label: 'Visium 空转切片 (ST)',
+    unlocks: ['visium-spatial-object'],
+  },
+  {
+    key: 'bulk',
+    label: '带随访 Bulk 队列 (TCGA/临床)',
+    unlocks: ['bulk-clinical-survival', 'bulk-de-table'],
+  },
+  {
+    key: 'geneset',
+    label: '基因集 / 差异基因表',
+    unlocks: ['gene-set-list', 'deg-result-table'],
+  },
+];
+
+export function buildUnlockedSet(selectedKeys: Iterable<string>): Set<string> {
+  const selected = new Set(selectedKeys);
+  const unlocked = new Set<string>();
+  for (const opt of DATA_INVENTORY_OPTIONS) {
+    if (selected.has(opt.key)) {
+      for (const item of opt.unlocks) unlocked.add(item);
+    }
+  }
+  return unlocked;
+}
+
+export function getStepReadiness(
+  step: PlaybookStep | undefined,
+  unlockedSet: Set<string>,
+): { hasRequirements: boolean; reqs: string[]; missingReqs: string[]; ready: boolean } {
+  if (!step) return { hasRequirements: false, reqs: [], missingReqs: [], ready: true };
+  const reqs = [...new Set([...(step.requires ?? []), ...(step.external_requires ?? [])])];
+  if (reqs.length === 0) return { hasRequirements: false, reqs: [], missingReqs: [], ready: true };
+  const missingReqs = reqs.filter((r) => !unlockedSet.has(r));
+  return {
+    hasRequirements: true,
+    reqs,
+    missingReqs,
+    ready: missingReqs.length === 0,
+  };
+}
+
 interface PositionedNode {
   step: PlaybookStep;
   col: number;
@@ -96,8 +152,8 @@ interface PositionedNode {
   y: number;
 }
 
-const NODE_W = 228;
-const NODE_H = 82;
+const NODE_W = 236;
+const NODE_H = 104;
 const COL_GAP = 72;
 const ROW_GAP = 28;
 const PAD_X = 28;
@@ -275,6 +331,14 @@ export function PlaybooksView({ data, query = '' }: { data: AppData; query?: str
   const [loadingNext, setLoadingNext] = useState(false);
   const [nextError, setNextError] = useState('');
   const [branchFilter, setBranchFilter] = useState('');
+  const [selectedInventory, setSelectedInventory] = useState<string[]>(['scrna']);
+
+  const unlockedSet = useMemo(() => buildUnlockedSet(selectedInventory), [selectedInventory]);
+  const toggleInventory = (key: string) => {
+    setSelectedInventory((prev) =>
+      prev.includes(key) ? prev.filter((k) => k !== key) : [...prev, key],
+    );
+  };
 
   useEffect(() => {
     const params = new URLSearchParams(query.replace(/^\?/, ''));
@@ -328,6 +392,10 @@ export function PlaybooksView({ data, query = '' }: { data: AppData; query?: str
   }, [activePlaybook, selectedStepId, customMethodId]);
 
   const activeStep = customMethodId ? undefined : (activePlaybook?.steps.find((s) => s.id === selectedStepId) ?? activePlaybook?.steps[0]);
+  const activeStepReadiness = useMemo(
+    () => getStepReadiness(activeStep, unlockedSet),
+    [activeStep, unlockedSet],
+  );
   const activeNodeId = customMethodId || activeStep?.method_id || activeStep?.id || selectedStepId;
 
   useEffect(() => {
@@ -509,6 +577,29 @@ export function PlaybooksView({ data, query = '' }: { data: AppData; query?: str
             </div>
           </div>
 
+          <div className="data-inventory-bar" role="group" aria-label="我手里有哪些数据">
+            <span className="data-inventory-label">我手里有哪些数据？</span>
+            <div className="data-inventory-chips">
+              {DATA_INVENTORY_OPTIONS.map((opt) => {
+                const checked = selectedInventory.includes(opt.key);
+                return (
+                  <label
+                    key={opt.key}
+                    className={`inventory-chip${checked ? ' checked' : ''}`}
+                    title={`解锁前置条件：${opt.unlocks.join('、')}`}
+                  >
+                    <input
+                      type="checkbox"
+                      checked={checked}
+                      onChange={() => toggleInventory(opt.key)}
+                    />
+                    <span>{opt.label}</span>
+                  </label>
+                );
+              })}
+            </div>
+          </div>
+
           <div className="playbook-step-pills" role="tablist" aria-label="步骤切换">
             {activePlaybook.steps.map((step, sIdx) => {
               const isSelected = !customMethodId && activeStep?.id === step.id;
@@ -567,12 +658,16 @@ export function PlaybooksView({ data, query = '' }: { data: AppData; query?: str
                   const isSelected = !customMethodId && activeStep?.id === step.id;
                   const isNeighbor = !isSelected && connectedIds.has(step.id);
                   const methodId = step.method_id || step.id;
+                  const readiness = getStepReadiness(step, unlockedSet);
+                  const readinessClass = readiness.hasRequirements
+                    ? (readiness.ready ? ' dag-node-ready' : ' dag-node-locked')
+                    : '';
                   return (
                     <button
                       key={step.id}
                       type="button"
                       style={{ left: x, top: y, width: NODE_W, height: NODE_H }}
-                      className={`dag-node${isSelected ? ' selected' : ''}${isNeighbor ? ' neighbor' : ''}`}
+                      className={`dag-node${isSelected ? ' selected' : ''}${isNeighbor ? ' neighbor' : ''}${readinessClass}`}
                       onClick={() => {
                         setCustomMethodId('');
                         setSelectedStepId(step.id);
@@ -582,10 +677,26 @@ export function PlaybooksView({ data, query = '' }: { data: AppData; query?: str
                       <span className="dag-node-id">{methodId}</span>
                       <strong className="dag-node-title">{step.title}</strong>
                       {step.description && <span className="dag-node-desc">{step.description}</span>}
-                      {!!step.requires?.length && (
-                        <span className="requires-pill" title={`多上游汇合：${step.requires.join(' + ')}`}>
-                          多上游汇合: {step.requires.join(' + ')}
-                        </span>
+                      {(!!step.requires?.length || readiness.hasRequirements) && (
+                        <div className="dag-node-pills">
+                          {readiness.hasRequirements && (
+                            readiness.ready ? (
+                              <span className="readiness-pill ready">✓ 数据就绪</span>
+                            ) : (
+                              <span
+                                className="readiness-pill locked"
+                                title={`缺少数据：${readiness.missingReqs.join('、')}`}
+                              >
+                                缺数据: {readiness.missingReqs.join(', ')}
+                              </span>
+                            )
+                          )}
+                          {!!step.requires?.length && (
+                            <span className="requires-pill" title={`多上游汇合：${step.requires.join(' + ')}`}>
+                              多上游汇合: {step.requires.join(' + ')}
+                            </span>
+                          )}
+                        </div>
                       )}
                     </button>
                   );
@@ -609,10 +720,24 @@ export function PlaybooksView({ data, query = '' }: { data: AppData; query?: str
             <p className="small muted">
               Agent 结构化接口：<code>rwiki next {activeNodeId} --json</code>
             </p>
-            {!!activeStep?.requires?.length && !customMethodId && (
-              <p className="small">
-                <span className="requires-pill">多上游汇合: {activeStep.requires.join(' + ')}</span>
-              </p>
+            {!customMethodId && (activeStepReadiness.hasRequirements || !!activeStep?.requires?.length || !!activeStep?.external_requires?.length) && (
+              <div className="step-readiness-row small">
+                {activeStepReadiness.hasRequirements && (
+                  activeStepReadiness.ready ? (
+                    <span className="readiness-pill ready">✓ 数据就绪</span>
+                  ) : (
+                    <span className="readiness-pill locked">
+                      缺数据: {activeStepReadiness.missingReqs.join(', ')}
+                    </span>
+                  )
+                )}
+                {!!activeStep?.requires?.length && (
+                  <span className="requires-pill">多上游汇合: {activeStep.requires.join(' + ')}</span>
+                )}
+                {!!activeStep?.external_requires?.length && (
+                  <span className="requires-pill">外部数据依赖: {activeStep.external_requires.join(' + ')}</span>
+                )}
+              </div>
             )}
             {!!activeStep?.subtree && !customMethodId && (() => {
               const targetSubtreeId = activeStep.subtree.split('/').pop()?.replace(/\.md$/, '') ?? '';

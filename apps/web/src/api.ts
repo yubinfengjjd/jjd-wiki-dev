@@ -493,6 +493,7 @@ export interface PlaybookStep {
   inputs?: string[];
   outputs?: string[];
   requires?: string[];
+  external_requires?: string[];
   subtree?: string;
   next?: string[];
 }
@@ -958,6 +959,15 @@ export const api = {
   confirm: (id: string) => post(act('methods', id, 'confirm')),
   /** Author confirmation of a recipe (draft → ready); the backend re-checks the as-is run receipt. */
   confirmRecipe: (id: string) => post(act('recipes', id, 'confirm')),
+  /** Author confirmation of a template (draft → ready). */
+  confirmTemplate: (id: string) => post(act('templates', id, 'confirm')),
+  /** Batch confirm multiple draft templates (draft → ready). */
+  batchConfirmTemplates: (ids: string[]) =>
+    request<{ confirmed: string[]; count: number }>('/api/templates/batch-confirm', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ ids, confirmed: true }),
+    }),
   returnMethod: (id: string, reason: string) => post(act('methods', id, 'return'), { reason }),
   tags: (kind: Kind, id: string, tags: string[]) => post(act(kind, id, 'tags'), { tags }),
   favorite: (kind: Kind, id: string, value: boolean) => post(act(kind, id, 'favorite'), { value }),

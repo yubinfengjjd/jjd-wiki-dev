@@ -75,6 +75,82 @@ def _primary_method_errors(root: Path, meta: dict) -> list[str]:
     return []
 
 
+def _scenario_topology_errors(root: Path, meta: dict) -> list[str]:
+    """Validate step next/next_steps targets, subtree references, and directed acyclicity."""
+    if meta.get("type") != "scenario" or meta.get("status") == "archived":
+        return []
+    steps = meta.get("steps")
+    if not isinstance(steps, list) or not steps:
+        return []
+    step_entries: list[tuple[int, str, dict]] = []
+    step_ids: set[str] = set()
+    errors: list[str] = []
+    for idx, step in enumerate(steps):
+        if not isinstance(step, dict):
+            continue
+        sid = str(step.get("id") or step.get("method_id") or f"step-{idx + 1}").strip()
+        if sid in step_ids:
+            errors.append(f"steps[{idx}].id 存在重复节点 ID: {sid}")
+        step_entries.append((idx, sid, step))
+        step_ids.add(sid)
+
+    adj: dict[str, list[str]] = {sid: [] for _, sid, _ in step_entries}
+    for pos, (idx, sid, step) in enumerate(step_entries):
+        sub = step.get("subtree")
+        if sub is not None:
+            if not isinstance(sub, str):
+                errors.append(f"steps[{idx}].subtree 必须为字符串")
+            elif sub.strip() and resolve_page_ref(root, sub.strip(), expected_type="scenario") is None:
+                errors.append(f"steps[{idx}].subtree 引用的场景页不存在: {sub}")
+        has_explicit_next = ("next" in step) or ("next_steps" in step)
+        for key in ("next", "next_steps"):
+            if key not in step or step[key] is None:
+                continue
+            raw_next = step[key]
+            if not isinstance(raw_next, list):
+                errors.append(f"steps[{idx}].{key} 必须为字符串列表")
+                continue
+            for target in raw_next:
+                if not isinstance(target, str) or not target.strip():
+                    errors.append(f"steps[{idx}].{key} 包含空目标 ID")
+                    continue
+                tid = target.strip()
+                if tid not in step_ids:
+                    errors.append(f"steps[{idx}].{key} 目标 '{tid}' 不在当前场景 steps 中")
+                elif tid not in adj[sid]:
+                    adj[sid].append(tid)
+        if not has_explicit_next and pos + 1 < len(step_entries):
+            implicit_next = step_entries[pos + 1][1]
+            if implicit_next not in adj[sid]:
+                adj[sid].append(implicit_next)
+
+    state: dict[str, int] = {}
+    stack: list[str] = []
+
+    def dfs(node: str) -> list[str] | None:
+        state[node] = 1
+        stack.append(node)
+        for nxt in adj.get(node, ()):
+            nxt_state = state.get(nxt, 0)
+            if nxt_state == 1:
+                return stack[stack.index(nxt):] + [nxt]
+            if nxt_state == 0:
+                found = dfs(nxt)
+                if found is not None:
+                    return found
+        stack.pop()
+        state[node] = 2
+        return None
+
+    for _, sid, _ in step_entries:
+        if state.get(sid, 0) == 0:
+            cycle = dfs(sid)
+            if cycle is not None:
+                errors.append(f"场景 steps 存在有向环路: {' -> '.join(cycle)}")
+                break
+    return errors
+
+
 def _render_bridge_target_errors(root: Path, meta: dict) -> list[str]:
     if meta.get("type") != "method":
         return []
@@ -429,12 +505,16 @@ def lint(config: Config, ci: bool = False) -> list[str]:
                 if err not in errors:
                     errors.append(err)
         if not parse_error and meta.get("type") == "method":
+            from .panel_manifest import panel_manifest_errors
             errors.extend(relation_errors(config, meta))
             errors.extend(_render_bridge_target_errors(root, meta))
+            errors.extend(panel_manifest_errors(config, path))
         elif "figure_relations" in meta:
             errors.append("figure_relations 只能在 method 页声明；图端关系由方法页反向计算")
         if not parse_error and meta.get("type") == "template":
             errors.extend(_primary_method_errors(root, meta))
+        if not parse_error and meta.get("type") == "scenario":
+            errors.extend(_scenario_topology_errors(root, meta))
         for error in errors:
             report("ERROR", path, error)
         if not errors:
@@ -545,8 +625,8 @@ def lint(config: Config, ci: bool = False) -> list[str]:
         report("WARN", index, "index.md 与页面不一致，请运行 save")
     if vocab_error:
         diagnostics.append(f"ERROR taxonomy: {vocab_error}")
-    # Enforce uniqueness of style_tier: default per primary_method among active templates
-    defaults_by_method: dict[str, list[tuple[Path, str]]] = {}
+    # Enforce uniqueness of style_tier: default per (primary_method, primary_chart_type) among active templates
+    defaults_by_method_chart: dict[tuple[str, str], list[tuple[Path, str]]] = {}
     for path, meta in readable_pages(root):
         if (
             meta.get("type") == "template"
@@ -555,14 +635,20 @@ def lint(config: Config, ci: bool = False) -> list[str]:
             and isinstance(meta.get("primary_method"), str)
             and meta["primary_method"].strip()
         ):
-            defaults_by_method.setdefault(meta["primary_method"].strip(), []).append(
+            chart_types = meta.get("chart_types") or []
+            primary_chart = str(chart_types[0]).strip() if isinstance(chart_types, list) and chart_types else ""
+            defaults_by_method_chart.setdefault((meta["primary_method"].strip(), primary_chart), []).append(
                 (path, str(meta.get("id") or path.stem))
             )
-    for pm, entries in sorted(defaults_by_method.items()):
+    for (pm, primary_chart), entries in sorted(defaults_by_method_chart.items()):
         if len(entries) > 1:
             ids = ", ".join(tid for _, tid in entries)
             for path, _ in entries:
-                report("ERROR", path, f"primary_method '{pm}' 下存在多个 style_tier: default 模板（每方法至多 1 个主推默认）: {ids}")
+                report(
+                    "ERROR",
+                    path,
+                    f"primary_method '{pm}' + chart_type '{primary_chart or '-'}' 下存在多个 style_tier: default 模板（每方法每图型至多 1 个主推默认）: {ids}",
+                )
     from .curation_workflow import method_map_errors
     for message in method_map_errors(config):
         diagnostics.append(f"ERROR recipes/method-map.json: {message}")

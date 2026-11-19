@@ -50,6 +50,11 @@ class DeleteBody(BaseModel):
     revision: StrictStr
 
 
+class BatchConfirmBody(BaseModel):
+    ids: list[StrictStr] = Field(min_length=1, max_length=500)
+    confirmed: StrictBool
+
+
 class CurationBody(BaseModel):
     ids: list[StrictStr] = Field(min_length=1, max_length=1000)
     decision: StrictStr
@@ -623,6 +628,47 @@ def create_app(config: Config) -> FastAPI:
         from .templates import mark_ready
         mark_ready(config, meta["id"])
         return response(path)
+
+    @app.post("/api/templates/{entry_id}/confirm")
+    def confirm_template(entry_id: str):
+        """v5.1: author confirmation of an L2 template; same gate as `wiki.py mark-ready`."""
+        path, meta, _ = visual("templates", entry_id)
+        if meta["status"] != "draft":
+            raise HTTPException(409, "模板不是 draft")
+        from .templates import mark_ready
+        try:
+            mark_ready(config, meta["id"])
+        except WikiError as error:
+            raise HTTPException(409, str(error)) from error
+        return response(path)
+
+    @app.post("/api/templates/batch-confirm")
+    def batch_confirm_templates(request: BatchConfirmBody):
+        """v5.1: atomic batch confirmation restricted strictly to template pages."""
+        if not request.confirmed:
+            raise HTTPException(422, "请明确确认批量发布模板")
+        if not request.ids:
+            raise HTTPException(422, "模板 ID 列表不能为空")
+        from .aliases import resolve_page_ref
+        from .pages import read_page
+        from .templates import mark_ready_many
+
+        canonical_ids: list[str] = []
+        seen_paths: set[Path] = set()
+        for raw_id in request.ids:
+            target = resolve_page_ref(config.wiki_root, str(raw_id), expected_type="template")
+            if target is None:
+                raise HTTPException(400, f"仅允许批量确认绘图模板（templates/），非模板或不存在: {raw_id}")
+            if target in seen_paths:
+                continue
+            seen_paths.add(target)
+            meta, _ = read_page(target)
+            canonical_ids.append(str(meta.get("id") or target.stem))
+        try:
+            confirmed_ids = mark_ready_many(config, canonical_ids)
+        except WikiError as error:
+            raise HTTPException(409, str(error)) from error
+        return {"confirmed": confirmed_ids, "count": len(confirmed_ids)}
 
     @app.post("/api/methods/{entry_id}/return")
     def return_method(entry_id: str, request: RejectBody):

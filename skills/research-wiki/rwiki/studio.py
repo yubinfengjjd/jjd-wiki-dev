@@ -165,7 +165,39 @@ def get_playbooks(config: Config) -> dict[str, Any]:
 
     for pb in playbooks:
         pb_steps = pb.get("steps") or []
+        step_by_id = {s["id"]: s for s in pb_steps}
+        rev_adj: dict[str, set[str]] = {s["id"]: set() for s in pb_steps}
         for idx, st in enumerate(pb_steps):
+            sid = st["id"]
+            if st.get("next"):
+                for nxt in st["next"]:
+                    if nxt in rev_adj:
+                        rev_adj[nxt].add(sid)
+            elif not st.get("_has_explicit_next") and idx + 1 < len(pb_steps):
+                rev_adj[pb_steps[idx + 1]["id"]].add(sid)
+
+        def upstream_outputs_for(target_sid: str) -> set[str]:
+            visited: set[str] = set()
+            stack = list(rev_adj.get(target_sid, ()))
+            outs: set[str] = set()
+            while stack:
+                anc = stack.pop()
+                if anc in visited:
+                    continue
+                visited.add(anc)
+                anc_step = step_by_id.get(anc)
+                if anc_step:
+                    outs.update(anc_step.get("outputs") or [])
+                    if anc_step.get("interface"):
+                        outs.add(anc_step["interface"])
+                stack.extend(rev_adj.get(anc, ()))
+            return outs
+
+        for idx, st in enumerate(pb_steps):
+            upstream_outs = upstream_outputs_for(st["id"])
+            st["external_requires"] = [
+                r for r in (st.get("requires") or []) if r not in upstream_outs
+            ]
             sid = st["id"]
             has_explicit_next = bool(st.pop("_has_explicit_next", False))
             add_node(sid, st["title"], "step", f"methods/{st['method_id']}.md" if st.get("method_id") else "")
@@ -195,6 +227,7 @@ def get_playbooks(config: Config) -> dict[str, Any]:
     for sc in scenarios:
         for st in sc.get("steps") or []:
             st.pop("_has_explicit_next", None)
+            st.setdefault("external_requires", [])
 
     for mid, (mm, _) in declarations(root, "methods").items():
         if mm.get("status") == "archived":

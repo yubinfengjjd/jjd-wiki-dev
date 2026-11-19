@@ -152,6 +152,7 @@ def _iter_existing_candidates(wiki_root: Path, kind: str) -> list[dict]:
                     "title": str(meta.get("title") or cid),
                     "status": str(meta.get("status") or ""),
                     "method_kind": str(meta.get("method_kind") or ""),
+                    "journal_style": str(meta.get("journal_style") or "").strip() if ctype == "template" else "",
                     "aliases": [str(a) for a in (meta.get("aliases") or []) if isinstance(a, str)],
                     "methods": sorted(methods),
                     "chart_types": [str(c) for c in (meta.get("chart_types") or []) if isinstance(c, str)],
@@ -175,6 +176,7 @@ def check_duplicates(
     interfaces: list[str] | None = None,
     summary: str = "",
     keywords: list[str] | None = None,
+    journal_style: str = "",
     exclude_ids: set[str] | None = None,
     limit: int = 5,
 ) -> dict:
@@ -186,6 +188,7 @@ def check_duplicates(
     target_methods = _resolve_method_ids(wiki_root, [*(methods or []), *([primary_method] if primary_method else [])])
     target_charts = {c.strip() for c in (chart_types or []) if isinstance(c, str) and c.strip()}
     target_ifaces = {i.strip() for i in (interfaces or []) if isinstance(i, str) and i.strip()}
+    target_style = (journal_style or "").strip()
     norm_id = _normalize_id(entry_id)
     norm_title = _normalize_title(title)
     query_grams = _text_ngrams(" ".join([title, summary, *(keywords or [])]))
@@ -237,6 +240,18 @@ def check_duplicates(
         if score < 0.38:
             continue
         severity = "high" if (score >= 0.65 or exact_title) else "medium"
+        cand_style = item.get("journal_style", "")
+        strong_id_hit = bool(entry_id.strip() and (entry_id.strip().lower() == item["id"].lower() or any("ID 近似" in r for r in reasons)))
+        if (
+            severity == "high"
+            and target_style
+            and cand_style
+            and target_style != cand_style
+            and not exact_title
+            and not strong_id_hit
+        ):
+            severity = "medium"
+            reasons.append("不同期刊画风变体，可按 variant 共存")
         matches.append(
             {
                 "id": item["id"],
@@ -252,8 +267,8 @@ def check_duplicates(
         )
 
     matches.sort(key=lambda m: (-m["score"], m["kind"], m["id"]))
+    all_high_hits = [m for m in matches if m["severity"] == "high"]
     top = matches[:limit]
-    high_hits = [m for m in top if m["severity"] == "high"]
     return {
         "kind": kind,
         "query": {
@@ -262,9 +277,10 @@ def check_duplicates(
             "methods": sorted(target_methods),
             "chart_types": sorted(target_charts),
             "interfaces": sorted(target_ifaces),
+            "journal_style": target_style,
         },
-        "blocked": bool(high_hits),
-        "high_count": len(high_hits),
+        "blocked": bool(all_high_hits),
+        "high_count": len(all_high_hits),
         "candidates": top,
     }
 
@@ -280,6 +296,7 @@ def assert_no_high_duplicate(
     interfaces: list[str] | None = None,
     summary: str = "",
     keywords: list[str] | None = None,
+    journal_style: str = "",
     exclude_ids: set[str] | None = None,
     dedup_note: str = "",
     force: bool = False,
@@ -295,6 +312,7 @@ def assert_no_high_duplicate(
         interfaces=interfaces,
         summary=summary,
         keywords=keywords,
+        journal_style=journal_style,
         exclude_ids=exclude_ids,
     )
     if report["blocked"] and not (dedup_note.strip() or force):

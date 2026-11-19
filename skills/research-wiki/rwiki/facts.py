@@ -178,6 +178,8 @@ def method_facts(config: Config, meta: dict) -> str:
             parts.append(f"分析模版：{analyses}")
             parts.append(f"可视化模版：{viz}")
             lines.append(f"  - **{direction}**（{'；'.join(parts)}）")
+    from .panel_manifest import manifest_facts_lines
+    lines.extend(manifest_facts_lines(config, root / "methods" / f"{meta['id']}.md"))
     return "\n".join(lines) + "\n" + relationship_facts(config, f"methods/{meta['id']}.md")
 
 
