@@ -64,7 +64,7 @@ medfig-render、medpaper-pipeline 出图前先 `rwiki find`：有可用模板或
 ## 待办、体检与 Git
 
 - “处理待办”：`rwiki pending --json` 列出 agent 动作与待作者确认项；继续已有草稿，不重复新建。确认前 `rwiki check-entry <id>` 查缺项。
-- `rwiki lint` 只查结构。写操作最后 `rwiki save "<说明>"`（多数命令自带）；本地 main 可直接 save。
+- `rwiki lint` 只查结构；`rwiki clean`（默认预览，`--apply` 执行）清理过期临时目录、UI 冒烟目录与已退役探针残留，开发或文献复刻收口前须运行核对。写操作最后 `rwiki save "<说明>"`（多数命令自带）；本地 main 可直接 save。
 - GitHub Issue/PR/评审是可选流程，推送 GitHub 时用：`gh start-task --worktree`（从 `origin/main` 切）→ `gh finish-task`（PR 到 `main`）→ 非编码 agent `gh review` → `gh merge`；批次只是 Milestone。`gh tier --range origin/main...HEAD` 自查风险档：`risk:low` CI 即合，`risk:normal` 再要 pass 评审，`risk:high` 同 normal，`high_requires_owner` 为 true 时再要 `owner-approved`（只由作者在网页添加，agent 禁止添加）。全部子命令、门禁与 `--repo` 见 references/github-workflow.md。
 - `config.json` 的 `env` 段给出代理与 gh 路径（`vars`、`path_prepend`），`wiki.py` 启动时自动设置；`install-hook` 的 hook 调用已部署副本，guard 改动部署后才生效。
 

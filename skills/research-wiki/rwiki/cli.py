@@ -266,26 +266,29 @@ def parser() -> argparse.ArgumentParser:
     pp_trace.add_argument("--offline", action="store_true")
     pp_trace.add_argument("--json", action="store_true")
 
-    pp_fetch = paper_sub.add_parser("fetch", help="下载 OA 全文 PDF（不绕过付费墙）或导入本地 PDF，并可选克隆开源代码仓")
+    pp_fetch = paper_sub.add_parser("fetch", help="下载 OA 全文 PDF（不绕过付费墙）或导入本地 PDF 与附加材料，并克隆开源代码仓")
     pp_fetch.add_argument("paper_id")
     pp_fetch.add_argument("--pdf", type=Path)
+    pp_fetch.add_argument("--supp", action="append", type=Path, default=[], help="附加材料文件或目录（可重复传入）")
     pp_fetch.add_argument("--repo", dest="repo_url", default="")
     pp_fetch.add_argument("--no-clone", action="store_true")
     pp_fetch.add_argument("--json", action="store_true")
 
-    pp_parse = paper_sub.add_parser("parse", help="解析 PDF Methods、剔除湿实验、提取图注与页面截图")
+    pp_parse = paper_sub.add_parser("parse", help="解析 PDF Methods 与附加材料、剔除湿实验、提取图注与页面截图")
     pp_parse.add_argument("paper_id")
     pp_parse.add_argument("--no-render", action="store_true")
+    pp_parse.add_argument("--max-render-pages", type=int, default=80)
     pp_parse.add_argument("--json", action="store_true")
 
-    pp_plan = paper_sub.add_parser("plan", help="生成小规模数据降维计划、查重映射与子代理任务单")
+    pp_plan = paper_sub.add_parser("plan", help="生成小规模数据降维计划、正文-附件映射、查重建议与全图复刻任务单")
     pp_plan.add_argument("paper_id")
     pp_plan.add_argument("--max-cells", type=int, default=2500)
     pp_plan.add_argument("--max-samples", type=int, default=120)
-    pp_plan.add_argument("--include-supp", action="store_true")
+    pp_plan.add_argument("--include-supp", action="store_true", help="兼容参数；现默认已纳管附图")
+    pp_plan.add_argument("--main-only", action="store_true", help="仅规划 Main Figures（排除附图）")
     pp_plan.add_argument("--json", action="store_true")
 
-    pp_pub = paper_sub.add_parser("publish", help="将复刻串联流程发布为 Wiki workflow 方法页")
+    pp_pub = paper_sub.add_parser("publish", help="将复刻串联流程及源码快照发布为 Wiki workflow 方法页")
     pp_pub.add_argument("paper_id")
     pp_pub.add_argument("--id", dest="workflow_id", required=True)
     pp_pub.add_argument("--title", required=True)
@@ -295,12 +298,19 @@ def parser() -> argparse.ArgumentParser:
     pp_pub.add_argument("--derived-templates", nargs="*", default=[])
     pp_pub.add_argument("--scale-down-note", default="")
     pp_pub.add_argument("--dedup-note", default="")
+    pp_pub.add_argument("--no-sync-code", action="store_true")
     pp_pub.add_argument("--force", action="store_true")
     pp_pub.add_argument("--json", action="store_true")
 
     pp_stat = paper_sub.add_parser("status", help="查看文献工作区进度")
     pp_stat.add_argument("paper_id", nargs="?", default="")
     pp_stat.add_argument("--json", action="store_true")
+
+    clean_cmd = commands.add_parser("clean", help="盘点并清理过期临时目录、UI 冒烟目录与已退役探针残留")
+    clean_cmd.add_argument("--apply", action="store_true", help="实际执行清理（默认仅 dry-run 预览）")
+    clean_cmd.add_argument("--include-backups", action="store_true", help="一并清理 skill-backup/audit/maintenance 历史快照")
+    clean_cmd.add_argument("--include-caches", action="store_true", help="一并清理仓库 .pytest_cache 与根目录 Rplots.pdf")
+    clean_cmd.add_argument("--json", action="store_true")
     return result
 
 
@@ -459,7 +469,7 @@ def main(argv: list[str] | None = None) -> int:
                 'project', 'find', 'show', 'use', 'serve', 'lint', 'pending',
                 'suggest', 'suggest-methods', 'suggest-pipeline', 'discover-methods',
                 'next', 'contact-sheet', 'render', 'render-layout', 'check-entry',
-                'check-dup', 'curate-audit'} and not (args.command == 'map-method' and args.audit) and not (args.command == 'paper' and args.paper_command != 'publish'):
+                'check-dup', 'curate-audit', 'clean'} and not (args.command == 'map-method' and args.audit) and not (args.command == 'paper' and args.paper_command != 'publish'):
             from .asset_checkout import assert_writable
             # run --dir writes only the already copied project directory.
             if not (args.command == 'run' and getattr(args, 'dir', None)):
@@ -476,6 +486,16 @@ def main(argv: list[str] | None = None) -> int:
                 return 0
         if args.command == "project":
             _project_dispatch(args, config)
+            return 0
+        if args.command == "clean":
+            from .clean import clean_workspace
+            res = clean_workspace(
+                config,
+                apply=args.apply,
+                include_backups=args.include_backups,
+                include_caches=args.include_caches,
+            )
+            _print(res) if getattr(args, "json", False) else print(json.dumps(res, ensure_ascii=False, indent=2))
             return 0
         if args.command == "paper":
             from . import paper as paper_mod
@@ -498,18 +518,24 @@ def main(argv: list[str] | None = None) -> int:
                     config,
                     args.paper_id,
                     pdf_path=args.pdf,
+                    supp_paths=args.supp or None,
                     repo_url=args.repo_url,
                     clone_repo=not args.no_clone,
                 )
             elif verb == "parse":
-                res = paper_mod.parse_paper_pdf(config, args.paper_id, render_pages=not args.no_render)
+                res = paper_mod.parse_paper_pdf(
+                    config,
+                    args.paper_id,
+                    render_pages=not args.no_render,
+                    max_render_pages=args.max_render_pages,
+                )
             elif verb == "plan":
                 res = paper_mod.build_plan(
                     config,
                     args.paper_id,
                     max_cells=args.max_cells,
                     max_samples=args.max_samples,
-                    include_supp=args.include_supp,
+                    include_supp=not args.main_only,
                 )
             elif verb == "publish":
                 wid = paper_mod.publish_paper_workflow(
@@ -523,6 +549,7 @@ def main(argv: list[str] | None = None) -> int:
                     derived_templates=args.derived_templates or None,
                     scale_down_note=args.scale_down_note,
                     dedup_note=args.dedup_note,
+                    sync_code=not args.no_sync_code,
                     force=args.force,
                 )
                 res = {"workflow_id": wid, "paper_id": args.paper_id}

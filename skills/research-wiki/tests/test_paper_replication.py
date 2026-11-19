@@ -149,21 +149,41 @@ def test_paywall_fetch_blocks_honestly_and_user_pdf_flow_succeeds(tmp_path: Path
     blocked = paper_status(config, "2023-example-hdwgcna")
     assert blocked["status"] == "blocked_paywall"
 
-    # Provide valid local PDF (and skip network git clone in offline unit test)
+    # Provide valid local PDF + supplementary file (skip network git clone in offline test)
     sample_pdf = _create_sample_paper_pdf(tmp_path / "source_paper.pdf")
-    fetched = fetch_paper(config, "2023-example-hdwgcna", pdf_path=sample_pdf, clone_repo=False)
+    supp_doc = tmp_path / "supp_methods.txt"
+    supp_doc.write_text(
+        "Supplementary Methods\n\n"
+        "Differential expression Wilcoxon parameters and enrichR pathway database setup.\n"
+        "Supplementary Figure 2: Mouse subcutaneous xenograft growth (excluded wet-lab).\n",
+        encoding="utf-8",
+    )
+    fetched = fetch_paper(
+        config,
+        "2023-example-hdwgcna",
+        pdf_path=sample_pdf,
+        supp_paths=[supp_doc],
+        clone_repo=False,
+    )
     assert fetched["status"] == "fetched"
     assert fetched["pdf_sha256"]
+    assert len(fetched["supp_files"]) == 1
 
-    # Parse PDF: separates wet-lab vs computational, detects GSE212345, renders page image, filters Figure 2 (WB/mice)
+    # Add a local replication script into src/ to test dual local+wiki archival
+    paper_dir = config.sources_root / "papers" / "2023-example-hdwgcna"
+    (paper_dir / "src" / "01_hdwgcna_step.R").write_text("# step 1\n", encoding="utf-8")
+
+    # Parse PDF + supp: separates wet-lab vs computational, detects GSE212345, renders pages, builds step_supp_map.json
     parsed = parse_paper_pdf(config, "2023-example-hdwgcna", render_pages=True)
     assert parsed["status"] == "parsed"
     assert "GSE212345" in parsed["data_accessions"]
     assert parsed["parsed_summary"]["excluded_wet_lab_chunks"] >= 1
     assert parsed["parsed_summary"]["computational_chunks"] >= 1
+    assert parsed["parsed_summary"]["supp_files_parsed"] == 1
     assert parsed["parsed_summary"]["rendered_pages"] == 1
+    assert (paper_dir / "extracted" / "step_supp_map.json").is_file()
 
-    # Build replication plan via CLI without supp figures
+    # Default plan now includes Main + Supplementary bioinfo figures (only excluding wet-lab figures)
     assert cli_main([
         "--config", str(cfg_path),
         "paper", "plan", "2023-example-hdwgcna",
@@ -175,13 +195,21 @@ def test_paywall_fetch_blocks_honestly_and_user_pdf_flow_succeeds(tmp_path: Path
     step_ids = {s["step_id"] for s in planned["steps"]}
     assert "differential-expression" in step_ids
     assert "coexpression-ppi-network" in step_ids
-    # Wet-lab Figure 2 & Supplementary Figure 1 must be excluded from Main bioinfo figure targets
     fig_names = [f["figure"] for f in planned["figures"]]
     assert "Figure 1" in fig_names
     assert "Figure 2" not in fig_names
-    assert "Supplementary Figure 1" not in fig_names
+    assert "Supplementary Figure 1" in fig_names
 
-    # Publish workflow into Wiki & validate lint passes cleanly
+    # Explicit --main-only excludes supplementary figures
+    assert cli_main([
+        "--config", str(cfg_path),
+        "paper", "plan", "2023-example-hdwgcna",
+        "--main-only", "--json",
+    ]) == 0
+    planned_main = paper_status(config, "2023-example-hdwgcna")
+    assert "Supplementary Figure 1" not in [f["figure"] for f in planned_main["figures"]]
+
+    # Publish workflow into Wiki with code sync & validate lint passes cleanly
     wid = publish_paper_workflow(
         config,
         "2023-example-hdwgcna",
@@ -193,4 +221,6 @@ def test_paywall_fetch_blocks_honestly_and_user_pdf_flow_succeeds(tmp_path: Path
     wmeta, wbody = read_page(config.wiki_root / "methods" / f"{wid}.md")
     assert wmeta["method_kind"] == "workflow"
     assert "GSE212345" in wbody
+    assert (config.wiki_root / "methods" / wid / "source" / "source-manifest.json").is_file()
+    assert (config.wiki_root / "methods" / wid / "code" / "01_hdwgcna_step.R").is_file()
     assert not [line for line in lint(config) if line.startswith("ERROR ")]
