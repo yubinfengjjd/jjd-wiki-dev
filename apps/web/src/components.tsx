@@ -1,5 +1,5 @@
 import { ReactNode, useRef, useState } from 'react';
-import { imageOf, previewOf, workflowOf, displayStatus, effectiveStatus, ImplementationStatus, ItemMeta, LayoutMeta, MethodMeta, PageMeta, PageType, RecipeMeta, STATUS_LABEL, Status, studioHref, TemplateMeta } from './api';
+import { imageOf, previewOf, workflowOf, displayStatus, effectiveStatus, ImplementationStatus, ItemMeta, LayoutMeta, MethodMeta, PageMeta, PageType, PaperOriginRef, paperHref, RecipeMeta, STATUS_LABEL, Status, studioHref, TemplateMeta, withThumbWidth } from './api';
 import { pageLink } from './nav';
 import { figureLabel, MethodFigure, methodFigureStatusLabel, methodPlateFigures, SourceLink } from './figureModels';
 import { CodeButton } from './CodeViewer';
@@ -56,10 +56,14 @@ interface CardShell {
   execution?: string;
   /** Extra marks beside the status badge, e.g. a recipe's licence. */
   badges?: ReactNode;
+  paperOrigins?: PaperOriginRef[];
+  styleCount?: number;
+  slotSwitcher?: ReactNode;
+  onRequestDelete?: (meta: TemplateMeta, path: string) => void;
 }
 
 /** Card stock with a figure plate on the front and a summary on the back. */
-function Card({ path, meta, number, label, plate, back, note, sourceLinks, execution, badges }: CardShell) {
+function Card({ path, meta, number, label, plate, back, note, sourceLinks, execution, badges, paperOrigins, styleCount, slotSwitcher, onRequestDelete }: CardShell) {
   const [flipped, setFlipped] = useState(false);
   const plateRef = useRef<HTMLDivElement>(null);
   const link = pageLink(path, () => plateRef.current);
@@ -76,6 +80,11 @@ function Card({ path, meta, number, label, plate, back, note, sourceLinks, execu
                 {LANGUAGE[meta.language] ?? meta.language}
               </span>
             )}
+            {styleCount !== undefined && styleCount > 1 && (
+              <span className={meta.favorite ? 'slot-count-badge with-fav' : 'slot-count-badge'}>
+                {styleCount} 种画风
+              </span>
+            )}
           </div>
           <div className="caption">
             <h3>{meta.title}</h3>
@@ -85,6 +94,9 @@ function Card({ path, meta, number, label, plate, back, note, sourceLinks, execu
                 <span className={`dot status-${effectiveStatus(meta)}`} aria-hidden="true" />
                 <StatusBadge status={effectiveStatus(meta)} label={displayStatus(meta)} />
               </span>
+              {paperOrigins && paperOrigins.length > 0 && (
+                <span className="cross-paper-badge">跨论文复用示例</span>
+              )}
               {badges}
               {execution && <span className="method-execution small">{execution}</span>}
               {'chart_types' in meta && !!meta.chart_types?.length && (
@@ -103,6 +115,7 @@ function Card({ path, meta, number, label, plate, back, note, sourceLinks, execu
           <a className="button primary" {...link} tabIndex={flipped ? 0 : -1}>查看完整说明</a>
         </div>
       </div>
+      {slotSwitcher}
       <footer className="card-action-bar">
         {meta.type !== 'layout' ? (
           <a className="button primary small card-studio-cta" href={studioHref(meta.id)} onClick={(e) => e.stopPropagation()}>
@@ -112,11 +125,34 @@ function Card({ path, meta, number, label, plate, back, note, sourceLinks, execu
           <a className="button small card-studio-cta" {...link}>查看图样</a>
         )}
         <div className="card-action-secondary">
+          {paperOrigins && paperOrigins.length > 0 && (
+            <a
+              className="ghost-link small cross-paper-link"
+              href={paperHref(paperOrigins[0].workflow_id)}
+              onClick={(e) => e.stopPropagation()}
+              title={`源自复刻论文：${paperOrigins[0].title}`}
+            >
+              查看论文 1:1 整图
+            </a>
+          )}
           {sourceLinks && sourceLinks.length > 1 && sourceLinks.slice(0, 2).map((s, i) => (
             <a key={s.path} className="ghost-link small" {...pageLink(s.path)} title={s.title}>来源{i + 1}</a>
           ))}
           <CodeButton meta={meta} className="card-code-inline" />
           <a className="ghost-link small" {...link}>详情</a>
+          {meta.type === 'template' && onRequestDelete && (
+            <button
+              type="button"
+              className="ghost-link small danger-link"
+              onClick={(e) => {
+                e.stopPropagation();
+                onRequestDelete(meta, path);
+              }}
+              title="安全删除此绘图模版"
+            >
+              删除模版
+            </button>
+          )}
           <button
             type="button"
             className="turn-inline"
@@ -140,10 +176,15 @@ interface FigureProps {
   note?: string;
   asStyle?: boolean;
   sourceLinks?: SourceLink[];
+  paperOrigins?: PaperOriginRef[];
+  styleCount?: number;
+  slotSwitcher?: ReactNode;
+  onRequestDelete?: (meta: TemplateMeta, path: string) => void;
 }
 
-export function FigureImage({ meta }: { meta: PageMeta }) {
-  const src = imageOf(meta);
+export function FigureImage({ meta, thumbWidth }: { meta: PageMeta; thumbWidth?: number | null }) {
+  const rawSrc = imageOf(meta);
+  const src = withThumbWidth(rawSrc, thumbWidth) ?? rawSrc;
   const [failed, setFailed] = useState(false);
   const preview = previewOf(meta);
   // A recipe's picture is only ever its latest passing as-is run; there is no stand-in.
@@ -154,7 +195,7 @@ export function FigureImage({ meta }: { meta: PageMeta }) {
   </>;
 }
 
-export function PlateCard({ path, meta, number, note, asStyle = false, sourceLinks }: FigureProps) {
+export function PlateCard({ path, meta, number, note, asStyle = false, sourceLinks, paperOrigins, styleCount, slotSwitcher, onRequestDelete }: FigureProps) {
   return (
     <Card
       path={path}
@@ -163,11 +204,15 @@ export function PlateCard({ path, meta, number, note, asStyle = false, sourceLin
       label={asStyle ? '单 panel 图样' : figureLabel(meta)}
       note={note}
       sourceLinks={sourceLinks}
-      plate={<FigureImage key={imageOf(meta)} meta={meta} />}
+      paperOrigins={paperOrigins}
+      styleCount={styleCount}
+      slotSwitcher={slotSwitcher}
+      onRequestDelete={onRequestDelete}
+      plate={<FigureImage key={imageOf(meta)} meta={meta} thumbWidth={600} />}
       back={
         <>
           <dt>图型</dt>
-          <dd>{meta.chart_types.join('、')}</dd>
+          <dd>{(meta.chart_types ?? []).join('、')}</dd>
           {meta.type === 'layout' && (
             <>
               <dt>面板</dt>
@@ -181,10 +226,10 @@ export function PlateCard({ path, meta, number, note, asStyle = false, sourceLin
               <dd>原图面板 {meta.panels.join('、')}</dd>
             </>
           )}
-          {meta.tags.length > 0 && (
+          {(meta.tags ?? []).length > 0 && (
             <>
               <dt>标签</dt>
-              <dd>{meta.tags.join('、')}</dd>
+              <dd>{(meta.tags ?? []).join('、')}</dd>
             </>
           )}
         </>
@@ -231,7 +276,7 @@ export function RecipeCard({ path, meta, number, origin }: RecipeProps) {
           {!!meta.chart_types?.length && (
             <>
               <dt>图型</dt>
-              <dd>{meta.chart_types.join('、')}</dd>
+              <dd>{(meta.chart_types ?? []).join('、')}</dd>
             </>
           )}
           {!!meta.tags?.length && (

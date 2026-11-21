@@ -20,6 +20,7 @@ from .adapters import ADAPTERS, BASE_PACKAGES, declared_only, required_packages
 from .config import Config
 from .errors import WikiError
 from .pages import read_page, write_page
+from .read_cache import remember
 
 HEADINGS = ("用途", "适用", "不适用", "输入", "怎么用", "输出", "知识关联检查")
 RUNNER = Path(__file__).resolve().parents[1] / "assets" / "rmd_knit_runner.R"
@@ -43,7 +44,7 @@ NOTICES = {
 def sha256(path: Path) -> str:
     """File digest, memoised per (path, size, mtime) — one save hashes each recipe tree several times."""
     stat = path.stat()
-    key = (str(path.resolve()), stat.st_size, stat.st_mtime_ns)
+    key = (os.path.normcase(os.path.abspath(str(path))), stat.st_size, stat.st_mtime_ns)
     digest = _HASH_CACHE.get(key)
     if digest is None:
         hasher = hashlib.sha256()
@@ -55,10 +56,27 @@ def sha256(path: Path) -> str:
 
 
 def tree_hashes(directory: Path, skip=()) -> dict:
-    return {path.relative_to(directory).as_posix(): sha256(path)
-            for path in sorted(directory.rglob("*"))
-            if path.is_file() and path.relative_to(directory).as_posix() not in skip
-            and ".git" not in path.relative_to(directory).parts}
+    skip_set = frozenset(skip)
+    def build() -> dict:
+        out: dict[str, str] = {}
+        root_str = str(directory)
+        def walk(curr: str, prefix: str) -> None:
+            try:
+                with os.scandir(curr) as it:
+                    entries = sorted(it, key=lambda e: e.name)
+            except OSError:
+                return
+            for entry in entries:
+                if entry.name == ".git":
+                    continue
+                rel = f"{prefix}/{entry.name}" if prefix else entry.name
+                if entry.is_dir(follow_symlinks=False):
+                    walk(entry.path, rel)
+                elif entry.is_file(follow_symlinks=False) and rel not in skip_set:
+                    out[rel] = sha256(Path(entry.path))
+        walk(root_str, "")
+        return out
+    return remember(("recipe-tree-hashes", os.path.normcase(os.path.abspath(str(directory))), skip_set), build)
 
 
 def license_notice(license: str, fallback: str = "") -> str:
@@ -238,30 +256,34 @@ def receipts(target: Path) -> list[dict]:
 
 def current_run(config: Config, page: Path) -> dict | None:
     """Latest receipt whose code hashes equal the current source bytes (as-is scope)."""
-    target = page.with_suffix("")
-    source = target / "source"
-    if not source.is_dir():
+    def build() -> dict | None:
+        target = page.with_suffix("")
+        source = target / "source"
+        if not source.is_dir():
+            return None
+        hashes = tree_hashes(source)
+        for receipt in reversed(receipts(target)):
+            if receipt.get("code") == hashes:
+                return receipt
         return None
-    hashes = tree_hashes(source)
-    for receipt in reversed(receipts(target)):
-        if receipt.get("code") == hashes:
-            return receipt
-    return None
+    return remember(("recipe-current-run", str(page)), build)
 
 
 def integrity_errors(page: Path) -> list[str]:
-    target = page.with_suffix("")
-    record_path = target / "source.json"
-    if not (target / "source").is_dir():
-        return ["source/ 目录缺失（原字节副本）"]
-    if not record_path.is_file():
-        return ["source.json 缺失"]
-    recorded = json.loads(record_path.read_text(encoding="utf-8")).get("files", {})
-    current = tree_hashes(target / "source")
-    if recorded != current:
-        changed = sorted(set(recorded) ^ set(current) | {k for k in recorded if current.get(k) != recorded[k]})
-        return [f"source/ 与 source.json 记录的原字节不一致：{'、'.join(changed[:5])}"]
-    return []
+    def build() -> list[str]:
+        target = page.with_suffix("")
+        record_path = target / "source.json"
+        if not (target / "source").is_dir():
+            return ["source/ 目录缺失（原字节副本）"]
+        if not record_path.is_file():
+            return ["source.json 缺失"]
+        recorded = json.loads(record_path.read_text(encoding="utf-8")).get("files", {})
+        current = tree_hashes(target / "source")
+        if recorded != current:
+            changed = sorted(set(recorded) ^ set(current) | {k for k in recorded if current.get(k) != recorded[k]})
+            return [f"source/ 与 source.json 记录的原字节不一致：{'、'.join(changed[:5])}"]
+        return []
+    return list(remember(("recipe-integrity-errors", str(page)), build))
 
 
 def recipe_errors(config: Config, page: Path, meta: dict) -> list[str]:
@@ -662,14 +684,21 @@ def recipe_facts(config: Config, meta: dict) -> str:
             run += "；缺包 " + ", ".join(receipt["missing_packages"])
     else:
         run = "尚无当前原字节的运行收据"
-    derived = []
-    for path in sorted((config.wiki_root / "templates").glob("*.md")):
-        try:
-            other = read_page(path)[0]
-        except WikiError:
-            continue
-        if f"recipes/{meta['id']}" in (other.get("sources") or []):
-            derived.append(f"[[templates/{other['id']}|{other['title']}]]（{other['status']}）")
+    def _derived_index() -> dict[str, list[str]]:
+        by_src: dict[str, list[str]] = {}
+        for path in sorted((config.wiki_root / "templates").glob("*.md")):
+            try:
+                other = read_page(path)[0]
+            except WikiError:
+                continue
+            link = f"[[templates/{other['id']}|{other['title']}]]（{other['status']}）"
+            for src in other.get("sources") or []:
+                by_src.setdefault(str(src), []).append(link)
+        return by_src
+
+    derived = remember(("templates-by-recipe-source", str(config.wiki_root)), _derived_index).get(
+        f"recipes/{meta['id']}", []
+    )
     lines = [f"\n- 来源：{origin} · 条目 `{source.get('item')}` · commit `{str(source.get('commit'))[:12]}`",
              f"- 许可证：{meta.get('license')}；引用：{'；'.join(meta.get('cite') or []) or '无'}",
              f"- 语言 / 运行：{meta.get('language')} · knitr 原样运行（入口 `{meta.get('entry')}`）",

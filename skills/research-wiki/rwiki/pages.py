@@ -4,8 +4,15 @@ from pathlib import Path
 
 import yaml
 
+_YAML_LOADER = getattr(yaml, "CSafeLoader", yaml.SafeLoader)
+
 from .errors import WikiError
-from .read_cache import remember
+from .read_cache import invalidate_cache, invalidate_page_cache, page_cache_get_or_load, remember
+
+_PAGE_DIRS = frozenset((
+    "layouts", "templates", "methods", "interfaces", "chart-types",
+    "projects", "sources", "recipes", "scenarios",
+))
 
 
 def parse_page(text: str) -> tuple[dict, str, str | None]:
@@ -15,7 +22,7 @@ def parse_page(text: str) -> tuple[dict, str, str | None]:
         return {}, text, "frontmatter 缺失或未闭合"
     header, body = text[len(opening):].split(closing, 1)
     try:
-        meta = yaml.safe_load(header)
+        meta = yaml.load(header, Loader=_YAML_LOADER)
     except yaml.YAMLError as error:
         return {}, body, f"frontmatter YAML 无法解析: {error}"
     if not isinstance(meta, dict):
@@ -36,7 +43,10 @@ def read_page(path: Path) -> tuple[dict, str]:
         return meta, body
 
     stamp = path.stat()
-    meta, body = remember(("page", path, stamp.st_mtime_ns, stamp.st_ctime_ns, stamp.st_size), load)
+    meta, body = remember(
+        ("page", path, stamp.st_mtime_ns, stamp.st_ctime_ns, stamp.st_size),
+        lambda: page_cache_get_or_load(path, load),
+    )
     # Callers may edit metadata before a write; never share that mutable object.
     return deepcopy(meta), body
 
@@ -54,6 +64,9 @@ def write_page(path: Path, meta: dict, body: str) -> None:
     header = yaml.safe_dump(meta, allow_unicode=True, sort_keys=False)
     path.parent.mkdir(parents=True, exist_ok=True)
     path.write_text(f"---\n{header}---\n{body}", encoding="utf-8", newline="\n")
+    invalidate_page_cache(path)
+    if path.parent.name in _PAGE_DIRS:
+        invalidate_cache(path.parents[1])
 
 
 def block_error(body: str, name: str) -> str | None:

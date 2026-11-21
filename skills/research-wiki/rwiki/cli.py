@@ -122,6 +122,11 @@ def parser() -> argparse.ArgumentParser:
     commands.add_parser("serve").add_argument("--no-browser", action="store_true")
     for name in ("verify-template", "verify-layout"):
         commands.add_parser(name).add_argument("entry_id")
+    verify_method_cmd = commands.add_parser("verify-method", help="实跑分析方法实现验证脚本并签发 SHA256 收据")
+    verify_method_cmd.add_argument("method_id")
+    verify_method_cmd.add_argument("--impl", dest="impl_id", required=True, help="实现分支 id")
+    verify_method_cmd.add_argument("--timeout", type=int, default=600)
+    verify_method_cmd.add_argument("--json", action="store_true")
     commands.add_parser("mark-ready", help="作者确认；多个 id 时先全部核对，任一不通过则全部不改").add_argument(
         "entry_ids", nargs="+")
     scaffold = commands.add_parser("scaffold-template")
@@ -732,6 +737,9 @@ def main(argv: list[str] | None = None) -> int:
             verify_template(config, args.entry_id)
         elif args.command == "verify-layout":
             verify_layout(config, args.entry_id)
+        elif args.command == "verify-method":
+            from .method_verify import verify_method
+            _print(verify_method(config, args.method_id, args.impl_id, timeout=args.timeout))
         elif args.command == "render-layout":
             render_layout(config, args.entry_id, args.data, args.out, args.style)
         elif args.command == "mark-ready":

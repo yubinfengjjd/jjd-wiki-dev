@@ -150,24 +150,27 @@ def catalog_records(config: Config) -> list[dict]:
 
 def record_for(config: Config, entry_id: str) -> dict | None:
     """Catalog record of one id (page id or `<source>:<item>`); None when absent or archived."""
-    try:
-        if entry_id in removed_ids(config):
+    from .read_cache import remember
+    def build() -> dict | None:
+        try:
+            if entry_id in removed_ids(config):
+                return None
+            if ":" in entry_id:
+                from .sources import find_item, load_source
+                source_id, item = entry_id.split(":", 1)
+                return _item_record(find_item(config, source_id, item), load_source(config, source_id)[0])
+            path = _page(config, entry_id)
+            if path.relative_to(config.wiki_root).as_posix() in excluded_paths(config):
+                return None
+            meta, body = read_page(path)
+            canonical_id = meta.get("id") or meta.get("slug") or path.stem
+            if canonical_id in removed_ids(config) or meta.get("status") == "archived":
+                return None
+            builder = {"recipe": _recipe_record, "template": _template_record, "method": _method_record}.get(meta["type"])
+            return builder(config, path, meta, body) if builder else None
+        except (WikiError, OSError, KeyError, TypeError, ValueError):
             return None
-        if ":" in entry_id:
-            from .sources import find_item, load_source
-            source_id, item = entry_id.split(":", 1)
-            return _item_record(find_item(config, source_id, item), load_source(config, source_id)[0])
-        path = _page(config, entry_id)
-        if path.relative_to(config.wiki_root).as_posix() in excluded_paths(config):
-            return None
-        meta, body = read_page(path)
-        canonical_id = meta.get("id") or meta.get("slug") or path.stem
-        if canonical_id in removed_ids(config) or meta.get("status") == "archived":
-            return None
-        builder = {"recipe": _recipe_record, "template": _template_record, "method": _method_record}.get(meta["type"])
-        return builder(config, path, meta, body) if builder else None
-    except (WikiError, OSError, KeyError, TypeError, ValueError):
-        return None
+    return remember(("catalog-record-for", str(config.wiki_root), entry_id), build)
 
 
 def render_catalog(config: Config) -> str:
@@ -175,8 +178,67 @@ def render_catalog(config: Config) -> str:
                    for record in catalog_records(config))
 
 
-def write_catalog(config: Config) -> None:
+def write_catalog(config: Config, *, changed_paths: set[Path] | None = None,
+                  deleted_pages: set[str] | None = None) -> None:
     path = config.wiki_root / CATALOG
+    resolved_root = config.wiki_root.resolve()
+    if changed_paths is not None and path.is_file():
+        drop_pages = {str(dp).replace("\\", "/").lstrip("/") for dp in (deleted_pages or ()) if str(dp).strip()}
+        normalized_changed: list[Path] = []
+        needs_full = any(dp.startswith(("sources/", "recipes/")) for dp in drop_pages)
+        for cp in changed_paths:
+            resolved_cp = cp.resolve() if cp.is_absolute() else (resolved_root / cp).resolve()
+            if not resolved_cp.is_relative_to(resolved_root):
+                needs_full = True
+                break
+            rel = resolved_cp.relative_to(resolved_root).as_posix()
+            if rel.startswith("sources/"):
+                needs_full = True
+                break
+            drop_pages.add(rel)
+            normalized_changed.append(resolved_cp)
+        if not needs_full:
+            try:
+                raw_lines = [json.loads(line) for line in path.read_text(encoding="utf-8").splitlines() if line.strip()]
+            except (OSError, ValueError):
+                raw_lines = None
+            if raw_lines is not None:
+                # Defensively skip non-dict or malformed lines (e.g. JSON null) to prevent AttributeError/KeyError.
+                existing = [
+                    rec for rec in raw_lines
+                    if isinstance(rec, dict) and isinstance(rec.get("kind"), str) and isinstance(rec.get("id"), str)
+                ]
+                kept = [rec for rec in existing if rec.get("page") not in drop_pages]
+                rebuilt = []
+                for cp in sorted(set(normalized_changed)):
+                    if not cp.is_file():
+                        continue
+                    try:
+                        meta, body = read_page(cp)
+                    except (WikiError, OSError):
+                        continue
+                    kind = meta.get("type")
+                    if meta.get("status") == "archived" or kind not in ("recipe", "template", "method", "scenario"):
+                        continue
+                    try:
+                        if kind == "recipe":
+                            rebuilt.append(_recipe_record(config, cp, meta, body))
+                        elif kind == "template":
+                            rebuilt.append(_template_record(config, cp, meta, body))
+                        elif kind == "method":
+                            rebuilt.append(_method_record(config, cp, meta, body))
+                        elif kind == "scenario":
+                            rebuilt.append(_scenario_record(meta, body))
+                    except (WikiError, OSError, KeyError, TypeError, ValueError):
+                        continue
+                merged = sorted(
+                    filter_records(config, kept + rebuilt),
+                    key=lambda record: (KIND_ORDER.get(record["kind"], 9), record["id"]),
+                )
+                text = "".join(json.dumps(record, ensure_ascii=False, sort_keys=True) + "\n" for record in merged)
+                if path.read_text(encoding="utf-8") != text:
+                    path.write_text(text, encoding="utf-8", newline="\n")
+                return
     text = render_catalog(config)
     if not path.is_file() or path.read_text(encoding="utf-8") != text:
         path.write_text(text, encoding="utf-8", newline="\n")
@@ -186,7 +248,8 @@ def load_catalog(config: Config) -> list[dict]:
     path = config.wiki_root / CATALOG
     if not path.is_file():
         return catalog_records(config)
-    return filter_records(config, [json.loads(line) for line in path.read_text(encoding="utf-8").splitlines() if line.strip()])
+    raw = [json.loads(line) for line in path.read_text(encoding="utf-8").splitlines() if line.strip()]
+    return filter_records(config, [rec for rec in raw if isinstance(rec, dict)])
 
 
 # ---------------------------------------------------------------- find

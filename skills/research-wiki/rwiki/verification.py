@@ -2,16 +2,50 @@ import json
 import hashlib
 import shutil
 import sys
+from collections import OrderedDict
 from datetime import datetime, timezone
 from pathlib import Path
+from threading import RLock
 
 from PIL import Image, ImageChops, ImageStat
 from .confine import confined
 from .errors import WikiError
 
+_DIGEST_CACHE_MAX = 8192
+_DIGEST_CACHE: OrderedDict[tuple[str, int, int], str] = OrderedDict()
+_DIGEST_LOCK = RLock()
+
+
+def clear_digest_cache() -> None:
+    """Clear the process-level SHA-256 digest cache."""
+    with _DIGEST_LOCK:
+        _DIGEST_CACHE.clear()
+
 
 def digest(path: Path) -> str:
-    return hashlib.sha256(path.read_bytes()).hexdigest()
+    """Return SHA-256 hex digest with thread-safe (path, mtime_ns, size) caching."""
+    resolved = path.resolve()
+    st = resolved.stat()
+    key = (str(resolved), st.st_mtime_ns, st.st_size)
+    with _DIGEST_LOCK:
+        cached = _DIGEST_CACHE.get(key)
+        if cached is not None:
+            _DIGEST_CACHE.move_to_end(key)
+            return cached
+    h = hashlib.sha256()
+    with resolved.open("rb") as fh:
+        while True:
+            chunk = fh.read(1048576)
+            if not chunk:
+                break
+            h.update(chunk)
+    value = h.hexdigest()
+    with _DIGEST_LOCK:
+        _DIGEST_CACHE[key] = value
+        _DIGEST_CACHE.move_to_end(key)
+        while len(_DIGEST_CACHE) > _DIGEST_CACHE_MAX:
+            _DIGEST_CACHE.popitem(last=False)
+    return value
 
 
 def replay_inputs(target: Path) -> dict:
@@ -72,18 +106,21 @@ def start_replay(target: Path) -> dict:
 
 
 def replay_available(target: Path) -> bool:
-    try:
-        receipt = json.loads((target / 'verify/verify.json').read_text(encoding='utf-8'))
-        if receipt.get('schema_version') != 2 or receipt.get('exit_code') != 0:
+    from .read_cache import remember
+    def build() -> bool:
+        try:
+            receipt = json.loads((target / 'verify/verify.json').read_text(encoding='utf-8'))
+            if receipt.get('schema_version') != 2 or receipt.get('exit_code') != 0:
+                return False
+            if receipt.get('inputs') != replay_inputs(target):
+                return False
+            outputs = {ext: digest(target / f'verify/figure.{ext}') for ext in ('png', 'pdf', 'svg')
+                       if (target / f'verify/figure.{ext}').stat().st_size > 0}
+            return (len(outputs) == 3 and outputs == receipt.get('outputs')
+                    and digest(target / 'preview.png') == outputs['png'])
+        except (OSError, ValueError, AttributeError, KeyError, TypeError, WikiError):
             return False
-        if receipt.get('inputs') != replay_inputs(target):
-            return False
-        outputs = {ext: digest(target / f'verify/figure.{ext}') for ext in ('png', 'pdf', 'svg')
-                   if (target / f'verify/figure.{ext}').stat().st_size > 0}
-        return (len(outputs) == 3 and outputs == receipt.get('outputs')
-                and digest(target / 'preview.png') == outputs['png'])
-    except (OSError, ValueError, AttributeError, KeyError, TypeError, WikiError):
-        return False
+    return remember(('replay-available', str(target)), build)
 
 
 def record_preview(target: Path, mean: float | None = None, *, inputs: dict | None = None,

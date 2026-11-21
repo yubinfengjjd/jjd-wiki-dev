@@ -151,6 +151,74 @@ def _scenario_topology_errors(root: Path, meta: dict) -> list[str]:
     return errors
 
 
+def _method_impl_slot_errors(meta: dict) -> list[str]:
+    """Enforce multi-implementation slot governance on active analysis methods."""
+    if meta.get("type") != "method" or meta.get("status") == "archived" or meta.get("method_kind") != "analysis":
+        return []
+    implementations = meta.get("implementations")
+    if not isinstance(implementations, list) or not implementations:
+        return []
+    items = [item for item in implementations if isinstance(item, dict)]
+    if not items:
+        return []
+    is_slotted = any(
+        item.get("impl_tier") is not None or item.get("modality") is not None
+        for item in items
+    )
+    if not is_slotted:
+        return []
+    mid = str(meta.get("id") or "method")
+    errors: list[str] = []
+    if len(items) == 1:
+        only = items[0]
+        iid = str(only.get("id") or "")
+        tier = only.get("impl_tier")
+        modality = only.get("modality")
+        if tier == "variant":
+            errors.append(
+                f"分析方法 '{mid}' 仅含 1 个实现 '{iid}'，禁止孤立标为 impl_tier: variant（必须为 default）"
+            )
+        elif tier != "default":
+            errors.append(
+                f"分析方法 '{mid}' 单实现 '{iid}' 已声明槽位元数据，必须同时声明 impl_tier: default"
+            )
+        if not isinstance(modality, str) or not modality.strip():
+            errors.append(
+                f"分析方法 '{mid}' 单实现 '{iid}' 已声明 impl_tier，必须同时声明非空 modality"
+            )
+        return errors
+
+    defaults = [item for item in items if item.get("impl_tier") == "default"]
+    if len(defaults) > 1:
+        ids = ", ".join(str(item.get("id") or "") for item in defaults)
+        errors.append(
+            f"分析方法 '{mid}' 下存在多个 impl_tier: default 实现（每方法至多 1 个主推默认）: {ids}"
+        )
+    elif len(defaults) == 0:
+        ids = ", ".join(str(item.get("id") or "") for item in items)
+        errors.append(
+            f"分析方法 '{mid}' 含 {len(items)} 个实现但缺少 impl_tier: default 主推默认实现: {ids}"
+        )
+
+    for item in items:
+        iid = str(item.get("id") or "")
+        if item.get("impl_tier") not in ("default", "variant"):
+            errors.append(
+                f"分析方法 '{mid}' 多实现槽位成员 '{iid}' 必须声明合法 impl_tier（default 或 variant）"
+            )
+        modality = item.get("modality")
+        if not isinstance(modality, str) or not modality.strip():
+            errors.append(
+                f"分析方法 '{mid}' 多实现槽位成员 '{iid}' 必须声明非空 modality"
+            )
+        language = item.get("language")
+        if not isinstance(language, str) or not language.strip():
+            errors.append(
+                f"分析方法 '{mid}' 多实现槽位成员 '{iid}' 必须声明非空 language"
+            )
+    return errors
+
+
 def _render_bridge_target_errors(root: Path, meta: dict) -> list[str]:
     if meta.get("type") != "method":
         return []
@@ -505,10 +573,13 @@ def lint(config: Config, ci: bool = False) -> list[str]:
                 if err not in errors:
                     errors.append(err)
         if not parse_error and meta.get("type") == "method":
+            from .method_manifest import method_manifest_errors
             from .panel_manifest import panel_manifest_errors
             errors.extend(relation_errors(config, meta))
             errors.extend(_render_bridge_target_errors(root, meta))
+            errors.extend(_method_impl_slot_errors(meta))
             errors.extend(panel_manifest_errors(config, path))
+            errors.extend(method_manifest_errors(config, path))
         elif "figure_relations" in meta:
             errors.append("figure_relations 只能在 method 页声明；图端关系由方法页反向计算")
         if not parse_error and meta.get("type") == "template":
@@ -625,30 +696,106 @@ def lint(config: Config, ci: bool = False) -> list[str]:
         report("WARN", index, "index.md 与页面不一致，请运行 save")
     if vocab_error:
         diagnostics.append(f"ERROR taxonomy: {vocab_error}")
-    # Enforce uniqueness of style_tier: default per (primary_method, primary_chart_type) among active templates
-    defaults_by_method_chart: dict[tuple[str, str], list[tuple[Path, str]]] = {}
+    # Enforce Output Slot governance per (primary_method, primary_chart_type) among active templates
+    slots_by_method_chart: dict[tuple[str, str], list[tuple[Path, str, dict]]] = {}
     for path, meta in readable_pages(root):
-        if (
-            meta.get("type") == "template"
-            and meta.get("status") != "archived"
-            and meta.get("style_tier") == "default"
-            and isinstance(meta.get("primary_method"), str)
-            and meta["primary_method"].strip()
-        ):
+        if meta.get("type") == "template" and meta.get("status") != "archived":
+            has_style_meta = meta.get("style_tier") is not None or meta.get("journal_style") is not None
+            raw_pm = meta.get("primary_method")
+            pm_str = raw_pm.strip() if isinstance(raw_pm, str) else ""
             chart_types = meta.get("chart_types") or []
-            primary_chart = str(chart_types[0]).strip() if isinstance(chart_types, list) and chart_types else ""
-            defaults_by_method_chart.setdefault((meta["primary_method"].strip(), primary_chart), []).append(
-                (path, str(meta.get("id") or path.stem))
+            primary_chart = (
+                str(chart_types[0]).strip()
+                if isinstance(chart_types, list) and chart_types and isinstance(chart_types[0], str)
+                else ""
             )
-    for (pm, primary_chart), entries in sorted(defaults_by_method_chart.items()):
-        if len(entries) > 1:
-            ids = ", ".join(tid for _, tid in entries)
-            for path, _ in entries:
+            if has_style_meta:
+                if not pm_str:
+                    report(
+                        "ERROR",
+                        path,
+                        "声明了 style_tier 或 journal_style 的活跃模板必须同时具备非空 primary_method",
+                    )
+                if not primary_chart:
+                    report(
+                        "ERROR",
+                        path,
+                        "声明了 style_tier 或 journal_style 的活跃模板必须同时具备非空 chart_types[0]",
+                    )
+            if pm_str:
+                resolved_pm = resolve_page_ref(root, pm_str, expected_type="method")
+                canonical_pm = resolved_pm.stem if resolved_pm is not None else pm_str
+                slots_by_method_chart.setdefault((canonical_pm, primary_chart), []).append(
+                    (path, str(meta.get("id") or path.stem), meta)
+                )
+    for (pm, primary_chart), entries in sorted(slots_by_method_chart.items()):
+        is_styled_slot = any(
+            meta.get("style_tier") is not None or meta.get("journal_style") is not None
+            for _, _, meta in entries
+        )
+        if not is_styled_slot:
+            continue
+        slot_label = f"primary_method '{pm}' + chart_type '{primary_chart or '-'}'"
+        if len(entries) == 1:
+            path, tid, meta = entries[0]
+            if meta.get("style_tier") == "variant":
                 report(
                     "ERROR",
                     path,
-                    f"primary_method '{pm}' + chart_type '{primary_chart or '-'}' 下存在多个 style_tier: default 模板（每方法每图型至多 1 个主推默认）: {ids}",
+                    f"{slot_label} 仅含 1 个活跃模板 '{tid}'，禁止孤立标为 style_tier: variant（必须为 default）",
                 )
+            continue
+        defaults = [(path, tid, meta) for path, tid, meta in entries if meta.get("style_tier") == "default"]
+        if len(defaults) > 1:
+            ids = ", ".join(tid for _, tid, _ in defaults)
+            for path, _, _ in defaults:
+                report(
+                    "ERROR",
+                    path,
+                    f"{slot_label} 下存在多个 style_tier: default 模板（每方法每图型至多 1 个主推默认）: {ids}",
+                )
+        elif len(defaults) == 0:
+            ids = ", ".join(tid for _, tid, _ in entries)
+            for path, _, _ in entries:
+                report(
+                    "ERROR",
+                    path,
+                    f"{slot_label} 含 {len(entries)} 个活跃模板但缺少 style_tier: default 主推默认模板: {ids}",
+                )
+        for path, tid, meta in entries:
+            tier = meta.get("style_tier")
+            jstyle = meta.get("journal_style")
+            if tier not in ("default", "variant"):
+                report(
+                    "ERROR",
+                    path,
+                    f"{slot_label} 多模板槽位成员 '{tid}' 必须声明合法 style_tier（default 或 variant）",
+                )
+            if not isinstance(jstyle, str) or not jstyle.strip():
+                report(
+                    "ERROR",
+                    path,
+                    f"{slot_label} 多模板槽位成员 '{tid}' 必须声明非空 journal_style",
+                )
+        if len(defaults) == 1:
+            _, default_tid, default_meta = defaults[0]
+            default_tags = default_meta.get("tags")
+            if isinstance(default_tags, list) and default_tags and isinstance(default_tags[0], str) and default_tags[0].strip():
+                primary_tag = default_tags[0].strip()
+                for path, tid, meta in entries:
+                    if meta.get("style_tier") == "variant":
+                        v_tags = meta.get("tags")
+                        v_tag_set = (
+                            {str(t).strip() for t in v_tags if isinstance(t, str)}
+                            if isinstance(v_tags, list)
+                            else set()
+                        )
+                        if primary_tag not in v_tag_set:
+                            report(
+                                "ERROR",
+                                path,
+                                f"{slot_label} 变体 '{tid}' 的 tags 必须包含主推默认 '{default_tid}' 的主标签 '{primary_tag}'",
+                            )
     from .curation_workflow import method_map_errors
     for message in method_map_errors(config):
         diagnostics.append(f"ERROR recipes/method-map.json: {message}")

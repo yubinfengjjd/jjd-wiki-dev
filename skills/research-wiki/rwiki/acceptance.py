@@ -7,7 +7,8 @@ from datetime import datetime, timezone
 from .confine import confined
 from .errors import WikiError
 from .pages import read_page, section_bounds, section_text, set_block
-from .verification import replay_available
+from .read_cache import remember
+from .verification import digest, replay_available
 
 HEADINGS = {
     'method': ('用途', '适用', '不适用', '输入', '怎么做', '代码', '输出', '知识关联检查'),
@@ -84,22 +85,24 @@ def _without_usage_links(body: str) -> str:
 
 
 def snapshot(path) -> str:
-    meta, body = read_page(path)
-    # Preference edits and author notes are not agent content or execution input.
-    meta = {k: v for k, v in meta.items() if k not in ('status', 'favorite', 'tags', 'archived_from')}
-    for block in ('facts', 'user'):
-        body = set_block(body, block, '')
-    # A usage link appended by record-use must not stale the acceptance receipt.
-    body = _without_usage_links(body)
-    content = {'meta': meta, 'body': body}
-    # Method approval covers knowledge, while per-implementation receipts cover code.
-    asset = path.with_suffix('')
-    for folder in (('source',) if meta.get('type') == 'method' else ('source', 'code')):
-        content[folder] = {p.relative_to(asset).as_posix(): hashlib.sha256(p.read_bytes()).hexdigest()
-                           for p in sorted((asset / folder).rglob('*'))
-                           if p.is_file() and confined(p, asset, asset.parent.parent)
-                           and '__pycache__' not in p.parts and p.suffix not in ('.pyc', '.pyo')}
-    return hashlib.sha256(json.dumps(content, ensure_ascii=False, sort_keys=True).encode()).hexdigest()
+    def build() -> str:
+        meta, body = read_page(path)
+        # Preference edits and author notes are not agent content or execution input.
+        meta = {k: v for k, v in meta.items() if k not in ('status', 'favorite', 'tags', 'archived_from')}
+        for block in ('facts', 'user'):
+            body = set_block(body, block, '')
+        # A usage link appended by record-use must not stale the acceptance receipt.
+        body = _without_usage_links(body)
+        content = {'meta': meta, 'body': body}
+        # Method approval covers knowledge, while per-implementation receipts cover code.
+        asset = path.with_suffix('')
+        for folder in (('source',) if meta.get('type') == 'method' else ('source', 'code')):
+            content[folder] = {p.relative_to(asset).as_posix(): digest(p)
+                               for p in sorted((asset / folder).rglob('*'))
+                               if p.is_file() and confined(p, asset, asset.parent.parent)
+                               and '__pycache__' not in p.parts and p.suffix not in ('.pyc', '.pyo')}
+        return hashlib.sha256(json.dumps(content, ensure_ascii=False, sort_keys=True).encode()).hexdigest()
+    return remember(('acceptance-snapshot', str(path)), build)
 
 
 def record_acceptance(config, path) -> dict:
@@ -131,27 +134,28 @@ def acceptance_stale(path) -> bool:
 
 
 def ready_for_use(config, path, meta=None) -> bool:
-    if meta is None:
-        meta, _ = read_page(path)
-    if (meta.get('status') != 'ready' or entry_errors(config, path)
-            or acceptance_stale(path)):
-        return False
-    if meta['type'] == 'method':
-        from .method_implementations import verified_implementations
-        return meta.get('method_kind') == 'analysis' and bool(verified_implementations(path, meta))
-    if meta['type'] == 'layout':
-        from .templates import layout_ready_errors
-        if layout_ready_errors(config, meta):
+    def build() -> bool:
+        cur_meta = meta if meta is not None else read_page(path)[0]
+        if (cur_meta.get('status') != 'ready' or entry_errors(config, path)
+                or acceptance_stale(path)):
             return False
-        for tid in meta.get('templates', []):
-            from .aliases import resolve_page_ref
-            template_path = resolve_page_ref(config.wiki_root, tid, expected_type='template') or (
-                config.wiki_root / 'templates' / f'{tid}.md'
-            )
-            try:
-                template, _ = read_page(template_path)
-            except (WikiError, OSError):
+        if cur_meta['type'] == 'method':
+            from .method_implementations import verified_implementations
+            return cur_meta.get('method_kind') == 'analysis' and bool(verified_implementations(path, cur_meta))
+        if cur_meta['type'] == 'layout':
+            from .templates import layout_ready_errors
+            if layout_ready_errors(config, cur_meta):
                 return False
-            if not ready_for_use(config, template_path, template):
-                return False
-    return True
+            for tid in cur_meta.get('templates', []):
+                from .aliases import resolve_page_ref
+                template_path = resolve_page_ref(config.wiki_root, tid, expected_type='template') or (
+                    config.wiki_root / 'templates' / f'{tid}.md'
+                )
+                try:
+                    template, _ = read_page(template_path)
+                except (WikiError, OSError):
+                    return False
+                if not ready_for_use(config, template_path, template):
+                    return False
+        return True
+    return remember(('ready-for-use', str(config.wiki_root), str(path)), build)

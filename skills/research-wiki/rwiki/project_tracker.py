@@ -49,8 +49,16 @@ def parse_steps(body: str) -> list[dict]:
         steps.append({
             "step": int(match.group(1)),
             "title": match.group(2).strip(),
-            "templates": _extract("所用模版", "所用模板", "所用分析方法与可切换模板"),
-            "observation": _extract("观察结果与排坑", "原文结论与本地小规模边界", "原文结论与本地代理边界", "原文结论与本地回放边界", "发表补表实测与湿实验排除边界", "发表补表实测与本地回放边界"),
+            "templates": _extract("所用模版", "所用模板", "所用分析方法与可切换模板", "方法与模板"),
+            "observation": _extract(
+                "观察结果与排坑",
+                "原文结论与本地数据边界",
+                "原文结论与本地小规模边界",
+                "原文结论与本地代理边界",
+                "原文结论与本地回放边界",
+                "发表补表实测与湿实验排除边界",
+                "发表补表实测与本地回放边界",
+            ),
             "next_branch": _extract("触发下一步", "触发下一步分叉"),
         })
     return steps
@@ -158,4 +166,6 @@ def add_project_step(
     if commit and (config.wiki_root / ".git").exists():
         from .store import save
         save(config, f"project {pid}: step {step_num}")
+    from .read_cache import invalidate_cache
+    invalidate_cache(config.wiki_root)
     return _project_dict(config, path, meta, new_body)

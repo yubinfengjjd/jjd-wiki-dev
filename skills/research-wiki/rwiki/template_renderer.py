@@ -22,8 +22,25 @@ from pathlib import Path, PurePath
 from typing import Any
 
 import yaml
-from jinja2 import BaseLoader, Environment, FileSystemLoader, StrictUndefined, TemplateError
-from jinja2.sandbox import SandboxedEnvironment as _JinjaSandboxedEnvironment
+
+try:
+    from jinja2 import BaseLoader, Environment, FileSystemLoader, StrictUndefined, TemplateError
+    from jinja2.sandbox import SandboxedEnvironment as _JinjaSandboxedEnvironment
+    _HAS_JINJA2 = True
+except ModuleNotFoundError:
+    BaseLoader = object  # type: ignore[assignment,misc]
+    Environment = Any  # type: ignore[assignment,misc]
+    FileSystemLoader = object  # type: ignore[assignment,misc]
+    StrictUndefined = object  # type: ignore[assignment,misc]
+
+    class TemplateError(Exception):  # type: ignore[no-redef]
+        pass
+
+    class _JinjaSandboxedEnvironment:  # type: ignore[no-redef]
+        def __init__(self, *args: Any, **kwargs: Any) -> None:
+            raise RuntimeError("缺少 Jinja2 依赖，无法创建沙箱模板环境")
+
+    _HAS_JINJA2 = False
 
 try:
     from .esquisse_codegen import load_ggsci_palettes, resolve_palette
@@ -92,6 +109,8 @@ def build_jinja_env(
     palettes_db: dict[str, Any] | None = None,
 ) -> SandboxedTemplateEnvironment:
     """Create a sandboxed Jinja2 environment with R/Python/ggsci helper filters."""
+    if not _HAS_JINJA2:
+        raise RuntimeError("缺少 Jinja2 依赖，无法渲染包含 Jinja2 语法的模板")
     loader: BaseLoader | None = ConfinedTemplateLoader(template_root) if template_root else None
     env = SandboxedTemplateEnvironment(
         loader=loader,
@@ -235,25 +254,39 @@ def spec_parameters_to_questions(raw_params: Any) -> list[ParameterQuestion]:
     return questions
 
 
+def _has_jinja_markers(text: str) -> bool:
+    return any(token in text for token in ("{{", "{%", "{#"))
+
+
 def validate_and_resolve_answers(
     questions: list[ParameterQuestion],
     provided: Mapping[str, Any] | None = None,
     env: SandboxedTemplateEnvironment | None = None,
 ) -> dict[str, Any]:
     """Validate & cast parameters against Copier-style ``ParameterQuestion`` rules."""
-    env = env or build_jinja_env()
     provided = dict(provided or {})
     answers: dict[str, Any] = {}
+
+    def _get_env() -> SandboxedTemplateEnvironment:
+        nonlocal env
+        if env is None:
+            env = build_jinja_env()
+        return env
 
     for q in questions:
         # Evaluate `when` condition if templated
         if isinstance(q.when, str):
-            try:
-                rendered_when = env.from_string(q.when).render(**answers, **provided).strip().lower()
-                if rendered_when in {"false", "0", "no", ""}:
+            stripped = q.when.strip().lower()
+            if not _has_jinja_markers(q.when) and stripped in {"true", "false", "1", "0", "yes", "no", ""}:
+                if stripped in {"false", "0", "no", ""}:
                     continue
-            except TemplateError:
-                pass
+            else:
+                try:
+                    rendered_when = _get_env().from_string(q.when).render(**answers, **provided).strip().lower()
+                    if rendered_when in {"false", "0", "no", ""}:
+                        continue
+                except TemplateError:
+                    pass
         elif q.when is False:
             continue
 
@@ -292,7 +325,7 @@ def validate_and_resolve_answers(
         # Copier Jinja2 validator check (empty rendered output = valid)
         if q.validator:
             try:
-                err_msg = env.from_string(q.validator).render(**answers, **{q.var_name: val}).strip()
+                err_msg = _get_env().from_string(q.validator).render(**answers, **{q.var_name: val}).strip()
                 if err_msg:
                     raise ParameterValidationError(f"Parameter '{q.var_name}': {err_msg}")
             except TemplateError as exc:
@@ -383,27 +416,30 @@ def render_template_code(
     """
     spec = dict(spec or {})
     questions = spec_parameters_to_questions(spec.get("parameters"))
-    env = build_jinja_env(template_root=template_root)
+    has_jinja_syntax = _has_jinja_markers(template_source)
+    env = build_jinja_env(template_root=template_root) if has_jinja_syntax else None
     resolved_params = validate_and_resolve_answers(questions, parameters, env=env)
 
     palette_name = str(resolved_params.get("palette") or "NPG")
     palette_entry = resolve_palette(palette_name)
     palette_colors = list(palette_entry.get("colors", []))
 
-    ctx = {
-        **resolved_params,
-        "parameters": resolved_params,
-        "bindings": dict(bindings or {}),
-        "data_file": data_file,
-        "project_dir": project_dir,
-        "palette_name": palette_entry.get("id", palette_name),
-        "palette_colors": palette_colors,
-        "r_scale_color": palette_entry.get("r_scale_color", "ggsci::scale_color_npg()"),
-        "r_scale_fill": palette_entry.get("r_scale_fill", "ggsci::scale_fill_npg()"),
-    }
-
-    has_jinja_syntax = "{{" in template_source or "{%" in template_source
-    rendered_body = env.from_string(template_source).render(**ctx) if has_jinja_syntax else template_source
+    if has_jinja_syntax:
+        assert env is not None
+        ctx = {
+            **resolved_params,
+            "parameters": resolved_params,
+            "bindings": dict(bindings or {}),
+            "data_file": data_file,
+            "project_dir": project_dir,
+            "palette_name": palette_entry.get("id", palette_name),
+            "palette_colors": palette_colors,
+            "r_scale_color": palette_entry.get("r_scale_color", "ggsci::scale_color_npg()"),
+            "r_scale_fill": palette_entry.get("r_scale_fill", "ggsci::scale_fill_npg()"),
+        }
+        rendered_body = env.from_string(template_source).render(**ctx)
+    else:
+        rendered_body = template_source
 
     if inject_header and not has_jinja_syntax:
         header = build_parameter_header(

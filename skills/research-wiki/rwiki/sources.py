@@ -48,10 +48,13 @@ def items_path(config: Config, source_id: str) -> Path:
 
 
 def read_items(config: Config, source_id: str) -> list[dict]:
-    path = items_path(config, source_id)
-    if not path.is_file():
-        return []
-    return [json.loads(line) for line in path.read_text(encoding="utf-8").splitlines() if line.strip()]
+    from .read_cache import remember
+    def build() -> list[dict]:
+        path = items_path(config, source_id)
+        if not path.is_file():
+            return []
+        return [json.loads(line) for line in path.read_text(encoding="utf-8").splitlines() if line.strip()]
+    return remember(("source-items", str(config.wiki_root), source_id), build)
 
 
 def write_items(config: Config, source_id: str, items: list[dict]) -> Path:
@@ -64,9 +67,14 @@ def write_items(config: Config, source_id: str, items: list[dict]) -> Path:
 
 
 def find_item(config: Config, source_id: str, item: str) -> dict:
-    for record in read_items(config, source_id):
-        if record["item"] == item:
-            return record
+    from .read_cache import remember
+    by_item = remember(
+        ("source-items-by-name", str(config.wiki_root), source_id),
+        lambda: {record["item"]: record for record in read_items(config, source_id) if "item" in record},
+    )
+    record = by_item.get(item)
+    if record is not None:
+        return record
     raise WikiError(f"来源 {source_id} 的目录中没有条目 {item}（先 source scan）")
 
 

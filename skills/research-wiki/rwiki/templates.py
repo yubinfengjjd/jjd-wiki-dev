@@ -383,6 +383,14 @@ def verify_template(config: Config, entry_id: str) -> None:
 def mark_ready_many(config: Config, entry_ids: list[str]) -> list[str]:
     """Batch confirmation (v2): check every id first; any failure leaves all pages unchanged; one save."""
     from .acceptance import entry_errors, record_acceptance
+    from .store import vault_write_lock
+
+    with vault_write_lock(config.wiki_root):
+        return _mark_ready_many(config, entry_ids)
+
+
+def _mark_ready_many(config: Config, entry_ids: list[str]) -> list[str]:
+    from .acceptance import entry_errors, record_acceptance
 
     entry_ids = list(dict.fromkeys(entry_ids))
     if len(entry_ids) == 1:
@@ -431,6 +439,13 @@ def mark_ready_many(config: Config, entry_ids: list[str]) -> list[str]:
 
 
 def mark_ready(config: Config, entry_id: str) -> None:
+    from .store import vault_write_lock
+
+    with vault_write_lock(config.wiki_root):
+        _mark_ready(config, entry_id)
+
+
+def _mark_ready(config: Config, entry_id: str) -> None:
     page = visual_path(config.wiki_root, entry_id)
     if page.parent.name == "methods":
         from .methods import confirm_method

@@ -150,6 +150,12 @@ def _counted(values, vocabulary=None) -> list[dict]:
 
 def taxonomy(root: Path) -> dict:
     """Vocabulary and distinct-page counts derived from current pages; nothing is persisted."""
+    from .read_cache import cached_vault_value
+
+    return cached_vault_value(root, "method_taxonomy", lambda: _build_taxonomy(root))
+
+
+def _build_taxonomy(root: Path) -> dict:
     pages = _analysis_pages(root)
     domains = {}
     canonical_domains = {slug: [] for slug, _ in DATA_DOMAINS}

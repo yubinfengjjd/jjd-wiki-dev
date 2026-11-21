@@ -21,7 +21,7 @@ from .errors import WikiError
 from .pages import read_page
 
 SCHEMA_VERSION = 1
-INDEX_VERSION = 6
+INDEX_VERSION = 7
 LOCK = RLock()
 PAGE_DIRS = ("methods", "recipes", "templates", "scenarios", "interfaces", "chart-types", "projects", "sources", "layouts")
 SOURCE_EXTENSIONS = {".py", ".r", ".rmd", ".qmd", ".md", ".jl", ".sql", ".sh", ".js", ".ts", ".c", ".cpp", ".h"}
@@ -31,7 +31,7 @@ MAX_SOURCE_BYTES = 2 * 1024 * 1024
 # word boundaries: PR must never match coexpression or approximation.
 ALIASES = [
     ["差异表达", "差异基因", "differential expression", "DE", "DEG", "FindMarkers"],
-    ["细胞类型注释", "细胞注释", "cell type annotation", "cell annotation"],
+    ["细胞类型注释", "细胞注释", "单细胞注释", "cell type annotation", "cell annotation"],
     ["批次整合", "批次校正", "batch integration", "batch correction"],
     ["双细胞", "doublet"],
     ["质量控制", "质控", "quality control", "QC"],
@@ -52,6 +52,7 @@ ALIASES = [
     ["蜂群图", "beeswarm"],
     ["精确率召回率", "precision recall", "PR"],
     ["共表达", "coexpression", "co-expression"],
+    ["堆积", "堆叠"],
 ]
 QUERY_ALIASES = [list(group) for group in ALIASES]
 # Broad topic phrases expand queries to the task; documents mentioning a cell
@@ -120,7 +121,18 @@ def _sections(body: str) -> list[dict]:
 def _metadata(meta: dict) -> str:
     # Explicit knowledge fields only; no author notes or generated verification facts.
     keys = ("summary", "keywords", "tags", "purposes", "chart_types", "inputs", "outputs", "data_contract")
-    return " ".join(json.dumps(meta[k], ensure_ascii=False) for k in keys if meta.get(k))
+    parts = [json.dumps(meta[k], ensure_ascii=False) for k in keys if meta.get(k)]
+    implementations = meta.get("implementations")
+    if isinstance(implementations, list):
+        impl_fields = ("id", "title", "modality", "language", "source_paper", "entrypoint")
+        for item in implementations:
+            if not isinstance(item, dict):
+                continue
+            for field in impl_fields:
+                value = item.get(field)
+                if isinstance(value, str) and value.strip():
+                    parts.append(value.strip())
+    return " ".join(parts)
 
 
 def _record(path: Path, meta: dict, body: str, config: Config) -> dict:

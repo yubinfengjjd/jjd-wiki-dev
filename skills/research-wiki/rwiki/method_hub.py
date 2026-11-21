@@ -19,7 +19,7 @@ from .method_taxonomy import (
     taxonomy,
 )
 from .pages import read_page, section_text
-from .read_cache import _snapshot, read_session
+from .read_cache import _snapshot, cached_vault_value, read_session
 from .relations import all_relations
 from .spec import load_spec
 
@@ -281,7 +281,7 @@ def _attached_visualizations(
                 "evidence": [],
             }
         )
-        curated.append({
+        curated_entry = {
             "id": tpl["id"],
             "title": tpl["title"],
             "path": tpl["path"],
@@ -298,7 +298,14 @@ def _attached_visualizations(
             "reason": rel["reason"] if rel is not None else "",
             "adaptation": rel["adaptation"] if rel is not None else "",
             "prerequisites": list(rel["prerequisites"]) if rel is not None else [],
-        })
+        }
+        if tpl.get("style_tier"):
+            curated_entry["style_tier"] = tpl["style_tier"]
+        if tpl.get("journal_style"):
+            curated_entry["journal_style"] = tpl["journal_style"]
+        if tpl.get("primary_method_id"):
+            curated_entry["primary_method"] = tpl["primary_method_id"]
+        curated.append(curated_entry)
 
     for rec in (method_recipes or []):
         if rec["id"] in curated_ids:
@@ -343,7 +350,7 @@ def _attached_visualizations(
             match_type, matched, missing = match_interfaces(tpl["tables"], outputs)
             if match_type is None:
                 continue
-            object_compatible.append({
+            compat_entry = {
                 "id": tpl["id"],
                 "title": tpl["title"],
                 "path": tpl["path"],
@@ -355,7 +362,14 @@ def _attached_visualizations(
                 "match_type": match_type,
                 "matched_interfaces": matched,
                 "missing_required_interfaces": missing,
-            })
+            }
+            if tpl.get("style_tier"):
+                compat_entry["style_tier"] = tpl["style_tier"]
+            if tpl.get("journal_style"):
+                compat_entry["journal_style"] = tpl["journal_style"]
+            if tpl.get("primary_method_id"):
+                compat_entry["primary_method"] = tpl["primary_method_id"]
+            object_compatible.append(compat_entry)
     object_compatible.sort(key=lambda item: (
         0 if item["match_type"] == "full" else 1,
         -len(item["matched_interfaces"]),
@@ -387,7 +401,7 @@ def _attached_visualizations(
             if not req_matched_bridges:
                 continue
             lead = req_matched_bridges[0]
-            render_bridged.append({
+            bridged_entry = {
                 "id": tpl["id"],
                 "title": tpl["title"],
                 "path": tpl["path"],
@@ -404,7 +418,14 @@ def _attached_visualizations(
                 "match_type": match_type,
                 "matched_interfaces": matched,
                 "missing_required_interfaces": missing,
-            })
+            }
+            if tpl.get("style_tier"):
+                bridged_entry["style_tier"] = tpl["style_tier"]
+            if tpl.get("journal_style"):
+                bridged_entry["journal_style"] = tpl["journal_style"]
+            if tpl.get("primary_method_id"):
+                bridged_entry["primary_method"] = tpl["primary_method_id"]
+            render_bridged.append(bridged_entry)
     render_bridged.sort(key=lambda item: (
         0 if item["match_type"] == "full" else 1,
         -len(item["matched_interfaces"]),
@@ -707,14 +728,7 @@ def _matches_query(method_hub: dict, query: str) -> bool:
     return all(word in searchable for word in words)
 
 
-def list_method_hubs(
-    config: Config,
-    *,
-    domain: str = "",
-    purpose: str = "",
-    q: str = "",
-) -> dict:
-    """List all non-archived analysis method hubs with optional domain/purpose/q filters."""
+def _collect_all_hubs(config: Config) -> dict:
     with _session_ctx():
         root = config.wiki_root
         ctx = _hub_context(config)
@@ -751,23 +765,47 @@ def list_method_hubs(
                         sparse=ctx["sparse"],
                     )
                 )
-
-        d = domain.strip()
-        p = purpose.strip()
-        query = q.strip()
-        filtered = [
-            hub for hub in all_hubs
-            if (not d or _matches_domain(hub, d))
-            and (not p or p in hub["purposes"])
-            and (not query or _matches_query(hub, query))
-        ]
-
         return {
             "taxonomy": tax,
-            "data_domains": tax["data_domains"],
-            "methods": filtered,
-            "total": len(all_hubs),
-            "filtered_total": len(filtered),
+            "all_hubs": all_hubs,
             "unmapped_recipes": ctx["unmapped_recipes"],
-            "unmapped_recipes_count": len(ctx["unmapped_recipes"]),
         }
+
+
+def list_method_hubs(
+    config: Config,
+    *,
+    domain: str = "",
+    purpose: str = "",
+    q: str = "",
+) -> dict:
+    """List all non-archived analysis method hubs with optional domain/purpose/q filters."""
+    base = cached_vault_value(
+        config.wiki_root,
+        "method_hubs_all",
+        lambda: _collect_all_hubs(config),
+        extra_key=profile(config),
+    )
+    tax = base["taxonomy"]
+    all_hubs = base["all_hubs"]
+    unmapped_recipes = base["unmapped_recipes"]
+
+    d = domain.strip()
+    p = purpose.strip()
+    query = q.strip()
+    filtered = [
+        hub for hub in all_hubs
+        if (not d or _matches_domain(hub, d))
+        and (not p or p in hub["purposes"])
+        and (not query or _matches_query(hub, query))
+    ]
+
+    return {
+        "taxonomy": tax,
+        "data_domains": tax["data_domains"],
+        "methods": filtered,
+        "total": len(all_hubs),
+        "filtered_total": len(filtered),
+        "unmapped_recipes": unmapped_recipes,
+        "unmapped_recipes_count": len(unmapped_recipes),
+    }

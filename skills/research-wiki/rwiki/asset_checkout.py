@@ -15,13 +15,99 @@ from pathlib import Path
 from threading import RLock
 
 from .errors import WikiError
-from .read_cache import remember
+from .read_cache import invalidate_cache, remember
 
 
 PAGE_KINDS = ('methods', 'templates', 'recipes', 'layouts', 'scenarios',
               'interfaces', 'chart-types', 'projects', 'sources')
 IDENTITY = re.compile(r'[A-Za-z0-9][A-Za-z0-9_.-]*\Z')
 _THREAD_LOCK = RLock()
+_REPO_CACHE: dict[tuple[str, tuple[str, ...]], Path | None] = {}
+_PROFILE_CACHE: dict[tuple[str, tuple[tuple[str, int, int], ...] | None], str] = {}
+
+
+def _stat_file(path: Path) -> tuple[str, int, int] | None:
+    try:
+        if path.is_file():
+            st = path.stat()
+            return (str(path), st.st_mtime_ns, st.st_size)
+    except OSError:
+        return None
+    return None
+
+
+def _resolve_git_dirs(dot_git: Path) -> tuple[Path | None, Path | None]:
+    """Return (gitdir, commondir) for both regular repositories and linked worktrees."""
+    if dot_git.is_dir():
+        return dot_git, dot_git
+    if dot_git.is_file():
+        try:
+            text = dot_git.read_text(encoding='utf-8', errors='replace').strip()
+        except OSError:
+            return None, None
+        for line in text.splitlines():
+            if line.lower().startswith('gitdir:'):
+                raw = line.split(':', 1)[1].strip()
+                gd = Path(raw)
+                if not gd.is_absolute():
+                    gd = (dot_git.parent / gd).resolve()
+                else:
+                    gd = gd.resolve()
+                commondir_file = gd / 'commondir'
+                if commondir_file.is_file():
+                    try:
+                        cd_raw = commondir_file.read_text(encoding='utf-8', errors='replace').strip()
+                        cd = Path(cd_raw)
+                        if not cd.is_absolute():
+                            cd = (gd / cd).resolve()
+                        else:
+                            cd = cd.resolve()
+                    except OSError:
+                        cd = gd
+                else:
+                    cd = gd
+                return gd, cd
+    return None, None
+
+
+def _git_config_stamp(wiki_root: Path) -> tuple[tuple[str, int, int], ...] | None:
+    try:
+        cur = wiki_root.resolve()
+    except OSError:
+        return None
+    for parent in (cur, *cur.parents):
+        dot_git = parent / '.git'
+        if not dot_git.exists():
+            continue
+        stamps: list[tuple[str, int, int]] = []
+        if dot_git.is_file():
+            dot_st = _stat_file(dot_git)
+            if dot_st is not None:
+                stamps.append(dot_st)
+        gitdir, commondir = _resolve_git_dirs(dot_git)
+        candidates: list[Path] = []
+        if gitdir is not None:
+            candidates.extend([
+                gitdir / 'config',
+                gitdir / 'config.worktree',
+                gitdir / 'info' / 'sparse-checkout',
+            ])
+        if commondir is not None and commondir != gitdir:
+            candidates.extend([
+                commondir / 'config',
+                commondir / 'info' / 'sparse-checkout',
+            ])
+        seen: set[Path] = set()
+        for cand in candidates:
+            if cand in seen:
+                continue
+            seen.add(cand)
+            st = _stat_file(cand)
+            if st is not None:
+                stamps.append(st)
+        if stamps:
+            return tuple(stamps)
+    return None
 
 
 @contextmanager
@@ -70,21 +156,42 @@ def _git(root: Path, *args: str, input: str | None = None, check: bool = True) -
 
 
 def repository(config) -> Path | None:
-    def read():
-        root = _git(config.wiki_root, 'rev-parse', '--show-toplevel', check=False).strip()
-        return Path(root).resolve() if root else None
-    return remember(('checkout-repository', config.wiki_root), read)
+    wiki_key = os.path.normcase(str(config.wiki_root.resolve()))
+    stamp = _git_config_stamp(config.wiki_root)
+    cache_key = (wiki_key, tuple(item[0] for item in stamp) if stamp else ())
+    with _THREAD_LOCK:
+        if cache_key in _REPO_CACHE:
+            return _REPO_CACHE[cache_key]
+    root_text = _git(config.wiki_root, 'rev-parse', '--show-toplevel', check=False).strip()
+    resolved = Path(root_text).resolve() if root_text else None
+    with _THREAD_LOCK:
+        _REPO_CACHE[cache_key] = resolved
+    return resolved
 
 
-def profile(config) -> str:
+def profile(config, *, fresh: bool = False) -> str:
+    wiki_key = os.path.normcase(str(config.wiki_root.resolve()))
+    stamp = _git_config_stamp(config.wiki_root)
+    cache_key = (wiki_key, stamp)
+    if not fresh:
+        with _THREAD_LOCK:
+            cached = _PROFILE_CACHE.get(cache_key)
+            if cached is not None:
+                return cached
     root = repository(config)
     if root is None:
-        return 'full'
-    # Actual Git sparsity is authoritative; an interrupted operation must not
-    # leave a configuration flag granting writes to an incomplete checkout.
-    return remember(('checkout-profile', root), lambda:
-        'light' if _git(root, 'config', '--bool', '--get', 'core.sparseCheckout',
-                       check=False).strip() == 'true' else 'full')
+        value = 'full'
+    else:
+        # Actual Git sparsity is authoritative; an interrupted operation must not
+        # leave a configuration flag granting writes to an incomplete checkout.
+        value = (
+            'light'
+            if _git(root, 'config', '--bool', '--get', 'core.sparseCheckout', check=False).strip() == 'true'
+            else 'full'
+        )
+    with _THREAD_LOCK:
+        _PROFILE_CACHE[cache_key] = value
+    return value
 
 
 def assert_writable(config) -> None:
@@ -154,7 +261,10 @@ def set_profile(config, value: str) -> dict:
     if root is None:
         raise WikiError('轻量/完整切换需要 Git 检出。')
     with _mutation_lock(root):
-        return _set_profile(config, value)
+        try:
+            return _set_profile(config, value)
+        finally:
+            invalidate_cache(config.wiki_root)
 
 
 def _set_profile(config, value: str) -> dict:
@@ -163,7 +273,7 @@ def _set_profile(config, value: str) -> dict:
     root = repository(config)
     if root is None:
         raise WikiError('轻量/完整切换需要 Git 检出。')
-    if value == profile(config):
+    if value == profile(config, fresh=True):
         return {'profile': value, 'changed': False}
     if _git(root, 'status', '--porcelain').strip():
         raise WikiError('切换下载方式前请先保存检出中的修改；未覆盖现有文件。')
@@ -172,7 +282,11 @@ def _set_profile(config, value: str) -> dict:
     else:
         _git(root, 'sparse-checkout', 'set', '--no-cone', '--stdin',
              input='\n'.join(_base_patterns(config, root)) + '\n')
-    return {'profile': profile(config), 'changed': True}
+    wiki_key = os.path.normcase(str(config.wiki_root.resolve()))
+    with _THREAD_LOCK:
+        for k in [key for key in _PROFILE_CACHE if key[0] == wiki_key]:
+            _PROFILE_CACHE.pop(k, None)
+    return {'profile': profile(config, fresh=True), 'changed': True}
 
 
 def _page(config, entry_id: str) -> Path:
@@ -217,10 +331,13 @@ def _closure(config, page: Path) -> list[Path]:
 
 def fetch_assets(config, entry_id: str) -> dict:
     root = repository(config)
-    if root is None:
-        return _fetch_assets(config, entry_id)
-    with _mutation_lock(root):
-        return _fetch_assets(config, entry_id)
+    try:
+        if root is None:
+            return _fetch_assets(config, entry_id)
+        with _mutation_lock(root):
+            return _fetch_assets(config, entry_id)
+    finally:
+        invalidate_cache(config.wiki_root)
 
 
 def _fetch_assets(config, entry_id: str) -> dict:

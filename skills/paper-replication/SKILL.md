@@ -1,11 +1,11 @@
 ---
 name: paper-replication
-description: Use when the author gives a WeChat post, link, DOI, PMID, or paper PDF and asks to replicate the original paper's computational/bioinformatics methods and publication figures (excluding animal/wet-lab experiments), using small-scale data, subagent dispatch, and Coordinator self-review into Research Wiki.
+description: Use when the author gives a WeChat post, link, DOI, PMID, or paper PDF and asks to replicate the original paper's computational/bioinformatics methods and publication figures (excluding wet-lab, schematic diagrams, and raw microscopy imaging), using small-scale data, subagent dispatch, and Coordinator self-review into Research Wiki.
 ---
 
 # 文献生信方法与可视化复刻（paper-replication）
 
-本技能把“二手推文 / 文献线索 → 原文献与附加材料归档 → 正文/附加材料步骤对齐与湿实验剥离 → 小规模复刻计划 → 子代理分步执行 → 主协调者自审验收 → 本地与 Wiki 双份固化”收口成一条可审计闭环。**动物实验、细胞培养/转染、WB/IHC/免疫荧光/CCK-8 等湿实验明确剔除，不纳入复刻范围。**
+本技能把“二手推文 / 文献线索 → 原文献与附加材料归档 → 正文/附加材料步骤对齐与非计算面板剥离 → 小规模复刻计划 → 子代理分步执行 → 主协调者自审验收 → 本地与 Wiki 双份固化”收口成一条可审计闭环。**动物实验、细胞培养/转染、WB/流式等湿实验（`excluded_wet_lab`）、非计算研究设计/机制模式示意图（`excluded_schematic`）与纯显微/IHC/mIF 影像（`excluded_imaging`）明确剔除，不纳入复刻或通用模板范围。**
 
 ## 底线与停机条件
 
@@ -19,6 +19,25 @@ description: Use when the author gives a WeChat post, link, DOI, PMID, or paper 
    - **整图与面板比例 1:1 锁定**：先量取原图宽高比与各 Panel (`A/B/C/...`) 栅格面积占比，精确匹配 `patchwork` `widths`/`heights`、图例停靠位置与边距（整图尺寸偏差控制在 `±5%` 内）。
    - **图元与流形真实感一致**：相关性矩阵必须与原图一致（如 `corrplot` 全矩阵 + 聚类黑框，不能简化成单列条）；降维散点必须呈现连续密集细胞云团（禁止生成彼此孤立的散点团块）；图框、箭头坐标轴与字号对齐原图。
    - **一步一跑 + 逐图打回制**：低配置机器必须**单进程串行渲染**（每次只跑 1 个脚本并即时 `gc()` 释放内存）；每张图完成后立刻目视核查 `side_by_side.png`（原图 vs 复刻图并排），**有一项不像立即打回重修，全部 1:1 过关后方能入库**。
+7. **禁止复刻非计算示意图/纯显微影像（`excluded_schematic` / `excluded_imaging`）**：
+   - 凡属研究设计流程图、机制通路卡通图（如 Fig. 1A 队列流程示意）一律标注 `excluded_schematic`，纯显微/IHC/mIF 影像一律标注 `excluded_imaging`，与湿实验（`excluded_wet_lab`）并列排除，严禁硬画矢量示意图或为其新建通用绘图模板。
+8. **真实数据 `example/`、Schema v2 硬门禁与 Output Slot 3 条硬门禁（v5.6+）**：
+   - **真实数据 `example/`**：从复刻论文提炼的 `wiki/templates/<slug>/`，其 `example/*.csv` 与 `code/render.*` 必须直接来自该论文对应 Panel 的真实分析/补表数据与精调绘图代码（单文件 `<= 500 KB`，严禁用随机高斯团块或假 H&E 方块应付 `verify-template`）。
+   - **Output Slot 3 条硬门禁（`rwiki lint` 强制校验）**：同一篇论文内部视觉同质的多个 Panel 归并提炼为 **1 套**代表性画风模板，挂入对应的输出槽位 `(primary_method, chart_types[0])`。对包含至少 1 个声明了 `style_tier` 或 `journal_style` 的活跃槽位，必须同时满足：① **禁止孤立 `variant`**（槽位仅有 1 个活跃模板时不得标 `variant`，必须标 `default`）；② **多模板槽位完整性**（槽位有 `>= 2` 个活跃模板时，必须有且仅有 1 个 `default`，且全员均须声明非空 `journal_style` 与合法 `style_tier`）；③ **同槽位主标签对齐**（若 `default` 声明了非空 `tags`，同槽位每个 `variant` 的 `tags` 必须包含 `default.tags[0]`，防止筛选时变体隐身）。
+   - **Schema v2 `panel-manifest.yaml` 硬门禁**：每篇复刻论文必须在 `methods/<workflow-id>/` 下产出 `schema_version: 2` 原子级 `panel-manifest.yaml`（`figXX/A`、`sfig03/B` 键）、`code/panels/` 逐计算 Panel 独立可运行 CLI 脚本及 `panel-receipts.json`。对**每一条非排除（`not excluded_*`）计算面板**强制执行：
+     - `script_path` 必须非空且在 `methods/<workflow-id>/` 目录内真实存在；
+     - 必须声明 `template_disposition`（三选一）：
+       - `paper_variant`：`template_id` 必须非空且指向已存在模板，该模板必须满足 `status: ready`、非空 `primary_method`、`style_tier in ("default", "variant")` 与非空 `journal_style`；
+       - `reuse_identical`：`template_id` 必须非空且指向已存在模板，且必须声明非空 `disposition_note` 说明为何与旧模板视觉一致无需新建变体；
+       - `paper_specific_only`：`template_id` 必须为 `null`（`None`），且必须声明非空 `disposition_note` 说明为何属强论文特异/单用途不进通用模板库。
+9. **分析方法入库硬门禁（`method-manifest.yaml` + `verify-method` + 多实现槽位铁律，v5.7+）**：
+   - **强制配套 `method-manifest.yaml`**：凡工作流声明了 `schema_version >= 2` 的 `panel-manifest.yaml`，必须在 `methods/<workflow-id>/` 下同步交付 `method-manifest.yaml`（含 `schema_version >= 1`、`paper_id`、`workflow_id`、`steps[]`），缺则 `rwiki lint` 直接 `ERROR` 拦死。
+   - **逐计算步骤 `method_disposition` 校验**：每条 `steps[]` 必须具备唯一安全 `step_id`、非空 `title`、工作流目录内真实存在的 `script_path` 及三选一 `method_disposition`：
+     - `method_impl`：必须声明存在的活跃 `method_kind: analysis` `method_id` 与 `implementation_id`，该实现须具备合法 `impl_tier`（`default` / `variant`）与非空 `modality`，且必须经 `rwiki verify-method <method_id> --impl <impl_id>` 实跑通过达到 `verified`（严禁 `not_run`/`stale`/`invalid`）；
+     - `reuse_impl`：必须声明存在的 `method_id`、`implementation_id`（实测状态须为 `verified`）及非空 `disposition_note`；
+     - `paper_specific_only`：`method_id` 与 `implementation_id` 必须为 `null`（`None`），且必须声明非空 `disposition_note`。
+   - **多实现槽位 3 条铁律**：同一 `analysis` 方法下可并存多模态/多语言实现分支（通过 `runtime.json` 独立声明 `files` 闭包隔离各实现 SHA256 收据）；凡至少 1 个实现声明了 `impl_tier` 或 `modality`，① 仅 1 个实现时禁止标为 `impl_tier: variant`（须为 `default`）；② `>= 2` 个实现时必须有且仅有 1 个 `default`、其余全部 `variant`；③ 全员必须声明非空 `modality` 与 `language`。
+   - **`verify-method` 实跑收据**：新增或修改实现后必须编写 `methods/<method_id>/example/verify_<impl_id>.py`（或 `.R`）并运行 `rwiki verify-method <method_id> --impl <impl_id>`，在隔离临时目录执行并生成不含绝对盘符路径的 `verification/<impl_id>.json`。
 
 ## 本地与 Wiki 双份项目目录规范
 
@@ -73,7 +92,7 @@ description: Use when the author gives a WeChat post, link, DOI, PMID, or paper 
 
 ### 阶段 5：知识库全闭环沉淀（Publish + Templates + Method Relations + Composable Decision Tree）
 
-1. **统一模板体系 + 全图型 100% 覆盖（一类图允许多风格并存）**：不再区分 L1 配方与 L2 模板，所有新增绘图模板一律归入 `wiki/templates/<short-slug>/`（`recipes/` 为历史只读归档，不再新建）。逐张盘点全篇 Main + Supp Figure 的全部独立面板图型——先复用库内既有 `templates/`，对缺口图型或新顶刊风格新建独立模板，确保全篇 100% 面板覆盖、不同期刊风格可按需切换。
+1. **统一模板体系 + Schema v2 `panel-manifest.yaml` 与 Output Slot 硬门禁**：不再区分 L1 配方与 L2 模板，所有新增绘图模板一律归入 `wiki/templates/<short-slug>/`（`recipes/` 为历史只读归档，不再新建）。同论文内视觉同质的多个 Panel 归并提炼为 **1 套**代表性画风模板，挂入对应 `(primary_method, chart_types[0])` 槽位并遵守 Output Slot 3 条硬门禁（禁止孤立 `variant`；多模板槽位有且仅有 1 个 `default` 且全员含非空 `journal_style` + `style_tier`；`variant.tags` 必须包含 `default.tags[0]`）；每篇复刻论文在 `methods/<workflow-id>/` 下交付 `schema_version: 2` 原子级 `panel-manifest.yaml`（非排除计算面板必须有真实落盘 `script_path` 与合法 `template_disposition`: `paper_variant` | `reuse_identical` | `paper_specific_only` 及对应 `template_id` / `disposition_note`；`excluded_schematic` / `excluded_imaging` / `excluded_wet_lab` 不要求 `template_id`、`template_disposition` 与 `script_path`）、`code/panels/` 逐计算 Panel 独立可运行 CLI 脚本与 `panel-receipts.json`；所有模板的 `example/*.csv` 与 `code/render.*` 必须来自该论文真实数据与精调绘图代码。
 2. **方法 ↔ 多风格可切换模板语义关系入库**：按研究推进顺序，将每个规范方法页的 `figure_relations`（列明一方法对应的多套可选顶刊风格 `templates/`）与 `next_steps` 补全，并运行 `rwiki map-method` 同步，确保方法页与模板页形成清晰互链，不残留“暂无已记录关系”。
 3. **构建可组合生信思路分支树（主干 + 专题子树 + 课题实录卡）**：
    - 生信思路分支树 = 主干决策树 + 专题子树（`scenarios/`）+ 节点方法配图关系（`methods/` `figure_relations`/`next_steps`）+ 课题走线实录卡（`projects/`）；

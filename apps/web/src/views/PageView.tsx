@@ -1,11 +1,12 @@
 import { useCallback, useEffect, useState } from 'react';
-import { api, imageOf, isFigure, isItem, LayoutMeta, MethodHubDetail, NextStepsResponse, PageDetail, pageCache, PageSummary, PageType, safeUrl, studioHref, wikiFile } from '../api';
+import { api, imageOf, isFigure, isItem, LayoutMeta, MethodHubDetail, NextStepsResponse, PageDetail, pageCache, PageSummary, PageType, paperHref, safeUrl, studioHref, wikiFile } from '../api';
 import type { AppData } from '../App';
 import { FigureImage, TypeMark } from '../components';
 import { figureLabel, isWholeSource, methodFigures, templateSourceNote } from '../figureModels';
 import { methodSection, renderBody, renderMarkdown, userBlock, withoutLeadEmbeds } from '../markdown';
 import { pageLink } from '../nav';
 import { Chain } from './Chain';
+import { DeleteTemplateModal } from '../DeleteTemplateModal';
 import { InlineStudioDrawer } from './InlineStudioDrawer';
 import { ItemActions, LayoutImages, MethodSource, NoteEditor, TagsEditor } from './ItemPanel';
 import { CodeButton } from '../CodeViewer';
@@ -30,6 +31,7 @@ export function PageView({ path, data, query = '' }: { path: string; data: AppDa
   const [hub, setHub] = useState<MethodHubDetail | null>(null);
   const [nextSteps, setNextSteps] = useState<NextStepsResponse | null>(null);
   const [drawerTemplate, setDrawerTemplate] = useState<{ id: string; title?: string } | null>(null);
+  const [showDeleteModal, setShowDeleteModal] = useState(false);
   const [error, setError] = useState('');
   const [busy, setBusy] = useState(false);
 
@@ -37,8 +39,18 @@ export function PageView({ path, data, query = '' }: { path: string; data: AppDa
     setHub(null);
     setNextSteps(null);
     setDrawerTemplate(null);
-    api.page(path).then(setPage, (e: Error) => setError(e.message));
+    setShowDeleteModal(false);
+    setError('');
   }, [path]);
+
+  useEffect(() => {
+    let cancelled = false;
+    api.page(path).then(
+      (next) => { if (!cancelled) setPage(next); },
+      (e: Error) => { if (!cancelled) setError(e.message); },
+    );
+    return () => { cancelled = true; };
+  }, [path, data.refreshNonce]);
 
   useEffect(() => {
     if (!page || page.meta.type !== 'method' || page.meta.method_kind !== 'analysis') return;
@@ -58,7 +70,7 @@ export function PageView({ path, data, query = '' }: { path: string; data: AppDa
       })
       .catch(() => undefined);
     return () => ctrl.abort();
-  }, [page?.path, page?.meta.type]);
+  }, [page?.path, page?.meta.type, data.mutationRevision, data.refreshNonce]);
 
   useEffect(() => {
     if (!page) return;
@@ -173,6 +185,16 @@ export function PageView({ path, data, query = '' }: { path: string; data: AppDa
                     <span className="journal-style-pill">{meta.journal_style}</span>
                   </>
                 )}
+                {!!page.paper_origins?.length && (
+                  <>
+                    {' '}
+                    <span className="cross-paper-badge">跨论文复用示例</span>
+                    {' '}
+                    <a className="cross-paper-link small" href={paperHref(page.paper_origins[0].workflow_id)}>
+                      查看论文 1:1 整图 ↗
+                    </a>
+                  </>
+                )}
               </p>
             )}
           </div>
@@ -181,6 +203,15 @@ export function PageView({ path, data, query = '' }: { path: string; data: AppDa
               <a className="button primary small" href={studioHref(item.id)}>进入操控台</a>
             )}
             {item && <CodeButton meta={item} />}
+            {meta.type === 'template' && (
+              <button
+                type="button"
+                className="button ghost danger small"
+                onClick={() => setShowDeleteModal(true)}
+              >
+                删除模版
+              </button>
+            )}
           </div>
         </div>
         {(page.path !== path || (hub?.requested_id && hub.requested_id !== hub.id)) && (
@@ -207,9 +238,10 @@ export function PageView({ path, data, query = '' }: { path: string; data: AppDa
         </details>}
         {meta.type === 'layout' && <PanelSet meta={meta} pages={pagesOf(meta.templates)} />}
 
-        {meta.type === 'method' && !analysisMethod && !!meta.implementations?.length && <MethodImplementations meta={meta} implementationStatus={page.implementation_status} />}
+        {meta.type === 'method' && !analysisMethod && !!meta.implementations?.length && <MethodImplementations key={meta.id} meta={meta} implementationStatus={page.implementation_status} />}
         {analysisMethod && (
           <MethodOverview
+            key={meta.id}
             purposeHtml={purposeHtml}
             meta={meta}
             implementationStatus={page.implementation_status}
@@ -278,6 +310,22 @@ export function PageView({ path, data, query = '' }: { path: string; data: AppDa
         {meta.type === 'template' && (
           <section className="reuse-note">
             <p>{templateSourceNote(meta, data.pages, data.env.hiddenSources)}</p>
+            {!!page.paper_origins?.length && (
+              <div className="cross-paper-origin-bar">
+                <span className="cross-paper-badge">跨论文复用示例</span>
+                <span className="small">
+                  提炼自复刻论文：
+                  {page.paper_origins.map((origin, idx) => (
+                    <span key={origin.workflow_id}>
+                      {idx > 0 && ' · '}
+                      <a href={paperHref(origin.workflow_id)}>
+                        查看论文 1:1 整图（{origin.title}）
+                      </a>
+                    </span>
+                  ))}
+                </span>
+              </div>
+            )}
             <strong>换数据与任意 n 复用</strong>
             <p>n 由实际数据决定，agent 根据课题编排尺寸、标签、配色和间距；原图组数不构成函数上限。</p>
             <p className="small muted">{page.reuse?.sizing_declared
@@ -352,6 +400,19 @@ export function PageView({ path, data, query = '' }: { path: string; data: AppDa
           templateTitle={drawerTemplate.title}
           data={data}
           onClose={() => setDrawerTemplate(null)}
+        />
+      )}
+      {showDeleteModal && meta.type === 'template' && (
+        <DeleteTemplateModal
+          templateId={meta.id}
+          templateTitle={meta.title}
+          templatePath={canonicalPath}
+          onClose={() => setShowDeleteModal(false)}
+          onDeleted={() => {
+            setShowDeleteModal(false);
+            data.removePageLocally?.(canonicalPath);
+            location.hash = '#/gallery';
+          }}
         />
       )}
     </article>

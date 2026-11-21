@@ -107,7 +107,7 @@ export function RecipesView({ data, query = '' }: { data: AppData; query?: strin
         /* fallback gracefully to flat recipe view if offline/SSR */
       });
     return () => ctrl.abort();
-  }, []);
+  }, [data.mutationRevision]);
 
   const set = <K extends keyof Filters>(key: K, value: Filters[K]) => setF((prev) => ({ ...prev, [key]: value }));
 

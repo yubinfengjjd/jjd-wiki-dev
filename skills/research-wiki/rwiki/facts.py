@@ -1,30 +1,34 @@
 """Rebuild derived page facts from frontmatter and asset declarations."""
 
+from pathlib import Path
 from urllib.parse import quote
 
 from .config import Config, read_json
 from .errors import WikiError
 from .interfaces import load_interface
 from .pages import read_page, set_block, write_page
+from .read_cache import read_session, remember
 from .relations import COMPATIBILITY_LABELS, all_relations, relations_for
 
 
 def declarations(root, kind: str) -> dict:
     """Readable method metas, or template metas with their spec; broken pages are lint's job."""
-    result = {}
-    for path in sorted((root / kind).glob("*.md")):
-        try:
-            meta = read_page(path)[0]
-            if kind == "methods":
-                if isinstance(meta.get("outputs"), list) and isinstance(meta.get("inputs"), list):
-                    result[path.stem] = (meta, meta)
-            elif (path.with_suffix("") / "spec.json").is_file():
-                spec = read_json(path.with_suffix("") / "spec.json")
-                if isinstance(spec, dict) and isinstance(spec.get("tables"), dict):
-                    result[path.stem] = (meta, spec)
-        except WikiError:
-            continue
-    return result
+    def build() -> dict:
+        result = {}
+        for path in sorted((root / kind).glob("*.md")):
+            try:
+                meta = read_page(path)[0]
+                if kind == "methods":
+                    if isinstance(meta.get("outputs"), list) and isinstance(meta.get("inputs"), list):
+                        result[path.stem] = (meta, meta)
+                elif (path.with_suffix("") / "spec.json").is_file():
+                    spec = read_json(path.with_suffix("") / "spec.json")
+                    if isinstance(spec, dict) and isinstance(spec.get("tables"), dict):
+                        result[path.stem] = (meta, spec)
+            except WikiError:
+                continue
+        return result
+    return remember(("declarations", root, kind), build)
 
 
 def table_interfaces(spec: dict) -> set[str]:
@@ -143,10 +147,21 @@ def method_facts(config: Config, meta: dict) -> str:
                     for mm, method in declarations(root, "methods").values()
                     if mm["status"] != "archived"
                     and input_interfaces(method) and input_interfaces(method) <= outputs]
-    code_files = [f"[{path.relative_to(root).as_posix()}](/files/wiki/{quote(path.relative_to(root).as_posix(), safe='/')})"
-                  for path in sorted((root / "methods" / meta["id"] / "code").rglob("*"))
-                  if path.is_file() and "__pycache__" not in path.parts
-                  and path.suffix.lower() not in (".pyc", ".pyo")]
+    code_dir = root / "methods" / meta["id"] / "code"
+    panels_dir = code_dir / "panels"
+    all_code_paths = [
+        path for path in sorted(code_dir.rglob("*"))
+        if path.is_file() and "__pycache__" not in path.parts
+        and path.suffix.lower() not in (".pyc", ".pyo")
+    ]
+    panel_files = [path for path in all_code_paths if path.is_relative_to(panels_dir)]
+    code_files = [
+        f"[{path.relative_to(root).as_posix()}](/files/wiki/{quote(path.relative_to(root).as_posix(), safe='/')})"
+        for path in all_code_paths
+        if not path.is_relative_to(panels_dir)
+    ]
+    if panel_files:
+        code_files.append(f"独立 Panel 脚本：共 {len(panel_files)} 个（见前端「论文复刻」面板）")
     license_text = "仅供个人研究参考" if meta["license"] == "none" else meta["license"]
     lines = [
         f"\n- 来源：{origin}", f"- 许可证：{license_text}",
@@ -289,19 +304,23 @@ def page_facts(config: Config, meta: dict) -> str:
 FACT_DIRS = ("layouts", "templates", "methods", "interfaces", "recipes", "sources", "scenarios")
 
 
-def refresh_facts(config: Config) -> None:
-    # Render every page before writing any, so a failure leaves no half-refreshed set.
+def refresh_facts(config: Config, only_paths: set[Path] | None = None) -> None:
+    # Render every target page before writing any, so a failure leaves no half-refreshed set.
     # A page that cannot be read or rendered is skipped here and reported by lint,
     # instead of blocking every save in the Wiki.
     updates = []
-    for kind in FACT_DIRS:
-        for path in sorted((config.wiki_root / kind).glob("*.md")):
-            try:
-                meta, body = read_page(path)
-                updated = set_block(body, "facts", page_facts(config, meta))
-                if updated != body:
-                    updates.append((path, meta, updated))
-            except (WikiError, KeyError, TypeError, ValueError, OSError):
-                continue
+    target_set = {p.resolve() for p in only_paths} if only_paths is not None else None
+    with read_session():
+        for kind in FACT_DIRS:
+            for path in sorted((config.wiki_root / kind).glob("*.md")):
+                if target_set is not None and path.resolve() not in target_set:
+                    continue
+                try:
+                    meta, body = read_page(path)
+                    updated = set_block(body, "facts", page_facts(config, meta))
+                    if updated != body:
+                        updates.append((path, meta, updated))
+                except (WikiError, KeyError, TypeError, ValueError, OSError):
+                    continue
     for path, meta, body in updates:
         write_page(path, meta, body)

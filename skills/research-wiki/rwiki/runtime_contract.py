@@ -415,13 +415,9 @@ def fingerprint_mode(asset: Path, implementation: dict) -> str:
     return 'v1'
 
 
-def closure_hash(asset: Path, implementation: dict) -> str | None:
+def _hash_closure_payload(asset: Path, manifest_bytes: bytes, implementation: dict) -> str | None:
     digest = hashlib.sha256()
-    manifest = asset / MANIFEST_NAME
-    try:
-        digest.update(manifest.read_bytes())
-    except OSError:
-        return None
+    digest.update(manifest_bytes)
     if fingerprint_mode(asset, implementation) == 'v2':
         # Bind the canonical conditions explicitly so the scheme is self-describing;
         # the manifest bytes already make any condition change alter the digest.
@@ -438,6 +434,71 @@ def closure_hash(asset: Path, implementation: dict) -> str | None:
         except (OSError, ValueError, FileNotFoundError):
             return None
     return digest.hexdigest()
+
+
+def _raw_single_branch_manifest(asset: Path, implementation: dict) -> tuple[dict | None, int]:
+    """Return (single_branch_manifest_dict, total_impl_count) for a method runtime.json."""
+    manifest = asset / MANIFEST_NAME
+    try:
+        raw_data = json.loads(manifest.read_text(encoding='utf-8'))
+    except (OSError, UnicodeError, json.JSONDecodeError):
+        return None, 0
+    if not isinstance(raw_data, dict) or raw_data.get('kind') != 'method':
+        return None, 0
+    raw_impls = raw_data.get('implementations')
+    if not isinstance(raw_impls, list):
+        return None, 0
+    iid = implementation.get('id')
+    raw_branch = next((item for item in raw_impls if isinstance(item, dict) and item.get('id') == iid), None)
+    if raw_branch is None:
+        return None, len(raw_impls)
+    single = {k: ([raw_branch] if k == 'implementations' else v) for k, v in raw_data.items()}
+    return single, len(raw_impls)
+
+
+def branch_closure_hash(asset: Path, implementation: dict) -> str | None:
+    """Canonical per-branch closure hash isolating one method implementation from sibling branches."""
+    single, count = _raw_single_branch_manifest(asset, implementation)
+    if single is None or count < 1:
+        return None
+    canonical_bytes = json.dumps(
+        single, sort_keys=True, ensure_ascii=False, separators=(',', ':')
+    ).encode('utf-8')
+    return _hash_closure_payload(asset, canonical_bytes, implementation)
+
+
+def _legacy_single_branch_hashes(asset: Path, implementation: dict) -> set[str]:
+    """Hashes for legacy receipts created when runtime.json contained only this single branch."""
+    single, count = _raw_single_branch_manifest(asset, implementation)
+    if single is None or count <= 1:
+        return set()
+    pretty = json.dumps(single, indent=2, ensure_ascii=False)
+    pretty_crlf = pretty.replace('\n', '\r\n')
+    compact = json.dumps(single, ensure_ascii=False)
+    candidates = (
+        pretty + '\n',
+        pretty,
+        pretty_crlf + '\r\n',
+        pretty_crlf,
+        compact + '\n',
+        compact + '\r\n',
+        compact,
+    )
+    hashes: set[str] = set()
+    for text in candidates:
+        h = _hash_closure_payload(asset, text.encode('utf-8'), implementation)
+        if h:
+            hashes.add(h)
+    return hashes
+
+
+def closure_hash(asset: Path, implementation: dict) -> str | None:
+    manifest = asset / MANIFEST_NAME
+    try:
+        manifest_bytes = manifest.read_bytes()
+    except OSError:
+        return None
+    return _hash_closure_payload(asset, manifest_bytes, implementation)
 
 
 def _evidence(asset: Path, implementation: dict, expected_hash: str) -> dict:
@@ -465,7 +526,14 @@ def _evidence(asset: Path, implementation: dict, expected_hash: str) -> dict:
         issues.append('独立性收据 implementation 与声明不一致')
     if receipt.get('kind') not in (None, 'method', 'template'):
         issues.append('独立性收据 kind 无效')
-    if receipt.get('closure_hash') != expected_hash:
+    valid_hashes: set[str] = set()
+    if expected_hash:
+        valid_hashes.add(expected_hash)
+    b_hash = branch_closure_hash(asset, implementation)
+    if b_hash:
+        valid_hashes.add(b_hash)
+    valid_hashes.update(_legacy_single_branch_hashes(asset, implementation))
+    if receipt.get('closure_hash') not in valid_hashes:
         issues.append('独立性收据绑定的闭包已变化')
     state = receipt.get('state')
     scope = receipt.get('scope') if _text(receipt.get('scope')) else ''

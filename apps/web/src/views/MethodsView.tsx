@@ -42,11 +42,17 @@ function previewSourceBadge(item: MethodHubCard['attached_visualizations']['all_
 }
 
 function HubMethodCard({ hub, taxonomy }: { hub: MethodHubCard; taxonomy: AppData['taxonomy'] }) {
-  const verifiedCount = verifiedImplementations(
+  const verifiedImpls = verifiedImplementations(
     { implementations: hub.implementations } as MethodMeta,
     hub.implementation_status,
-  ).length;
+  );
+  const verifiedCount = verifiedImpls.length;
   const totalImpls = hub.implementations.length;
+  const implLanguages = [...new Set(hub.implementations.map((i) => i.language?.trim()).filter(Boolean) as string[])];
+  const implModalities = [...new Set(hub.implementations.map((i) => i.modality?.trim()).filter(Boolean) as string[])];
+  const implStatusText = verifiedCount > 0
+    ? `${verifiedCount === totalImpls ? `${verifiedCount} 套已验证实现` : `已验证 ${verifiedCount}/${totalImpls} 套实现`}${implLanguages.length > 0 ? ` · ${implLanguages.join(' / ')}` : ''}`
+    : '理论与模板就绪 · 暂无已验证实现';
   const previews = hub.attached_visualizations.all_previews.slice(0, 4);
   const curatedById = new Map(hub.attached_visualizations.curated.map((c) => [c.id, c]));
   const totalVizCount = new Set([
@@ -69,9 +75,7 @@ function HubMethodCard({ hub, taxonomy }: { hub: MethodHubCard; taxonomy: AppDat
           ))}
         </div>
         <span className={`impl-status-pill ${verifiedCount > 0 ? 'verified' : 'unverified'}`}>
-          {verifiedCount > 0
-            ? `已验证 ${verifiedCount}/${totalImpls} 个实现`
-            : '理论与模板就绪 · 暂无已验证实现'}
+          {implStatusText}
         </span>
       </div>
 
@@ -79,6 +83,16 @@ function HubMethodCard({ hub, taxonomy }: { hub: MethodHubCard; taxonomy: AppDat
         <a {...pageLink(hub.path)}>{hub.title}</a>
       </h3>
       <p className="method-hub-summary small">{hub.summary || '分析理论与下游出图入口。'}</p>
+      {implModalities.length > 0 && (
+        <div className="method-impl-capsules" aria-label="支持数据模态与语言">
+          {implModalities.map((mod) => (
+            <span key={mod} className="modality-pill">{mod}</span>
+          ))}
+          {verifiedCount === 0 && implLanguages.map((lang) => (
+            <span key={lang} className={`lang-pill lang-${lang.toLowerCase()}`}>{lang}</span>
+          ))}
+        </div>
+      )}
 
       <div className="method-object-flow" aria-label="输入与输出对象契约">
         <div className="object-flow-side">
@@ -246,6 +260,8 @@ export function MethodsView({ data, query = '' }: { data: AppData; query?: strin
   const [search, setSearch] = useState(selection.q);
   useEffect(() => { setSearch(selection.q); }, [selection.q]);
 
+  const mutationRevision = data.mutationRevision ?? 0;
+
   useEffect(() => {
     if (typeof fetch !== 'function') return;
     abortRef.current?.abort();
@@ -266,7 +282,7 @@ export function MethodsView({ data, query = '' }: { data: AppData; query?: strin
         }
       });
     return () => ctrl.abort();
-  }, [currentKey, selection.domain, selection.purpose, selection.q]);
+  }, [currentKey, selection.domain, selection.purpose, selection.q, mutationRevision]);
 
   const matchedHubs = selectMatchingHubs(hubsState, currentKey, search, selection.q);
   const activeTaxonomy = matchedHubs?.taxonomy ?? data.taxonomy;

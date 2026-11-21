@@ -4,11 +4,97 @@ import type { Flow } from './flow';
 export type FigureMeta = LayoutMeta | TemplateMeta;
 export type FigureShelf = 'single' | 'template';
 
+export interface OutputSlotGroup<T> {
+  slotKey: string;
+  primaryMethod: string;
+  primaryChart: string;
+  items: T[];
+  defaultItem: T;
+}
+
+type SlotCandidate = {
+  path: string;
+  meta: FigureMeta;
+};
+
+function slotItemRank(meta: FigureMeta): [number, number, string] {
+  const tierRank = meta.type === 'template' && meta.style_tier === 'default'
+    ? 0
+    : meta.type === 'template' && meta.style_tier !== 'variant'
+      ? 1
+      : 2;
+  const statusRank = meta.status === 'ready' ? 0 : 1;
+  return [tierRank, statusRank, meta.id];
+}
+
+export function groupByOutputSlot<T extends SlotCandidate>(items: T[]): OutputSlotGroup<T>[] {
+  const buckets = new Map<string, { primaryMethod: string; primaryChart: string; items: T[] }>();
+  for (const item of items) {
+    const pm = item.meta.type === 'template' ? (item.meta.primary_method ?? '').trim() : '';
+    const ct = (item.meta.chart_types?.[0] ?? '').trim();
+    const isSlotted = Boolean(pm && ct);
+    const slotKey = isSlotted ? `${pm}::${ct}` : `single::${item.path}`;
+    let bucket = buckets.get(slotKey);
+    if (!bucket) {
+      bucket = { primaryMethod: pm, primaryChart: ct, items: [] };
+      buckets.set(slotKey, bucket);
+    }
+    bucket.items.push(item);
+  }
+  const groups: OutputSlotGroup<T>[] = [];
+  for (const [slotKey, bucket] of buckets.entries()) {
+    const sorted = [...bucket.items].sort((a, b) => {
+      const [ta, sa, ia] = slotItemRank(a.meta);
+      const [tb, sb, ib] = slotItemRank(b.meta);
+      return ta - tb || sa - sb || ia.localeCompare(ib);
+    });
+    groups.push({
+      slotKey,
+      primaryMethod: bucket.primaryMethod,
+      primaryChart: bucket.primaryChart,
+      items: sorted,
+      defaultItem: sorted[0],
+    });
+  }
+  return groups;
+}
+
+export interface StylePillSubject {
+  id: string;
+  title: string;
+  style_tier?: 'default' | 'variant';
+  journal_style?: string;
+}
+
+function baseStyleLabel(item: StylePillSubject): string {
+  const journal = (item.journal_style ?? '').trim();
+  if (item.style_tier === 'default') {
+    if (!journal || journal === 'Standard') return 'Standard 默认';
+    return `${journal} 默认`;
+  }
+  if (journal) return journal;
+  return item.title || item.id;
+}
+
+export function stylePillLabel(item: StylePillSubject, siblings: StylePillSubject[]): string {
+  const base = baseStyleLabel(item);
+  const dupCount = siblings.filter((s) => baseStyleLabel(s) === base).length;
+  if (dupCount <= 1) return base;
+  const shortTitle = (item.title || item.id).slice(0, 10);
+  return `${base} · ${shortTitle}`;
+}
+
 /** Search provenance as well as the display title; translated titles often omit the library name. */
 export function matchesFigureQuery(meta: FigureMeta, query: string, pages: PageSummary[]): boolean {
   const byPath = new Map(pages.map(p => [p.path, p.meta]));
-  const words = [meta.id, meta.title, ...meta.tags, ...meta.chart_types,
-    ...('keywords' in meta && Array.isArray(meta.keywords) ? meta.keywords.map(String) : [])];
+  const words = [
+    meta.id,
+    meta.title,
+    ...(meta.tags ?? []),
+    ...(meta.chart_types ?? []),
+    ...(meta.type === 'template' && meta.journal_style ? [meta.journal_style] : []),
+    ...('keywords' in meta && Array.isArray(meta.keywords) ? meta.keywords.map(String) : []),
+  ];
   if (meta.type === 'template') {
     for (const reference of meta.sources ?? []) {
       words.push(reference);
@@ -57,11 +143,12 @@ export function methodFigureStatusLabel(figure: MethodFigure): string {
 
 function coversSource(template: TemplateMeta, source: LayoutMeta): boolean {
   const letters = source.template_panels[template.id] ?? [];
+  const chartTypes = template.chart_types ?? [];
   return (template.layouts ?? []).includes(source.id) && source.templates.includes(template.id)
     && source.templates.length === 1 && Object.keys(source.template_panels).length === 1
     && Object.keys(source.panels).length > 0 && letters.length === Object.keys(source.panels).length
-    && template.chart_types.length === 1
-    && Object.keys(source.panels).every((p) => letters.includes(p) && source.panels[p] === template.chart_types[0]);
+    && chartTypes.length === 1
+    && Object.keys(source.panels).every((p) => letters.includes(p) && source.panels[p] === chartTypes[0]);
 }
 
 /** Only proven full coverage connects a source to a callable style. */

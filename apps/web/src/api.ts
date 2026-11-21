@@ -227,6 +227,9 @@ export interface MethodImplementation {
   entrypoint: string;
   dependencies: string[];
   verification?: string;
+  impl_tier?: 'default' | 'variant';
+  modality?: string;
+  source_paper?: string;
 }
 export interface ImplementationStatus {
   id: string;
@@ -258,6 +261,7 @@ export interface AttachedVizCurated {
   status: Status;
   language: string;
   license?: string;
+  primary_method?: string;
   style_tier?: 'default' | 'variant';
   journal_style?: string;
   chart_types: string[];
@@ -277,6 +281,7 @@ export interface AttachedVizCompatible {
   path: string;
   status: Status;
   language: string;
+  primary_method?: string;
   style_tier?: 'default' | 'variant';
   journal_style?: string;
   chart_types: string[];
@@ -293,6 +298,7 @@ export interface AttachedVizBridged {
   path: string;
   status: Status;
   language: string;
+  primary_method?: string;
   style_tier?: 'default' | 'variant';
   journal_style?: string;
   chart_types: string[];
@@ -747,11 +753,164 @@ export interface HubMeta {
 export type ItemMeta = LayoutMeta | TemplateMeta | MethodMeta | RecipeMeta;
 export type PageMeta = ItemMeta | InterfaceMeta | HubMeta | SourceMeta | ScenarioMeta;
 
+export type EvidenceTier =
+  | 'original_table'
+  | 'local_recompute'
+  | 'proxy'
+  | 'excluded_wet_lab'
+  | 'excluded_schematic'
+  | 'excluded_imaging';
+
+export interface PaperOriginRef {
+  workflow_id: string;
+  title: string;
+  paper_id?: string;
+  doi?: string;
+  journal?: string;
+  year?: number | null;
+  panel_count?: number;
+}
+
+export interface PaperStats {
+  figures: number;
+  panels: number;
+  original_table: number;
+  local_recompute: number;
+  proxy: number;
+  excluded_wet_lab: number;
+  excluded_schematic: number;
+  excluded_imaging: number;
+  excluded_total: number;
+  computed: number;
+  templates: number;
+}
+
+/** Receipt facts computed by the backend: a receipt existing is not evidence that a panel ran. */
+export interface ReceiptCounts {
+  total: number;
+  generated: number;
+  smoke_tested: number;
+  hash_checked: number;
+  hash_matched: number;
+  hash_mismatched?: number;
+  script_missing?: number;
+  status_counts?: Record<string, number>;
+}
+
+export interface PaperSummary {
+  workflow_id: string;
+  title: string;
+  summary: string;
+  paper_id: string;
+  doi: string;
+  journal: string;
+  year: number | null;
+  license: string;
+  upstream_repo: string;
+  workflow_page: string;
+  project_page: string | null;
+  gallery_entry: string;
+  cover_url: string | null;
+  figure_count: number;
+  has_receipts: boolean;
+  /** Figures that have a 1:1 replica image; absent on old payloads. */
+  reproduced_figure_count?: number;
+  /** Figures registered only in the panel manifest (every panel excluded, no replica image). */
+  manifest_only_figures?: { slug: string; label: string }[];
+  receipt_counts?: ReceiptCounts | null;
+  stats: PaperStats;
+}
+
+export interface PaperTemplateRef {
+  id: string;
+  title: string;
+  path: string;
+  status: Status;
+  language: string;
+  style_tier?: 'default' | 'variant' | null;
+  journal_style?: string | null;
+  chart_types: string[];
+  preview_url: string | null;
+}
+
+export interface PaperPanelItem {
+  panel_key: string;
+  figure_slug: string;
+  figure: string;
+  panel_letter: string;
+  panel: string;
+  evidence_tier: EvidenceTier | string;
+  is_excluded: boolean;
+  description: string;
+  note: string;
+  script_path: string;
+  script_available: boolean;
+  code_url: string | null;
+  input_tables: string[];
+  methods: string[];
+  template_id: string | null;
+  template: PaperTemplateRef | null;
+  extra_templates: PaperTemplateRef[];
+  receipt?: Record<string, unknown> | null;
+}
+
+export interface PaperFigureDetail {
+  slug: string;
+  label: string;
+  caption: string;
+  is_supplementary: boolean;
+  declared_panels: string[];
+  replica_url: string | null;
+  side_by_side_url: string | null;
+  replica_px: number[];
+  side_by_side_px: number[];
+  visual_review: string;
+  /** No replica image and every panel is an excluded tier: listed for completeness, never reproduced. */
+  manifest_only?: boolean;
+  panels: PaperPanelItem[];
+}
+
+export interface PaperDetail {
+  workflow_id: string;
+  title: string;
+  summary: string;
+  paper_id: string;
+  doi: string;
+  journal: string;
+  year: number | null;
+  license: string;
+  upstream_repo: string;
+  upstream_commit: string;
+  workflow_page: string;
+  project_page: string | null;
+  gallery_entry: string;
+  cover_url: string | null;
+  excluded_wet_lab: string[];
+  stats: PaperStats;
+  receipts_summary: { present: boolean; generated_at: string | null; count: number } & Partial<ReceiptCounts>;
+  reproduced_figure_count?: number;
+  manifest_only_figure_count?: number;
+  runtime: Record<string, unknown> | null;
+  figures: PaperFigureDetail[];
+}
+
+export interface PaperPanelCodeResponse {
+  workflow_id: string;
+  path: string;
+  language: string;
+  size: number;
+  sha256: string;
+  encoding: string | null;
+  text: string | null;
+  note: string;
+}
+
 export interface PageSummary<M extends PageMeta = PageMeta> {
   path: string;
   meta: M;
   style_tier?: 'default' | 'variant';
   journal_style?: string;
+  paper_origins?: PaperOriginRef[];
   /** Explicit outgoing figure links in a method body; general backlinks are not illustrations. */
   figure_refs?: string[];
   relations?: Relation[];
@@ -779,6 +938,14 @@ export interface Preview {
   label: string;
 }
 
+export interface SlotDefaultWarning {
+  primary_method: string;
+  chart_type: string;
+  recommended_successor: string;
+  remaining_variants: string[];
+  message: string;
+}
+
 export interface DeletePlan {
   title: string;
   path: string;
@@ -788,6 +955,7 @@ export interface DeletePlan {
   figure_relations_removed?: number;
   /** Other layouts' layout.json files that will be rewritten or removed. */
   layout_files_updated?: string[];
+  slot_default_warning?: SlotDefaultWarning | null;
   gallery_preserved: boolean;
 }
 
@@ -915,6 +1083,44 @@ export function cachePages(pages: PageSummary[]) {
   for (const p of pages) if (p.workflow !== undefined) workflowCache.set(previewKey(p.meta), p.workflow);
 }
 
+const DIR_TYPE: Record<string, PageType> = {
+  layouts: 'layout', templates: 'template', methods: 'method', recipes: 'recipe', interfaces: 'interface',
+  'chart-types': 'chart-type', projects: 'project', sources: 'source', scenarios: 'scenario',
+};
+
+/** Cache key for a vault path such as `templates/x.md`, without needing its metadata. */
+function previewKeyOfPath(path: string): string | null {
+  const match = /^([^/]+)\/(.+?)(?:\.md)?$/.exec(path.replace(/\\/g, '/'));
+  const type = match ? DIR_TYPE[match[1]] : undefined;
+  return match && type ? `${type}/${match[2]}` : null;
+}
+
+/** Forget every cached fact about one deleted page (detail, preview, workflow) so nothing stale repaints it.
+ * Accepts the vault path (`templates/x.md`), the page meta, or both. */
+export function evictCachedPage(target: string | PageMeta, meta?: PageMeta): void {
+  const path = typeof target === 'string' ? target : '';
+  const known = typeof target === 'string' ? meta : target;
+  const keys = new Set<string>();
+  if (known) keys.add(previewKey(known));
+  if (path) {
+    const fromPath = previewKeyOfPath(path);
+    if (fromPath) keys.add(fromPath);
+    const cached = pageCache.get(path);
+    if (cached) keys.add(previewKey(cached.meta));
+    pageCache.delete(path);
+  }
+  for (const key of keys) {
+    previewCache.delete(key);
+    workflowCache.delete(key);
+  }
+}
+
+/** Test/diagnostic view of whether a page still has cached preview or workflow facts. */
+export function hasCachedFacts(meta: PageMeta): boolean {
+  const key = previewKey(meta);
+  return previewCache.has(key) || workflowCache.has(key);
+}
+
 export const api = {
   search: (params: URLSearchParams, signal?: AbortSignal) => request<SearchResponse>(`/api/search?${params}`, {signal}),
   fetchAsset: (id: string) => request<{state?: string; note?: string}>('/api/assets/fetch', {
@@ -974,10 +1180,13 @@ export const api = {
   note: (kind: Kind, id: string, text: string) => post(act(kind, id, 'note'), { text }),
   archive: (kind: Kind, id: string) => post(act(kind, id, 'archive')),
   restore: (kind: Kind, id: string) => post(act(kind, id, 'restore')),
-  deletePlan: (kind: Kind, id: string) => request<DeletePlan>(act(kind, id, 'delete-plan')),
-  deleteArchived: async (kind: Kind, id: string, revision: string) => {
+  deletePlan: (kind: Kind, id: string, allowActive = false) =>
+    request<DeletePlan>(act(kind, id, 'delete-plan') + (allowActive ? '?allow_active=true' : '')),
+  deleteArchived: async (kind: Kind, id: string, revision: string, allowActive = false) => {
+    const payload: Record<string, unknown> = { confirmed: true, revision };
+    if (allowActive) payload.allow_active = true;
     const result = await request<DeletePlan & { deleted: boolean; audit: string }>(act(kind, id, 'delete'), {
-      method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ confirmed: true, revision }),
+      method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(payload),
     });
     pageCache.clear();
     return result;
@@ -1016,6 +1225,14 @@ export const api = {
     request<ProjectRecord>(`/api/projects/${encodeURIComponent(projectId)}/step`, {
       method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(step),
     }),
+  papers: (signal?: AbortSignal) => request<{ papers: PaperSummary[] }>('/api/papers', { signal }),
+  paper: (workflowId: string, signal?: AbortSignal) =>
+    request<PaperDetail>(`/api/papers/${encodeURIComponent(workflowId)}`, { signal }),
+  paperPanelCode: (workflowId: string, path: string, signal?: AbortSignal) =>
+    request<PaperPanelCodeResponse>(
+      `/api/papers/${encodeURIComponent(workflowId)}/panel-code?${new URLSearchParams({ path })}`,
+      { signal },
+    ),
 };
 
 const encodePath = (path: string) => path.split('/').map(encodeURIComponent).join('/');
@@ -1025,8 +1242,17 @@ export const codeDownload = (kind: Kind, id: string, file: Pick<CodeFile, 'varia
   `${act(kind, id, 'code-download')}?${new URLSearchParams({ variant: file.variant, path: file.path })}`;
 export const wikiFile = (path: string) => `/files/wiki/${encodePath(path)}`;
 export const galleryFile = (entry: string, file: string) => `/files/gallery/${encodePath(`${entry}/${file}`)}`;
+export function withThumbWidth(url: string | null | undefined, width?: number | null): string | null {
+  if (!url) return null;
+  if (!width || !Number.isFinite(width)) return url;
+  if (!(url.startsWith('/files/wiki/') || url.startsWith('/files/gallery/'))) return url;
+  if (url.includes('?')) return url;
+  if (!/\.(png|jpe?g|webp)$/i.test(url)) return url;
+  return `${url}?w=${Math.round(width)}`;
+}
 export const pageHref = (path: string) => `#/page/${encodePath(path)}`;
 export const studioHref = (id: string) => `#/studio?id=${encodeURIComponent(id)}`;
+export const paperHref = (workflowId: string) => `#/papers/${encodeURIComponent(workflowId)}`;
 
 /** The picture that stands for an item: the gallery thumbnail for a layout, the replay preview for a panel template. */
 export function imageOf(meta: PageMeta): string | null {
@@ -1084,23 +1310,29 @@ export const isItem = (meta: PageMeta): meta is ItemMeta =>
   meta.type === 'layout' || meta.type === 'template' || meta.type === 'method' || meta.type === 'recipe';
 export const isFigure = (meta: PageMeta): meta is LayoutMeta | TemplateMeta => meta.type === 'layout' || meta.type === 'template';
 
-/** Publish a safe initial listing before independent, expensive graph/evidence requests. */
+/** Publish a safe initial listing before independent, expensive graph/evidence requests.
+ * Resolves true only when full hydration (full pages, graph, taxonomy) completed for a still-current request,
+ * so callers can leave a failed or superseded hydration retryable. */
 export async function loadLibrary(observer: {
   pages: (pages: PageSummary[]) => void;
   graph: (graph: GraphData) => void;
   taxonomy: (taxonomy: MethodTaxonomy) => void;
   error?: (message: string) => void;
-}, current: () => boolean = () => true, hydrate = true): Promise<void> {
+}, current: () => boolean = () => true, hydrate = true): Promise<boolean> {
   const publish = (pages: PageSummary[]) => {
     if (!current()) return;
     cachePages(pages);
     observer.pages(pages);
   };
   publish(await api.pages(true, false));
-  if (!current() || !hydrate) return;
-  await Promise.all([
+  if (!current() || !hydrate) return false;
+  const results = await Promise.all([
     api.pages(false, false).then(publish),
     api.graph().then(graph => { if (current()) observer.graph(graph); }),
     api.methodTaxonomy().then(taxonomy => { if (current()) observer.taxonomy(taxonomy); }),
-  ].map(promise => promise.catch((error: Error) => { if (current()) observer.error?.(error.message); })));
+  ].map(promise => promise.then(() => true, (error: Error) => {
+    if (current()) observer.error?.(error.message);
+    return false;
+  })));
+  return current() && results.every(Boolean);
 }

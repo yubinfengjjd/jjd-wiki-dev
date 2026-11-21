@@ -10,7 +10,7 @@ from urllib.parse import urlencode
 from .config import Config
 from .errors import WikiError
 from .pages import read_page
-from .read_cache import read_session, remember
+from .read_cache import invalidate_cache, read_session, remember
 
 FILE = 'figureya-curation.json'
 STATES = {'pending', 'kept', 'removed', 'later'}
@@ -211,4 +211,5 @@ def update(config, ids, decision, expected_revision):
             # One transaction shares reads; the next click gets a fresh snapshot.
             with read_session():
                 save(config, f'FigureYa visual selection: {decision} ({len(ids)} modules)')
+            invalidate_cache(config.wiki_root)
         return {'revision': revision(config), 'decisions': {key: data[key]['decision'] for key in ids}}

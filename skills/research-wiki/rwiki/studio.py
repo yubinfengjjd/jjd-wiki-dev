@@ -24,8 +24,6 @@ from .esquisse_codegen import (
     sniff_csv_columns,
 )
 from .pages import read_page
-from .template_renderer import build_parameter_header, render_template_code
-from .template_spec import load_unified_spec
 
 IMAGE_SUFFIXES = {".png", ".jpg", ".jpeg", ".svg", ".pdf"}
 
@@ -126,6 +124,12 @@ def _synthesize_steps(meta: dict) -> list[dict[str, Any]]:
 
 def get_playbooks(config: Config) -> dict[str, Any]:
     """Return all playbook/scenario pages plus a synthesized stepwise transition DAG."""
+    from .read_cache import cached_vault_value
+
+    return cached_vault_value(config.wiki_root, "playbooks", lambda: _build_playbooks(config))
+
+
+def _build_playbooks(config: Config) -> dict[str, Any]:
     from .catalog import readable_pages
     from .facts import declarations, table_interfaces
 
@@ -394,6 +398,8 @@ def _auto_bind_columns(spec: dict[str, Any], sniffed: dict[str, Any]) -> dict[st
 
 def load_example_data(config: Config, entry_id: str) -> dict[str, Any]:
     """Locate built-in example/source tables for a template/recipe/method and sniff them."""
+    from .template_spec import load_unified_spec
+
     spec = load_unified_spec(config, entry_id)
     asset_dir = Path(spec["asset_dir"])
     data_exts = {".csv", ".tsv", ".txt", ".rds"}
@@ -510,6 +516,9 @@ def render_studio_code(
     bindings: dict[str, str] | None = None,
     parameters: dict[str, Any] | None = None,
 ) -> dict[str, Any]:
+    from .template_renderer import build_parameter_header, render_template_code
+    from .template_spec import load_unified_spec
+
     spec = load_unified_spec(config, entry_id)
     bindings_dict = {str(k): str(v) for k, v in (bindings or {}).items() if v is not None}
     params_dict = dict(parameters or {})
